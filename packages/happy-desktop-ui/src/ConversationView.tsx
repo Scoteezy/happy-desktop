@@ -516,6 +516,18 @@ function conversationQuestionDocked(entry: ConversationEntry): boolean {
     );
 }
 
+/** The reader's newest send from this view, while it is still the newest message. */
+function conversationSentHereKey(entries: readonly ConversationEntry[]): string | undefined {
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index]!;
+        if (entry.kind !== "message") continue;
+        return entry.sentHere === true && entry.delivery !== "failed"
+            ? entry.message.id
+            : undefined;
+    }
+    return undefined;
+}
+
 /** The geometry-relevant part of a failure row's props, for the row-height model. */
 function failureRowContext(failure: ConversationEntryFailureProps): ConversationFailureRowContext {
     return {
@@ -574,11 +586,17 @@ export function ConversationView(props: ConversationViewProps) {
     };
     const rowHeightCache = conversationRowHeightCacheGet(conversationCacheKey);
     conversationRowHeightCachePrune(rowHeightCache, props.entries);
-    const steering = conversationPendingSteering(props.entries);
+    /* With no turn running, a send waiting on the daemon is next to nothing:
+       it keeps the row it will have once accepted. */
+    const steering =
+        props.running === true
+            ? conversationPendingSteering(props.entries)
+            : { transcript: props.entries, queued: [] };
     const queued = steering.queued;
     /* A question the agent is waiting on is asked at the input that answers it,
-       not in the transcript: it neither pushes the conversation up when it
-       arrives nor pulls it down when it is answered. A read-only view has no
+       not in the transcript. Arriving, it grows the dock, which carries a
+       follower's newest lines up with it like a growing draft; answered, it
+       leaves space that holds them where they are. A read-only view has no
        input, so there it stays in the transcript. */
     const dockedQuestions =
         props.dock !== undefined ? steering.transcript.filter(conversationQuestionDocked) : [];
@@ -754,6 +772,24 @@ export function ConversationView(props: ConversationViewProps) {
             (entry.delivery === "sending" || entry.delivery === "pending_steering"),
     );
     const awaitingReply = props.running !== true && sendPending;
+    /* A send made while the agent is idle is lifted to the top with room for
+       its reply. One made mid-turn waits under the streaming reply instead,
+       which would push a lifted row down. A send already present when the
+       view opens is history. */
+    const sentKey = conversationSentHereKey(props.entries);
+    const [sendLift, setSendLift] = useState(() => ({
+        conversationId: props.conversationId,
+        sentKey,
+        liftKey: undefined as string | undefined,
+    }));
+    if (sendLift.conversationId !== props.conversationId)
+        setSendLift({ conversationId: props.conversationId, sentKey, liftKey: undefined });
+    else if (sendLift.sentKey !== sentKey)
+        setSendLift({
+            conversationId: props.conversationId,
+            sentKey,
+            liftKey: sentKey !== undefined && props.running !== true ? sentKey : sendLift.liftKey,
+        });
     /*
      * The turn ended and the agents it delegated to did not. That is a state of
      * its own rather than a continuation of the turn: the conversation is still
@@ -1065,6 +1101,7 @@ export function ConversationView(props: ConversationViewProps) {
                            send; a reader at the bottom sees where the reply
                            will start rather than having it held below. */
                         footerFollowed={sendPending}
+                        liftKey={sendLift.liftKey}
                         footerHeight={(width) =>
                             Math.max(
                                 workingStatusHeight,

@@ -51,6 +51,11 @@ function message(id: string, text: string, own = false, sentHere = false): Conve
         },
     };
 }
+/** Clears the draft the way select-all and delete do, on every platform. */
+async function draftClear(textarea: HTMLTextAreaElement) {
+    textarea.setSelectionRange(0, textarea.value.length);
+    await userEvent.keyboard("{Backspace}");
+}
 const frames = async () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -193,34 +198,56 @@ function renderConversation(count: number, withShell = false) {
     };
 }
 
-it.each([0, 40])("keeps a send at the natural bottom with %i preceding messages", async (count) => {
-    const { view, send } = renderConversation(count);
-    await view.ready();
-    await frames();
-    send();
-    await frames();
-    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
-    const textarea = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
-    const row = [...view.container.querySelectorAll<HTMLElement>(".happy-message")].find(
-        (element) => element.textContent?.includes("The newly sent message"),
-    )!;
-    const bounds = viewport.getBoundingClientRect();
-    const sent = row.getBoundingClientRect();
-    expect(sent.top).toBeGreaterThan(bounds.top + bounds.height / 2);
-    expect(bounds.bottom - sent.bottom).toBe(24);
-    expect(view.container.querySelector(".happy-message-list__tail")).toBeNull();
-    const top = viewport.scrollTop;
-    await userEvent.click(textarea);
-    for (let index = 0; index < 3; index += 1) {
-        await userEvent.keyboard("x");
-        await userEvent.keyboard("{Backspace}");
+it.each([0, 40])(
+    "lifts a send 40 percent down the viewport with %i preceding messages",
+    async (count) => {
+        const { view, send } = renderConversation(count);
+        await view.ready();
         await frames();
-        expect(row.getBoundingClientRect().top).toBe(sent.top);
-        expect(viewport.scrollTop).toBe(top);
-        expect(view.container.querySelector("textarea")).toBe(textarea);
-        expect(document.activeElement).toBe(textarea);
-    }
-});
+        send();
+        await frames();
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const textarea = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+        const row = [...view.container.querySelectorAll<HTMLElement>(".happy-message")].find(
+            (element) => element.textContent?.includes("The newly sent message"),
+        )!;
+        const bounds = viewport.getBoundingClientRect();
+        const sent = row.getBoundingClientRect();
+        if (count === 0) {
+            // Nothing above it to scroll away: the send stays where it lands.
+            expect(sent.top).toBeGreaterThan(bounds.top + bounds.height / 2);
+            expect(bounds.bottom - sent.bottom).toBe(24);
+        } else {
+            // Its top edge sits 40% down, the previous turn in view above it and
+            // the space below held for the reply.
+            expect(Math.abs(sent.top - bounds.top - Math.round(bounds.height * 0.4))).toBeLessThan(
+                1,
+            );
+            expect(bounds.bottom - sent.bottom).toBeGreaterThan(bounds.height / 3);
+        }
+        expect(view.container.querySelector(".happy-message-list__tail")).toBeNull();
+        // What the reader sees, not the offset: idle refinement of rows far above
+        // may move model coordinates and the offset with them in one commit.
+        const visibleTops = () =>
+            [...viewport.querySelectorAll<HTMLElement>(".happy-message")]
+                .map((element) => element.getBoundingClientRect())
+                .filter((rect) => rect.bottom > bounds.top && rect.top < bounds.bottom)
+                .map((rect) => rect.top);
+        const tops = visibleTops();
+        await userEvent.click(textarea);
+        for (let index = 0; index < 3; index += 1) {
+            await userEvent.keyboard("x");
+            await userEvent.keyboard("{Backspace}");
+            await frames();
+            expect(row.getBoundingClientRect().top).toBe(sent.top);
+            expect(visibleTops()).toEqual(tops);
+            expect(view.container.querySelector("textarea")).toBe(textarea);
+            expect(document.activeElement).toBe(textarea);
+        }
+    },
+);
 
 it("leaves a parked reader in place through a send and viewport height changes", async () => {
     const { view, send, resize } = renderConversation(60);
@@ -309,7 +336,7 @@ it.each([0.67, 0.9, 1.5, 2])(
 );
 
 it.each([2, 40])(
-    "keeps geometry slack fixed while it is visible with %i preceding messages",
+    "keeps geometry slack while it is visible and lifts a send over it with %i preceding messages",
     async (count) => {
         const { view, send, resize } = renderConversation(count);
         await view.ready();
@@ -327,23 +354,38 @@ it.each([2, 40])(
         expect(Number.parseFloat(extent)).toBeGreaterThan(0);
         send();
         await frames();
-        expect(anchor.getBoundingClientRect().top).toBe(top);
-        expect(content.style.minHeight).toBe(extent);
-        expect(viewport.querySelector(".happy-message-list__tail")).toBeNull();
+        const bounds = viewport.getBoundingClientRect();
+        const sent = [...viewport.querySelectorAll<HTMLElement>(".happy-message")]
+            .find((element) => element.textContent?.includes("The newly sent message"))!
+            .getBoundingClientRect();
+        // A send never lands below where it would sit lifted, and the space it
+        // stands in never shrinks while it is in view.
+        expect(sent.top - bounds.top).toBeLessThanOrEqual(Math.round(bounds.height * 0.4) + 1);
+        expect(Number.parseFloat(content.style.minHeight || "0")).toBeGreaterThanOrEqual(
+            Number.parseFloat(extent),
+        );
     },
 );
 
 it.each([40, 640])(
-    "keeps %i transcript rows fixed when a docked question becomes answered history",
+    "keeps %i transcript rows above a docked question, and fixed once it is answered history",
     async (count) => {
         const { view, question } = renderConversation(count, count > 100);
         await view.ready();
         await frames();
         const anchor = [...view.container.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
-        const top = anchor.getBoundingClientRect().top;
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const above = () =>
+            viewport.getBoundingClientRect().bottom - anchor.getBoundingClientRect().bottom;
+        const gap = above();
+        // The question docks at the input and carries the newest lines up with
+        // it, as a growing draft does, rather than covering them.
         question(false);
         await frames();
-        expect(anchor.getBoundingClientRect().top).toBe(top);
+        expect(above()).toBe(gap);
+        const top = anchor.getBoundingClientRect().top;
         question(true);
         await frames();
         await new Promise<void>((resolve) => setTimeout(resolve, 1200));
@@ -372,7 +414,7 @@ it("keeps newer messages fixed when a question above them is answered", async ()
     resize(800);
     await frames();
     expect(Math.abs(anchor.getBoundingClientRect().top - expandedTop)).toBeLessThan(1);
-    await userEvent.keyboard("{Meta>}a{/Meta}{Backspace}");
+    await draftClear(textarea);
     await frames();
     expect(Math.abs(anchor.getBoundingClientRect().top - expandedTop)).toBeLessThan(1);
 });
@@ -538,7 +580,7 @@ it("keeps a parked text anchor and its DOM node through cold-history refinement 
 });
 
 it.each([2, 40])(
-    "keeps visible rows fixed while a multiline composer grows and clears with %i messages",
+    "carries visible rows up with a growing multiline composer and holds them as it clears with %i messages",
     async (count) => {
         const { view } = renderConversation(count);
         await view.ready();
@@ -550,13 +592,16 @@ it.each([2, 40])(
         const anchor = [...view.container.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
         const anchorTop = () =>
             anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
-        const top = anchorTop();
+        const above = () =>
+            viewport.getBoundingClientRect().bottom - anchor.getBoundingClientRect().bottom;
+        const gap = above();
         await userEvent.click(textarea);
         await userEvent.keyboard("one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
         await frames();
         expect(textarea.value).toBe("one\ntwo\nthree");
-        expect(anchorTop()).toBe(top);
-        await userEvent.keyboard("{Meta>}a{/Meta}{Backspace}");
+        expect(above()).toBe(gap);
+        const top = anchorTop();
+        await draftClear(textarea);
         await frames();
         expect(textarea.value).toBe("");
         expect(anchorTop()).toBe(top);

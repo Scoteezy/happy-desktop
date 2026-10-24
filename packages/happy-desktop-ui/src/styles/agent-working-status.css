@@ -58,9 +58,13 @@
     line-height: inherit;
 }
 
+/* The typed label clips its overflow, which moves an inline-block's baseline to
+   its bottom edge; on the baseline it would sit a line's descent above the
+   clock. Top-aligned, its line box is the row's, so its text shares the clock's
+   baseline. */
 .happy-agent-working-status__state .happy-typed-text {
     min-width: 0;
-    vertical-align: baseline;
+    vertical-align: top;
     font-family: inherit;
 }
 

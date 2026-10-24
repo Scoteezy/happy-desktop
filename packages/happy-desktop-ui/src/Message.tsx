@@ -796,6 +796,15 @@ export type MessageListProps = {
      * its own never moves the transcript.
      */
     footerFollowed?: boolean;
+    /**
+     * The row key of the reader's newest send. When it changes while the
+     * reader follows the bottom, that row is lifted to 40% down the viewport
+     * and the space below it is held for the reply: the content extent grows in
+     * the same commit and is removed only once the reply fills it or it is
+     * entirely off screen. The key present at mount is history and never lifts.
+     * A key the rows do not carry yet names the footer, where a queued send waits.
+     */
+    liftKey?: string;
     /** Bottom clearance represented inside the virtualizer's coordinate space. */
     paddingEnd?: number;
     /**
@@ -905,6 +914,12 @@ const START_READ_AHEAD_SCREENS = 2;
 const BOTTOM_WHEEL_EPSILON = 2;
 /** Transcript clearances represented inside the virtualizer's coordinate space. */
 const MESSAGE_LIST_PADDING_START = 12;
+/**
+ * Where a lifted send's top edge sits, as a share of the viewport's height from
+ * its top: high enough to leave room for the reply, low enough that the turns
+ * before it stay in view.
+ */
+const SEND_LIFT_TOP = 0.4;
 const MESSAGE_LIST_PADDING_END_DEFAULT = 8;
 /** Model-space point kept stable near a parked reader's lower viewport edge. */
 const VIRTUAL_ANCHOR_INSET = 32;
@@ -1034,6 +1049,7 @@ export function MessageList(props: MessageListProps) {
     const geometrySparseInset = useRef(0);
     const geometryFollowInset = useRef(0);
     const footerFollowed = useRef(false);
+    const liftSeen = useRef(props.liftKey);
     footerFollowed.current = props.footerFollowed === true;
     const pendingFollowerTop = useRef<number | undefined>(undefined);
     const readerAnchor = useRef<MessageListVirtualAnchor | undefined>(undefined);
@@ -1526,6 +1542,27 @@ export function MessageList(props: MessageListProps) {
             scrollTopWrite(element, top - inset);
         }
     }
+    /** Lifts the reader's send to 40% down the viewport and holds the space under it, in this commit. */
+    function sendLift(element: HTMLElement, key: string) {
+        const [keyed] = Children.toArray([<Fragment key={key} />]);
+        const childKey = isValidElement(keyed) ? keyed.key : undefined;
+        let index = footerIndex;
+        for (let candidate = items.length - 1; candidate >= 0; candidate -= 1) {
+            if (itemKeyAt(candidate) !== childKey) continue;
+            index = candidate;
+            break;
+        }
+        const start = index === undefined ? undefined : rowSizeModel.starts[index];
+        if (start === undefined) return;
+        const top =
+            geometrySparseInset.current +
+            start -
+            Math.round(viewportGeometry.current.height * SEND_LIFT_TOP);
+        if (top <= element.scrollTop) return;
+        geometryExtentRequire(top, viewportGeometry.current.height);
+        geometryFollowInset.current = 0;
+        scrollTopWrite(element, top);
+    }
     function geometryExtentRequire(top: number, height: number) {
         const content = virtualContent.current;
         if (!content) return;
@@ -1916,7 +1953,10 @@ export function MessageList(props: MessageListProps) {
                 geometryExtent.current = Math.max(geometryExtent.current, extent);
                 virtualContent.current.style.minHeight = `${String(geometryExtent.current)}px`;
             }
-            if (following.current)
+            /* A shorter viewport (a growing composer) leaves the inset as it
+               was, so the follower keeps its bottom in view and the transcript
+               rises with the composer. A taller one is held by the extent. */
+            if (following.current && nextHeight > previousHeight)
                 geometryFollowInset.current = Math.max(
                     0,
                     Math.max(naturalHeight, geometryExtent.current) +
@@ -2164,6 +2204,8 @@ export function MessageList(props: MessageListProps) {
             if (rowSizeModel.version !== version) return;
         }
         geometryExtentCommit();
+        const lift = props.liftKey !== liftSeen.current ? props.liftKey : undefined;
+        liftSeen.current = props.liftKey;
         if (!following.current) pendingFollowerTop.current = undefined;
         if (!initialPositionApplied.current) {
             initialPositionApplied.current = true;
@@ -2188,6 +2230,7 @@ export function MessageList(props: MessageListProps) {
                 geometryExtentRequire(top, viewportGeometry.current.height);
                 scrollTopWrite(element, top);
             }
+            if (lift !== undefined) sendLift(element, lift);
             scrollBottomFollow(element);
         } else if (pendingAnchor.current) {
             const pending = pendingAnchor.current;

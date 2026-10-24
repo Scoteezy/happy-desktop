@@ -13,12 +13,16 @@ A good chat with an AI follows a few principles:
   chat in the opposite direction of the person, under any condition. The only
   movement the app may start on its own is following the bottom while the
   person is already at the bottom.
-- **Typing never moves the transcript.** Typing, deleting to empty, pasting, and
-  growing or shrinking a multiline draft change only the composer.
-- **Sending is boring.** A sent message lands at the natural bottom, just above
-  the composer, with the earlier conversation still visible above it. No
-  pin-to-top, no reserved blank area, no animation. Sending while scrolled up
-  into history keeps the reader where they are.
+- **The draft never hides the conversation.** A draft that grows carries the
+  transcript up with it in the same frame, so the newest lines stay in view; a
+  docked question does the same. A draft that shrinks, or empties on send,
+  leaves space behind that holds still. Typing on one line moves nothing.
+- **Sending gives the reply room.** A send from the bottom lifts the sent
+  message once, in the commit that adds it, until its top edge sits 40% down
+  the viewport: the turn before it stays in view and the reply has the rest.
+  The space under it is added in that same frame. No animation, no pin to the
+  top edge. A send made while the agent is still working, or while scrolled up
+  into history, moves nothing.
 - **Returning to a chat is invisible.** A chat opened again is where it was
   left: following the bottom if the reader was following it, holding the same
   row if they had scrolled up, with whatever arrived meanwhile already in
@@ -41,7 +45,8 @@ A good chat with an AI follows a few principles:
 
 First, remove behavior that fights the reader: the pin-to-top send and its
 shrinking tail reserve are gone, and the transcript follows only a reader who is
-at the bottom.
+at the bottom. A send lifts once, to 40%, into space that never shrinks while
+it is visible.
 
 Then make every geometry change preserve what the reader sees: composer
 resizing, window and pane resizing, browser zoom, late-loading images and code
@@ -64,8 +69,12 @@ column for every kind of row.
   and very short, very long, and empty conversations. They find no programmatic
   scroll against the person and no visible row moving 1px or more without a
   gesture.
-- After any send, the sent message is fully visible above the composer with no
-  large blank area.
+- After a send from the bottom, the sent message's top edge is 40% down the
+  viewport in the frame that first shows it, the turn before it is visible
+  above, and nothing moves until the reply fills the space below and the
+  transcript follows the bottom again.
+- The live status line's loader, clock, separator, and phase share one
+  baseline.
 - Switching away from a chat that keeps streaming and back to it shows it, in
   its first painted frame, at the bottom if the reader was following and at
   the same row if they were not, and no visible row moves in the frames after.
