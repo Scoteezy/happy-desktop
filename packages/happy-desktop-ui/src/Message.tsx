@@ -2184,14 +2184,19 @@ export function MessageList(props: MessageListProps) {
             }
             /* A shorter viewport (a growing composer) leaves the inset as it
                was, so the follower keeps its bottom in view and the transcript
-               rises with the composer. A taller one is held by the extent. */
+               rises with the composer. A taller one is held by the extent.
+               Rows appended in this same commit must still follow: the new
+               height may consume a withheld inset, never create more of it. */
             if (following.current && nextHeight > previousHeight)
-                geometryFollowInset.current = Math.max(
-                    0,
-                    Math.max(naturalHeight, geometryExtent.current) +
-                        inset -
-                        nextHeight -
-                        readerScrollTop.current,
+                geometryFollowInset.current = Math.min(
+                    geometryFollowInset.current,
+                    Math.max(
+                        0,
+                        Math.max(naturalHeight, geometryExtent.current) +
+                            inset -
+                            nextHeight -
+                            readerScrollTop.current,
+                    ),
                 );
         }
         const pending = pendingAnchor.current;
