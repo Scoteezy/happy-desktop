@@ -5,6 +5,70 @@ isolated, host-native Electron performance gym for Happy Agent.
 
 ## Electron Happy Agent gym
 
+### Hidden windows
+
+Gyms run with a real window that is hidden and non-interactive for the person
+at the machine. It is never visible, never focused, cannot be clicked, and has
+no Dock tile, Cmd-Tab entry, or Mission Control presence, while it still
+renders, lays out, composites, takes input, and produces screenshots and video.
+
+- Launch the app only through `gymElectronLaunch`
+  (`sources/electron/launch.ts`, exported from `happy-desktop-gym/electron`). It
+  sets `HAPPY_DESKTOP_WINDOWS_HIDDEN=1`, requires an owned `--user-data-dir`,
+  and refuses a build that has no hidden-window mode.
+- Record video with `gymElectronVideoRecord(page, { path, scale })`: it writes
+  the hidden window's own compositor frames (CDP screencast) to WebM. Never
+  pass Playwright `recordVideo`.
+- Never call `page.bringToFront()`, `open`, osascript, `screencapture`, or any
+  other desktop capture. Screenshots come from `page.screenshot()` or
+  `webContents.capturePage()`.
+
+The app side is `happy-desktop-electron/sources/main/hiddenWindows.ts`. Hidden
+mode turns on for `HAPPY_DESKTOP_WINDOWS_HIDDEN`, for any
+`HAPPY_DESKTOP_GYM_PROFILE`, and for any launch through Playwright's Electron
+loader, so an ad-hoc `_electron.launch` is hidden even without the flag. The
+process becomes an accessory application before launch finishes; windows are
+created with `show: false`, keep painting (`paintWhenInitiallyHidden`, no
+background throttling), and every API that would show, focus, raise, maximize
+or full-screen a window, open a dialog, or hand a link or file to another
+application is replaced. A window that becomes visible or focused anyway is
+hidden and the process exits with code 87.
+
+Measured on macOS with Electron 45: a never-shown window runs
+requestAnimationFrame at the display rate (≈120/s), lays out, keeps
+`-webkit-app-region`, reports `visibilityState: "visible"`, delivers ≈90
+screencast frames/s, captures at device resolution, and takes CDP and
+`sendInputEvent` clicks and typing. Offscreen rendering (`offscreen: true`)
+was rejected: it renders at 1× and 60 frames/s through a different
+compositor. Positioning a window off every display was rejected: the window
+server still orders it in, and macOS may constrain it back on screen.
+
+The `hidden-window` workload (first in `all`) proves the contract on a seeded
+session: it samples the main process every 20ms and, on macOS, the window
+server every 25ms (`windowServer.swift`, built with `swiftc` on first use; it
+must run with window-server access, and refuses to pass when it sees no
+windows at all), while requiring frames, layout, clicks, typing, a screenshot,
+`capturePage`, and a video. It then asks the app to show, focus, raise, and
+maximize its window and to open a dialog, and requires it to stay hidden.
+Every run also asserts invisibility after launch and after each workload.
+
+An agent's recording script against a prepared run root:
+
+```ts
+const app = await gymElectronLaunch({
+    args: [`--user-data-dir=${paths.electronUserData}`, entrypoint.main],
+    cwd: paths.workspaceRoot,
+    env: runtime.environment,
+    executablePath: entrypoint.executable,
+});
+const page = await app.firstWindow();
+const video = await gymElectronVideoRecord(page, { path: "/abs/out.webm", scale: 2 });
+// …drive the page with Playwright…
+await video.stop();
+await gymElectronInvisibleAssert(app);
+await app.close();
+```
+
 ### Windows and public-repository load
 
 The native runner supports Windows named pipes, an isolated `USERPROFILE` and
@@ -175,7 +239,8 @@ updates every 5ms. Animation-frame gaps are calibrated against idle frames
 captured immediately around each sweep and reported with estimated dropped
 frames, long frames, browser long tasks, delivered viewport widths, and panel
 geometry. Every sampled frame must keep rendered transcript rows mounted. The
-gym window must always remain inactive, never take keyboard focus or be brought to the foreground, and the workload never controls the system cursor.
+window is resized while hidden (see [Hidden windows](#hidden-windows)), and the
+workload never controls the system cursor.
 
 Run it repeatedly against one already-prepared root:
 

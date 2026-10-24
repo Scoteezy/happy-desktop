@@ -33,6 +33,11 @@ import { dockBadgeApply, dockBadgeClear, dockUnreadCountRead } from "./dockBadge
 import { desktopUpdaterCreate, type DesktopUpdater } from "./updater";
 import { DesktopWindowLifecycle, type DesktopWindowBounds } from "./windowLifecycle";
 import {
+    hiddenWindowsInstall,
+    hiddenWindowsLaunchHidden,
+    type HiddenWindowsLaunch,
+} from "./hiddenWindows";
+import {
     desktopDaemonVersionValidate,
     desktopStartRequestValidate,
     desktopTopologyIdValidate,
@@ -114,6 +119,9 @@ if (process.platform !== "darwin" && process.platform !== "linux" && process.pla
     console.error("Happy Place desktop is available only on macOS, Linux, and Windows.");
     app.exit(1);
 }
+// Gym and agent-driven launches render real windows nobody can see. This must
+// come before anything that could create a window or a Dock tile.
+const desktopWindowsHidden = hiddenWindowsInstall();
 const buildIdentity = desktopBuildIdentityRead(app.isPackaged, app.getAppPath());
 const desktopGymActive = process.env.HAPPY_DESKTOP_GYM_PROFILE !== undefined;
 const desktopProfilerLaunchMode =
@@ -164,7 +172,16 @@ app.setName(applicationName);
  */
 if (buildIdentity) app.setPath("userData", `${app.getPath("userData")}-${buildIdentity.label}`);
 // Only now is this process identifiable, so only now can it claim to be the one.
-if (!app.requestSingleInstanceLock()) app.quit();
+// A hidden launch says so, and the instance holding the lock then leaves its
+// window where it is instead of raising it in front of the person.
+const secondInstanceLaunch: HiddenWindowsLaunch = { hidden: desktopWindowsHidden };
+if (!app.requestSingleInstanceLock(secondInstanceLaunch)) {
+    if (desktopWindowsHidden)
+        console.error(
+            "[hidden-windows] another Happy instance owns this user data; pass --user-data-dir.",
+        );
+    app.quit();
+}
 
 const dirname = fileURLToPath(new URL(".", import.meta.url));
 const generatedApplicationIconPath = join(
@@ -400,12 +417,8 @@ let artifactNetworkProxy: ArtifactNetworkProxyHandle | undefined;
 const deviceBridges = deviceBridgeHostCreate();
 let browserProxyConnectionId: number | undefined;
 let browserProxyOperation = Promise.resolve();
-// Automation needs a real laid-out window without taking focus from the work
-// happening beside it.
-const windowLifecycle = new DesktopWindowLifecycle<BrowserWindow>((window) => {
-    if (desktopGymActive) window.showInactive();
-    else window.show();
-});
+// In a hidden-window run, showing a window leaves it hidden (hiddenWindows.ts).
+const windowLifecycle = new DesktopWindowLifecycle<BrowserWindow>();
 const cloudAuthConfiguration: DesktopCloudAuthConfiguration = {
     environment: "production",
     redirectUri: cloudAuthProductionRedirectUri,
@@ -431,7 +444,9 @@ function cloudAuthCallbackRead(candidate: string): string | undefined {
     }
 }
 
+// A hidden run must not take the callback protocol from the installed app.
 if (
+    !desktopWindowsHidden &&
     !(app.isPackaged
         ? app.setAsDefaultProtocolClient(cloudAuthProtocol)
         : process.argv[1]
@@ -1615,8 +1630,8 @@ function applicationMenuInstall(snapshot: ReturnType<DesktopRuntime["get"]>): vo
 void app
     .whenReady()
     .then(async () => {
-        if (desktopGymActive) app.dock?.hide();
-        else if (!app.isPackaged && applicationIconPath) app.dock?.setIcon(applicationIconPath);
+        if (!desktopWindowsHidden && !app.isPackaged && applicationIconPath)
+            app.dock?.setIcon(applicationIconPath);
         happyAgentRendererSession = await happyAgentRendererSessionCreate(
             electronSession.defaultSession,
             () =>
@@ -2160,7 +2175,10 @@ void app
         app.quit();
     });
 
-app.on("second-instance", (_event, argv) => {
+app.on("second-instance", (_event, argv, _directory, launch) => {
+    // A hidden launch that lost the lock is an agent's mistake, not the person
+    // asking for this window.
+    if (hiddenWindowsLaunchHidden(launch)) return;
     // A URL opened while Happy runs starts a second process, which quits on
     // the instance lock and forwards its arguments here.
     cloudAuthCallbackFromArguments(argv);

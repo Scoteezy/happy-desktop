@@ -1,15 +1,12 @@
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import {
-    _electron as electron,
-    type ElectronApplication,
-    type Locator,
-    type Page,
-} from "playwright";
+import type { ElectronApplication, Locator, Page } from "playwright";
 
 import { gymGoldReplayMaterialRead, type GymGoldReplayMaterial } from "./goldReplay.js";
+import { hiddenWindowRun } from "./hiddenWindow.js";
 import { gymLiveToolMutationLineCount } from "./inferenceServer.js";
+import { gymElectronInvisibleAssert, gymElectronLaunch } from "./launch.js";
 import { electronEntrypointResolve } from "./paths.js";
 import { gymProfilerArtifactReferenceRead } from "./profilerArtifacts.js";
 import type { HappyAgentJournalEvent, HappyAgentStreamHandle } from "./happyAgentProtocol.js";
@@ -414,7 +411,7 @@ export async function electronWorkloadsRun(options: {
 }): Promise<ElectronRunResult> {
     const startedAt = new Date().toISOString();
     const entrypoint = electronEntrypointResolve(options.paths.workspaceRoot);
-    const app = await electron.launch({
+    const app = await gymElectronLaunch({
         // Electron reads userData from this command-line switch before app
         // startup; an environment label alone would not isolate app.getPath().
         args: [`--user-data-dir=${options.paths.electronUserData}`, entrypoint.main],
@@ -436,10 +433,15 @@ export async function electronWorkloadsRun(options: {
     const page = await app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
     await page.waitForSelector("body", { timeout: 30_000 });
+    await gymElectronInvisibleAssert(app).catch(async (error: unknown) => {
+        await app.close().catch(() => undefined);
+        throw error;
+    });
 
     const workloads =
         options.workload === "all"
             ? ([
+                  "hidden-window",
                   "boot",
                   "catalog-switch",
                   "long-transcript",
@@ -524,6 +526,8 @@ export async function electronWorkloadsRun(options: {
                 }
             }
             samples.push({ ...measurementResult, profilerArtifacts: sampleProfilerArtifacts });
+            // Every workload ends where it began: off every screen.
+            await gymElectronInvisibleAssert(app);
             if (uiTraceStarted) {
                 await page
                     .context()
@@ -851,6 +855,8 @@ async function workloadRun(
     await navigateRoute(page, location.route);
     await waitForSessionUiReady(page, location.route, location.sessionId);
     await mark("route-ready");
+    if (workload === "hidden-window")
+        return finish(await hiddenWindowRun(page, app, options.paths.artifacts, mark));
     await options.profilerStart();
     await mark("profiler-started");
     if (workload === "long-transcript") {

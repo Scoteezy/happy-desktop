@@ -412,6 +412,10 @@ export async function openInTargetsRead(): Promise<readonly OpenInTarget[]> {
 export async function openInRun(targetId: string, directory: string): Promise<void> {
     if (process.platform !== "darwin")
         throw new Error("Opening a project in another application is only supported on macOS.");
+    // A hidden-window run (main/hiddenWindows.ts) never puts another
+    // application in front of the person.
+    if (process.env.HAPPY_DESKTOP_WINDOWS_HIDDEN !== undefined)
+        throw new Error("A hidden-window run cannot open a project in another application.");
     const target = OPEN_IN_APPS.find((candidate) => candidate.id === targetId);
     if (!target) throw new Error("That application is not one this app can open projects in.");
     const path = (await detectedRead()).get(target.id)?.path;

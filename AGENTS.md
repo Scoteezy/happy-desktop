@@ -76,6 +76,15 @@ On macOS, request reviewed full-access execution before running any real-browser
 Playwright suite; otherwise the inherited sandbox crashes the browsers and
 triggers native crash dialogs.
 
+Never put the desktop app in front of the person. Every gym, recording, or
+other agent-driven Electron launch goes through `gymElectronLaunch` in
+`happy-desktop-gym` and records video with `gymElectronVideoRecord`: the window
+is real but hidden, never visible or focused, and has no Dock tile. Do not call
+Playwright's `_electron.launch` or `recordVideo` directly, `page.bringToFront()`,
+`open`, osascript, or desktop capture. See
+[`master-plans/10-gyms.md`](master-plans/10-gyms.md) and the gym README's
+"Hidden windows".
+
 ## Review
 
 Review is optional for every edit and never gates pushing or merging. An

@@ -1,8 +1,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { _electron as electron } from "playwright";
-
+import { gymElectronLaunch } from "./launch.js";
 import { electronEntrypointResolve } from "./paths.js";
 
 export interface GymSmokeResult {
@@ -31,7 +30,7 @@ export async function gymSmokeRun(): Promise<GymSmokeResult> {
     if (expectPackaged && !process.env.HAPPY_DESKTOP_ELECTRON_EXECUTABLE) {
         throw new Error("Packaged smoke requires HAPPY_DESKTOP_ELECTRON_EXECUTABLE.");
     }
-    const app = await electron.launch({
+    const app = await gymElectronLaunch({
         args: [`--user-data-dir=${userData}`, ...(expectPackaged ? [] : [entrypoint.main])],
         env: smokeEnvironment(home),
         executablePath: entrypoint.executable,

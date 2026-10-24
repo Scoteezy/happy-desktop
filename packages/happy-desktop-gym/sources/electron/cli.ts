@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const workloads: readonly GymWorkloadName[] = [
+    "hidden-window",
     "background-drafts",
     "public-repository",
     "boot",
@@ -187,7 +188,7 @@ Commands:
   clean --root PATH
 
 Workloads:
-  boot, catalog-switch, long-transcript, file-switch-warm,
+  hidden-window, boot, catalog-switch, long-transcript, file-switch-warm,
   long-chat-scroll, session-switch-load, highlight-warm, changed-files-warm,
   streaming, mixed-replay, memory-idle, window-edge-resize, archive-reconcile, public-repository, background-drafts, all
 

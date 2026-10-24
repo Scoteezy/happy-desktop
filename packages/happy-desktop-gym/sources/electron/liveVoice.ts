@@ -2,7 +2,8 @@ import { execFile } from "node:child_process";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
-import { _electron as electron, type ElectronApplication, type Page } from "playwright";
+import type { ElectronApplication, Page } from "playwright";
+import { gymElectronLaunch } from "./launch.js";
 import { gymRunPathsCreate, electronEntrypointResolve } from "./paths.js";
 import { happyAgentRuntimeCreate, type StartedHappyAgentRuntime } from "./happyAgentRuntime.js";
 import { completeOnboarding } from "./workloads.js";
@@ -168,7 +169,7 @@ export async function gymLiveVoiceRun(options: {
         };
         result.stage = "launching";
         const entrypoint = electronEntrypointResolve(paths.workspaceRoot);
-        app = await electron.launch({
+        app = await gymElectronLaunch({
             executablePath: entrypoint.executable,
             args: [
                 `--user-data-dir=${paths.electronUserData}`,
