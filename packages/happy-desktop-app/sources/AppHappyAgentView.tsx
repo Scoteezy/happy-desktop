@@ -3919,7 +3919,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         artifactId as HappyAgentArtifactId,
                     )
                 }
-                visible={!sidebarVisibility.hidden}
                 places={spacesPlaces}
                 snapshot={spaces}
                 store={spacesStore}

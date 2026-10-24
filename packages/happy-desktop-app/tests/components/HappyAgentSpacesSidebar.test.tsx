@@ -14,7 +14,6 @@ import {
 } from "../../sources/components/HappyAgentSpacesSidebar";
 
 function fixture() {
-    const attentionInteractingUpdate = vi.fn();
     const onChildSelect = vi.fn();
     const space: HappyAgentSpace = {
         id: "parent" as HappyAgentSpaceId,
@@ -31,7 +30,7 @@ function fixture() {
         working: false,
     };
     const props: HappyAgentSpacesSidebarProps = {
-        store: { ...happyAgentSpacesStoreNoop, attentionInteractingUpdate },
+        store: happyAgentSpacesStoreNoop,
         snapshot: { ...happyAgentSpacesStoreNoop.get(), spaces: new Map([[space.id, space]]) },
         places: { bots: [], tasks: [], chatGroupOf: () => undefined },
         focus: {},
@@ -52,43 +51,11 @@ function fixture() {
             agentId === "agent" ? [{ id: "child", label: "Child", kind: "view", depth: 1 }] : [],
         onChildSelect,
     };
-    return { props, attentionInteractingUpdate, onChildSelect };
+    return { props, onChildSelect };
 }
 
-it("ends a sidebar drag released outside, cancelled, blurred, collapsed or unmounted", () => {
-    const { props, attentionInteractingUpdate } = fixture();
-    const view = render(<HappyAgentSpacesSidebar {...props} />);
-    const sidebar = view.container.querySelector("nav")!;
-    const begin = () => {
-        fireEvent.pointerDown(sidebar, { buttons: 1 });
-        fireEvent.pointerLeave(sidebar, { buttons: 1 });
-        expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(true);
-    };
-    begin();
-    fireEvent.pointerUp(document);
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-    begin();
-    fireEvent.pointerCancel(document);
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-    begin();
-    fireEvent.blur(window);
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-    begin();
-    view.rerender(<HappyAgentSpacesSidebar {...props} visible={false} />);
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-    view.rerender(<HappyAgentSpacesSidebar {...props} visible />);
-    begin();
-    view.unmount();
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-    const calls = attentionInteractingUpdate.mock.calls.length;
-    fireEvent.pointerUp(document);
-    fireEvent.pointerCancel(document);
-    fireEvent.blur(window);
-    expect(attentionInteractingUpdate).toHaveBeenCalledTimes(calls);
-});
-
-it("opens a row on click without letting queued changes land or writing the document", () => {
-    const { props, attentionInteractingUpdate, onChildSelect } = fixture();
+it("opens a row on click without writing the document", () => {
+    const { props, onChildSelect } = fixture();
     const sidebarWrite = vi.fn();
     const onChatSelect = vi.fn();
     const view = render(
@@ -102,67 +69,7 @@ it("opens a row on click without letting queued changes land or writing the docu
         fireEvent.click(view.getByText(label));
     expect(onChatSelect).toHaveBeenCalled();
     expect(onChildSelect).toHaveBeenCalledWith({ kind: "worktree", worktreeId: "child" });
-    // Queued changes land only once the pointer leaves the sidebar, never because a row opened.
-    expect(attentionInteractingUpdate).not.toHaveBeenCalled();
     expect(sidebarWrite).not.toHaveBeenCalled();
-});
-
-it("holds attention through a row menu until its action finishes", () => {
-    const { props, attentionInteractingUpdate } = fixture();
-    const leave = vi.fn(() => expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(true));
-    const view = render(
-        <HappyAgentSpacesSidebar {...props} actions={{ ...props.actions, taskLeave: leave }} />,
-    );
-    const row = view.getByText("Parent");
-    fireEvent.pointerDown(row, { button: 2, buttons: 2 });
-    fireEvent.contextMenu(row);
-    fireEvent.pointerUp(document, { button: 2 });
-    expect(view.getByRole("menu")).toBeTruthy();
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(true);
-    fireEvent.pointerLeave(view.container.querySelector("nav")!, { buttons: 0 });
-    fireEvent.pointerCancel(document);
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(true);
-    fireEvent.click(view.getByText("Leave task"));
-    expect(leave).toHaveBeenCalledWith("task");
-    expect(view.queryByRole("menu")).toBeNull();
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-});
-
-it("releases menu attention on dismissal, blur, collapse and unmount", () => {
-    const { props, attentionInteractingUpdate } = fixture();
-    const view = render(<HappyAgentSpacesSidebar {...props} />);
-    const open = () => {
-        fireEvent.contextMenu(view.getByText("Parent"));
-        expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(true);
-    };
-    open();
-    fireEvent.keyDown(document, { key: "Escape" });
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-    open();
-    fireEvent.blur(window);
-    expect(view.queryByRole("menu")).toBeNull();
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-    open();
-    view.rerender(<HappyAgentSpacesSidebar {...props} visible={false} />);
-    expect(view.queryByRole("menu")).toBeNull();
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-    view.rerender(<HappyAgentSpacesSidebar {...props} visible />);
-    open();
-    view.unmount();
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
-});
-
-it("keeps a new drag held when its pointer-down dismisses a menu", () => {
-    const { props, attentionInteractingUpdate } = fixture();
-    const view = render(<HappyAgentSpacesSidebar {...props} />);
-    fireEvent.contextMenu(view.getByText("Parent"));
-    fireEvent.pointerUp(document);
-    fireEvent.pointerDown(view.getByText("Child"), { buttons: 1 });
-    expect(view.queryByRole("menu")).toBeNull();
-    fireEvent.pointerLeave(view.container.querySelector("nav")!, { buttons: 1 });
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(true);
-    fireEvent.pointerUp(document);
-    expect(attentionInteractingUpdate).toHaveBeenLastCalledWith(false);
 });
 
 it("selects and opens a nested session at any depth, and the worktree it runs in", () => {
