@@ -1114,6 +1114,8 @@ export function MessageList(props: MessageListProps) {
         | {
               readonly anchor: MessageListVirtualAnchor;
               readonly viewportHeight: number;
+              /** Floor ownership before this commit changed the row model. */
+              readonly floored?: boolean;
               /** Restore as the scrollTop anchor the reader held before refinement. */
               readonly scrollTopAnchor?: boolean;
           }
@@ -1142,6 +1144,10 @@ export function MessageList(props: MessageListProps) {
         readerScrollTop.current = element.scrollTop;
         placed?.(element.scrollTop);
         virtualOffsetReport.current?.(element.scrollTop, virtualizer.isScrolling);
+        // An active observer must see the old cache: preassigning makes its
+        // scrolling guard mistake this model write for a duplicate event.
+        // Activity reattachment still needs the cache when no observer exists.
+        virtualizer.scrollOffset = element.scrollTop;
     };
     const scrollBottomFollow = (
         element: HTMLElement,
@@ -1442,8 +1448,11 @@ export function MessageList(props: MessageListProps) {
                 ? (pendingAnchor.current ?? {
                       anchor: refinementAnchor(list.current, parkedViewportHeight),
                       viewportHeight: parkedViewportHeight,
+                      floored: modelFloored(parkedViewportHeight),
                   })
                 : undefined;
+        if (parkedAnchor && parkedAnchor.floored === undefined)
+            parkedAnchor = { ...parkedAnchor, floored: modelFloored(parkedViewportHeight) };
         if (!widthReflow && from < previousCount && parkedAnchor?.anchor?.type === "item") {
             // A width roundtrip retains an offset beyond a temporarily shorter
             // row. Once content changes, hold the point actually on screen so
@@ -1739,8 +1748,10 @@ export function MessageList(props: MessageListProps) {
         // Publish all compensation before notifying React. A scrolling offset
         // report can render synchronously and must read the new measurements.
         if (virtualized) virtualizer.measure();
-        if (nextOffset !== undefined)
+        if (nextOffset !== undefined) {
             virtualOffsetReport.current?.(nextOffset, virtualizer.isScrolling);
+            virtualizer.scrollOffset = nextOffset;
+        }
         if (pending > 0) refinementSchedule();
     }
     /** Lays out pending rows in the browser's idle time, one bounded slice at a time. */
@@ -1903,9 +1914,10 @@ export function MessageList(props: MessageListProps) {
             // Hide can precede the target scroll listener. Retained views must
             // adopt the same native input this published cold position holds.
             readerScrollTop.current = top;
-            // Activity may have disconnected the offset observer. TanStack
-            // reattaches by writing its cached offset, so keep that cache with
-            // the native position too, without notifying a hidden subtree.
+            // Notify an active observer before changing its cache, just as a
+            // model write does. A hidden view has no observer and only needs
+            // the cached offset that TanStack writes when it reattaches.
+            virtualOffsetReport.current?.(top, virtualizer.isScrolling);
             virtualizer.scrollOffset = top;
         }
         return anchor?.type === "item"
@@ -1918,10 +1930,12 @@ export function MessageList(props: MessageListProps) {
               }
             : { type: "bottom" };
     }
+    const positionCurrentRef = useRef(positionCurrent);
+    positionCurrentRef.current = positionCurrent;
     const positionReport = () => {
         const element = list.current;
         if (!element || !positionChange.current) return;
-        positionChange.current(positionCurrent(element));
+        positionChange.current(positionCurrentRef.current(element));
     };
     /* Model lookups use the model's own row order, which matches `items`
        except inside the commit that changed them, before the model follows. */
@@ -1983,6 +1997,14 @@ export function MessageList(props: MessageListProps) {
         return Math.max(
             0,
             viewportHeight - Math.max(estimatedContentHeight(), geometryExtent.current),
+        );
+    }
+    function modelFloored(viewportHeight: number): boolean {
+        return (
+            readerScrollTop.current <= 1 &&
+            leadingGap(viewportHeight) +
+                Math.max(estimatedContentHeight(), geometryExtent.current) <=
+                viewportHeight + 1
         );
     }
     function modelAnchorCapture(
@@ -2103,8 +2125,9 @@ export function MessageList(props: MessageListProps) {
         viewportHeight: number,
         scrollTop: number,
     ): boolean {
-        const index = itemIndexOf(anchor.key, anchor.index);
-        const item = index === undefined ? undefined : modeledItemAtIndex(index);
+        const keys = rowSizeModel.keys;
+        const index = keys[anchor.index] === anchor.key ? anchor.index : keys.indexOf(anchor.key);
+        const item = modeledItemAtIndex(index);
         return (
             item !== undefined &&
             Math.abs(
@@ -2291,6 +2314,7 @@ export function MessageList(props: MessageListProps) {
         }
         pendingViewportGeometry.current = undefined;
         const previous = viewportGeometry.current;
+        const previouslyFloored = pendingAnchor.current?.floored ?? modelFloored(previous.height);
         const element = list.current;
         const scale =
             element && nextWidth > 0
@@ -2371,21 +2395,19 @@ export function MessageList(props: MessageListProps) {
         }
         const previousHeight = previous.height || nextHeight;
         const widthChanged = nextRowWidth !== rowSizeModel.width;
+        let floorShrank = false;
         if (
             element &&
             virtualContent.current &&
-            !zoomChanged &&
+            (!zoomChanged || (previouslyFloored && nextHeight < previousHeight)) &&
             nextHeight !== previousHeight &&
             /* Rows that fit under a resting header stay with it, as it
                re-centres in the new scrollport. */
             !(headerLeads && estimatedContentHeight() <= previousHeight)
         ) {
             const naturalHeight = estimatedContentHeight();
-            const previousInset = leadingGap(previousHeight);
-            const wasFloored =
-                readerScrollTop.current <= 1 &&
-                previousInset + Math.max(naturalHeight, geometryExtent.current) <=
-                    previousHeight + 1;
+            const wasFloored = previouslyFloored;
+            floorShrank = wasFloored && nextHeight < previousHeight;
             if (
                 props.dockConsumesSpace &&
                 (following.current || wasFloored) &&
@@ -2481,13 +2503,45 @@ export function MessageList(props: MessageListProps) {
         const heldAnchor =
             pending?.anchor ?? readerAnchor.current ?? modelAnchorCapture(previousHeight);
         const heldHeight = pending?.viewportHeight ?? previousHeight;
+        let nextInset =
+            heldAnchor?.type === "item" ? heldAnchor.viewportInset + nextHeight - heldHeight : 0;
+        if (floorShrank && heldAnchor?.type === "item") {
+            const index = itemIndexOf(heldAnchor.key, heldAnchor.index);
+            const item = index === undefined ? undefined : modeledItemAtIndex(index);
+            if (item) {
+                // Releasing the floor gap raises the rows first. Keep a point
+                // that is still visible there; otherwise carry its previous
+                // bottom inset into the shorter viewport.
+                const point =
+                    leadingGap(nextHeight) +
+                    item.start +
+                    Math.min(heldAnchor.itemOffset, item.size) -
+                    readerScrollTop.current;
+                if (point >= 0 && point <= nextHeight) nextInset = nextHeight - point;
+                else {
+                    const inset = heldAnchor.viewportInset + previousHeight - heldHeight;
+                    const globalPoint = point + readerScrollTop.current;
+                    const requestedTop = globalPoint - Math.max(0, nextHeight - inset);
+                    const maximumTop = Math.max(
+                        0,
+                        Math.max(estimatedContentHeight(), geometryExtent.current) +
+                            geometrySparseInset.current -
+                            nextHeight,
+                    );
+                    const top = Math.max(0, Math.min(requestedTop, maximumTop));
+                    // A floor restore may use held space, but cannot create
+                    // more blank space just to reach the previous bottom inset.
+                    nextInset = nextHeight - (globalPoint - top);
+                }
+            }
+        }
         // A height change moves the viewport's lower edge, not the reader's
         // screen position. Carry the same row point through that resize.
         const anchor =
             heldAnchor?.type === "item"
                 ? {
                       ...heldAnchor,
-                      viewportInset: heldAnchor.viewportInset + nextHeight - heldHeight,
+                      viewportInset: nextInset,
                   }
                 : heldAnchor;
         const focus = readerFocus(previousHeight);
@@ -3206,7 +3260,7 @@ export function MessageList(props: MessageListProps) {
             // Activity may have disconnected the ref already. Capture from
             // this listener lifetime's element, and retain the held row point
             // so a hidden width change restores the same reader when shown.
-            const position = positionCurrent(element);
+            const position = positionCurrentRef.current(element);
             positionChange.current?.(position);
             refinementCancel.current?.();
             refinementCancel.current = undefined;
@@ -3222,7 +3276,7 @@ export function MessageList(props: MessageListProps) {
             element.removeEventListener("touchstart", onGeometryScrollIntent);
             element.removeEventListener("wheel", onWheel);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- modelAnchorCaptureCurrent reads the current modeled rows, while this effect deliberately owns one scrollport-listener lifetime
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- current capture refs read the latest modeled rows while this effect owns one scrollport-listener lifetime
     }, [virtualized, virtualizer]);
     return (
         <MessageListDisclosureAnchorProvider value={disclosureAnchor}>

@@ -165,122 +165,144 @@ it.each([
     },
 );
 
-it("publishes the held nonstandard point before a hidden width change", async () => {
-    const view = createRenderer();
-    let update!: (width: number, height: number, active: boolean, cold?: boolean) => void;
-    let latest: MessageListScrollPosition | undefined;
-    let saved: MessageListScrollPosition | undefined;
-    function Fixture() {
-        const [state, setState] = useState({
-            width: 820,
-            height: 650,
-            active: true,
-            generation: 0,
-        });
-        update = (width, height, active, cold = false) =>
-            flushSync(() =>
-                setState((previous) => ({
-                    width,
-                    height,
-                    active,
-                    generation: previous.generation + Number(cold),
-                })),
-            );
-        return (
-            <div style={{ width: state.width }}>
-                <RetainedViews
-                    activeId={state.active ? "chat" : undefined}
-                    views={[
-                        {
-                            id: "chat",
-                            content: (
-                                <div style={{ display: "flex", height: state.height }}>
-                                    <MessageList
-                                        key={state.generation}
-                                        virtualize
-                                        estimateDependencies={[]}
-                                        estimateRowSize={(index, width) =>
-                                            index === 10 && width < 600 ? 196 : 100
-                                        }
-                                        initialScrollPosition={
-                                            saved ?? {
-                                                type: "row",
-                                                rowKey: ".$10",
-                                                offset: 25,
-                                                viewportInset: 32,
+it.each([false, true])(
+    "publishes the held nonstandard point before a hidden width change (prepend: %s)",
+    async (prepend) => {
+        const view = createRenderer();
+        let update!: (width: number, height: number, active: boolean, cold?: boolean) => void;
+        let latest: MessageListScrollPosition | undefined;
+        let saved: MessageListScrollPosition | undefined;
+        let prependRows!: () => void;
+        function Fixture() {
+            const [state, setState] = useState({
+                width: 820,
+                height: 650,
+                active: true,
+                generation: 0,
+                first: 0,
+            });
+            prependRows = () =>
+                flushSync(() => setState((previous) => ({ ...previous, first: -10 })));
+            update = (width, height, active, cold = false) =>
+                flushSync(() =>
+                    setState((previous) => ({
+                        width,
+                        height,
+                        active,
+                        generation: previous.generation + Number(cold),
+                        first: previous.first,
+                    })),
+                );
+            return (
+                <div style={{ width: state.width }}>
+                    <RetainedViews
+                        activeId={state.active ? "chat" : undefined}
+                        views={[
+                            {
+                                id: "chat",
+                                content: (
+                                    <div style={{ display: "flex", height: state.height }}>
+                                        <MessageList
+                                            key={state.generation}
+                                            virtualize
+                                            estimateDependencies={[state.first]}
+                                            estimateRowSize={(index, width) =>
+                                                index + state.first === 10 && width < 600
+                                                    ? 196
+                                                    : 100
                                             }
-                                        }
-                                        onScrollPositionChange={(position) => {
-                                            latest = position;
-                                        }}
-                                    >
-                                        {Array.from({ length: 50 }, (_, index) => (
-                                            <div
-                                                key={index}
-                                                data-row={index}
-                                                style={{
-                                                    height:
-                                                        index === 10 && state.width < 600
-                                                            ? 196
-                                                            : 100,
-                                                }}
-                                            >
-                                                <span>Row {index} glyph</span>
-                                            </div>
-                                        ))}
-                                    </MessageList>
-                                </div>
-                            ),
-                        },
-                    ]}
-                />
-            </div>
-        );
-    }
-    const read = () => {
-        const viewport = view.container.querySelector<HTMLElement>(
-            ".happy-message-list__viewport",
-        )!;
-        const row = viewport.querySelector<HTMLElement>('[data-row="10"]')!;
-        const range = document.createRange();
-        range.selectNodeContents(row.querySelector("span")!);
-        return [
-            row.getBoundingClientRect().top - viewport.getBoundingClientRect().top,
-            range.getBoundingClientRect().top - viewport.getBoundingClientRect().top,
-        ];
-    };
-    try {
-        view.render(Fixture, { width: 900, height: 1000 });
-        await view.ready();
-        await settle();
-        update(820, 800, true);
-        await settle();
-        const before = read();
-        update(820, 800, false);
-        saved = latest;
-        expect(saved).toEqual({
-            type: "row",
-            rowKey: ".$10",
-            offset: 25,
-            viewportInset: 182,
-            viewportHeight: 800,
-        });
-        update(537, 800, false);
-        await settle();
-        update(537, 800, true);
-        await settle();
-        const warm = read();
-        update(537, 800, true, true);
-        await settle();
-        const cold = read();
-        for (let i = 0; i < before.length; i++) {
-            expect(Math.abs(warm[i]! - before[i]!)).toBeLessThanOrEqual(1);
-            expect(Math.abs(cold[i]! - before[i]!)).toBeLessThanOrEqual(1);
+                                            initialScrollPosition={
+                                                saved ?? {
+                                                    type: "row",
+                                                    rowKey: ".$10",
+                                                    offset: 25,
+                                                    viewportInset: 32,
+                                                }
+                                            }
+                                            onScrollPositionChange={(position) => {
+                                                latest = position;
+                                            }}
+                                        >
+                                            {Array.from(
+                                                { length: 50 - state.first },
+                                                (_, offset) => {
+                                                    const index = offset + state.first;
+                                                    return (
+                                                        <div
+                                                            key={index}
+                                                            data-row={index}
+                                                            style={{
+                                                                height:
+                                                                    index === 10 &&
+                                                                    state.width < 600
+                                                                        ? 196
+                                                                        : 100,
+                                                            }}
+                                                        >
+                                                            <span>Row {index} glyph</span>
+                                                        </div>
+                                                    );
+                                                },
+                                            )}
+                                        </MessageList>
+                                    </div>
+                                ),
+                            },
+                        ]}
+                    />
+                </div>
+            );
         }
-    } finally {
-        view.destroy();
-    }
-});
+        const read = () => {
+            const viewport = view.container.querySelector<HTMLElement>(
+                ".happy-message-list__viewport",
+            )!;
+            const row = viewport.querySelector<HTMLElement>('[data-row="10"]')!;
+            const range = document.createRange();
+            range.selectNodeContents(row.querySelector("span")!);
+            return [
+                row.getBoundingClientRect().top - viewport.getBoundingClientRect().top,
+                range.getBoundingClientRect().top - viewport.getBoundingClientRect().top,
+            ];
+        };
+        try {
+            view.render(Fixture, { width: 900, height: 1000 });
+            await view.ready();
+            await settle();
+            update(820, 800, true);
+            await settle();
+            const before = read();
+            if (prepend) {
+                prependRows();
+                await settle();
+                expect(Math.abs(read()[0]! - before[0]!)).toBeLessThanOrEqual(1);
+            }
+            update(820, 800, false);
+            saved = latest;
+            expect(saved).toEqual({
+                type: "row",
+                rowKey: ".$10",
+                offset: 25,
+                viewportInset: 182,
+                viewportHeight: 800,
+            });
+            update(537, 800, false);
+            await settle();
+            update(537, 800, true);
+            await settle();
+            const warm = read();
+            update(537, 800, true, true);
+            await settle();
+            const cold = read();
+            for (let i = 0; i < before.length; i++) {
+                expect(Math.abs(warm[i]! - before[i]!)).toBeLessThanOrEqual(1);
+                expect(Math.abs(cold[i]! - before[i]!)).toBeLessThanOrEqual(1);
+            }
+        } finally {
+            view.destroy();
+        }
+    },
+);
 
 it("keeps the legacy bottom-relative restore when no viewport height was saved", async () => {
     const view = createRenderer();
@@ -331,6 +353,11 @@ it.each([
     { count: 50, before: 650, after: 620, zoom: 1 },
     { count: 2, before: 360, after: 650, zoom: 1 },
     { count: 2, before: 650, after: 180, zoom: 1 },
+    { count: 2, before: 650, after: 180, zoom: 0.67 },
+    { count: 2, before: 650, after: 180, zoom: 1.5 },
+    { count: 2, before: 650, after: 180, zoom: 1, pending: true },
+    { count: 2, before: 650, after: 180, zoom: 0.67, pending: true },
+    { count: 2, before: 650, after: 180, zoom: 1.5, pending: true },
     { count: 50, before: 650, after: 1223.875, zoom: 0.67 },
     { count: 2, before: 360, after: 650, zoom: 0.67 },
     { count: 2, before: 650, after: 1223.875, zoom: 0.67 },
@@ -366,7 +393,7 @@ it.each([
                     display: "flex",
                     flexDirection: "column",
                     height: state.height,
-                    width: scenario.count === 2 && scenario.after === 1223.875 ? 600 : 537.3125,
+                    width: scenario.count === 2 && scenario.before === 650 ? 600 : 537.3125,
                     zoom: state.zoom,
                 }}
             >

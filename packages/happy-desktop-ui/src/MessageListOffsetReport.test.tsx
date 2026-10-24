@@ -10,6 +10,8 @@ const observer = vi.hoisted(() => ({
     report: undefined as ((offset: number, scrolling: boolean) => void) | undefined,
     indexes: (): readonly number[] => [],
     offset: (): number | null => null,
+    scrolling: (): boolean => false,
+    rangeEnd: (): number | undefined => undefined,
 }));
 vi.mock("@tanstack/react-virtual", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@tanstack/react-virtual")>();
@@ -19,6 +21,8 @@ vi.mock("@tanstack/react-virtual", async (importOriginal) => {
         observer.report = report;
         observer.indexes = () => instance.getVirtualItems().map((item) => item.index);
         observer.offset = () => instance.scrollOffset;
+        observer.scrolling = () => instance.isScrolling;
+        observer.rangeEnd = () => instance.range?.endIndex;
         return () => {
             observer.report = undefined;
         };
@@ -31,6 +35,73 @@ async function frames() {
     await frame();
     await frame();
 }
+
+it.each(["model", "native"] as const)(
+    "mounts the current range during a %s write while the virtualizer is scrolling",
+    async (kind) => {
+        const view = createRenderer();
+        let append!: () => void;
+        function Harness() {
+            const [rows, setRows] = useState(() => Array.from({ length: 50 }, (_, index) => index));
+            append = () => flushSync(() => setRows((previous) => [...previous, 50, 51, 52]));
+            return (
+                <div style={{ display: "flex", height: 360, width: 620 }}>
+                    <MessageList
+                        virtualize
+                        estimateRows={rows}
+                        estimateDependencies={[]}
+                        estimateRowSize={() => 100}
+                        cachedRowSize={() => 100}
+                        onScrollPositionChange={() => undefined}
+                        {...(kind === "native"
+                            ? {
+                                  initialScrollPosition: {
+                                      type: "row" as const,
+                                      rowKey: ".$10",
+                                      offset: 25,
+                                      viewportInset: 32,
+                                  },
+                              }
+                            : {})}
+                    >
+                        {rows.map((row) => (
+                            <div key={row} data-row={row} style={{ height: 100 }}>
+                                Row {row}
+                            </div>
+                        ))}
+                    </MessageList>
+                </div>
+            );
+        }
+        try {
+            view.render(Harness, { width: 1000, height: 1000 });
+            await view.ready();
+            await frames();
+            const viewport = view.container.querySelector<HTMLElement>(
+                ".happy-message-list__viewport",
+            )!;
+            // The actual observer callback places TanStack in its scrolling state.
+            // Its spurious-echo guard must not swallow the following model write.
+            flushSync(() => observer.report!(viewport.scrollTop - 10, true));
+            expect(observer.scrolling()).toBe(true);
+            const before = viewport.scrollTop;
+            if (kind === "model") append();
+            else {
+                viewport.scrollTop += 2000;
+                viewport.dispatchEvent(new Event("scrollend"));
+            }
+            // Inspect the committed range without triggering a lazy range lookup,
+            // and the DOM before yielding another frame or native scroll event.
+            const last = kind === "model" ? 52 : 30;
+            expect(observer.rangeEnd()).toBe(last);
+            expect(viewport.querySelector(`[data-row="${last}"]`)).not.toBeNull();
+            expect(viewport.scrollTop).toBeGreaterThan(before);
+            expect(observer.offset()).toBe(viewport.scrollTop);
+        } finally {
+            view.destroy();
+        }
+    },
+);
 
 it("keeps the restored range when an old idle offset arrives before the native compensation event", async () => {
     const view = createRenderer();

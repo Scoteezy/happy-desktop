@@ -5,6 +5,7 @@ import { agentAuthor, type ComposerSnapshot, type ConversationEntry } from "happ
 import "./styles.css";
 import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
+import { conversationMediaRunRows, type ConversationMediaRun } from "./conversationMediaRuns";
 import { createRenderer } from "./testing";
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -23,7 +24,7 @@ const composer: ComposerSnapshot = {
     submission: { status: "idle" },
     text: "",
 };
-const entries: ConversationEntry[] = [
+const entries = [
     {
         kind: "notice",
         id: "retry",
@@ -34,7 +35,23 @@ const entries: ConversationEntry[] = [
         text: "Temporary provider failure",
         retry: { attempt: 2 },
     },
-];
+] satisfies ConversationEntry[];
+
+it("publishes fresh model inputs for content and local layout changes", () => {
+    // ConversationView uses this outer identity to defer a viewport commit
+    // until the row model has consumed both entry edits and local fold state.
+    const runs = new Map<string, ConversationMediaRun>();
+    const before = conversationMediaRunRows(entries, runs);
+    const afterFold = conversationMediaRunRows(entries, runs);
+    expect(afterFold).not.toBe(before);
+    const replacement: ConversationEntry[] = [
+        { ...entries[0]!, text: "Provider recovered; retrying the request" },
+    ];
+    const afterEdit = conversationMediaRunRows(replacement, runs);
+    expect(afterEdit).not.toBe(afterFold);
+    expect(afterEdit).toHaveLength(before.length);
+    expect(afterEdit[0]).not.toBe(before[0]);
+});
 
 it("keeps a short retry notice visible when the parked viewport shrinks (seed 32749)", async () => {
     const view = createRenderer();
