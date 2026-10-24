@@ -44,7 +44,12 @@ function transcript(id: string): readonly ConversationEntry[] {
 
 const TRANSCRIPTS = new Map(["a", "b", "c"].map((id) => [id, transcript(id)]));
 
-type Shown = { readonly activeId: string | undefined; readonly ids: readonly string[] };
+type Shown = {
+    readonly activeId: string | undefined;
+    readonly ids: readonly string[];
+    readonly entries?: readonly ConversationEntry[];
+    readonly running?: boolean;
+};
 
 function shownStoreCreate(initial: Shown) {
     let snapshot = initial;
@@ -94,7 +99,12 @@ function harness(initial: Shown) {
                                     />
                                 }
                                 conversationId={id}
-                                entries={TRANSCRIPTS.get(id)!}
+                                running={id === "a" && snapshot.running}
+                                entries={
+                                    id === "a" && snapshot.entries
+                                        ? snapshot.entries
+                                        : TRANSCRIPTS.get(id)!
+                                }
                             />
                         ),
                     }))}
@@ -200,6 +210,62 @@ it("returns a view to where its transcript was scrolled, and reports what it hol
     expect(viewport.scrollTop).toBe(position);
     expect(hides.map((hide) => hide.id)).toEqual(["a", "b"]);
 });
+
+it.each(["following", "parked"] as const)(
+    "restores a retained %s reader before paint and keeps its ownership through rapid switches",
+    async (mode) => {
+        const { view, shown, viewportOf } = harness({ activeId: "a", ids: ["a", "b"] });
+        await view.ready();
+        await frame();
+        await frame();
+        const viewport = viewportOf("a")!;
+        if (mode === "parked") {
+            viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -250 }));
+            viewport.scrollTop -= 250;
+            await frame();
+        }
+        const bounds = viewport.getBoundingClientRect();
+        const anchor = [
+            ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+        ].find((row) => {
+            const rect = row.getBoundingClientRect();
+            return rect.top > bounds.top && rect.bottom < bounds.bottom;
+        })!;
+        const top = anchor.getBoundingClientRect().top;
+        let entries = TRANSCRIPTS.get("a")!;
+        for (let cycle = 0; cycle < 8; cycle += 1) {
+            shown.set({ activeId: "b", ids: ["a", "b"], entries });
+            await frame();
+            entries = [...entries, ...transcript(`extra-${String(cycle)}`).slice(0, 3)];
+            shown.set({ activeId: "b", ids: ["a", "b"], entries });
+            await frame();
+            shown.set({ activeId: "a", ids: ["a", "b"], entries });
+            const check = () => {
+                expect(viewportOf("a")).toBe(viewport);
+                if (mode === "following")
+                    expect(
+                        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight,
+                    ).toBeLessThan(1);
+                else {
+                    expect(anchor.isConnected).toBe(true);
+                    expect(anchor.getBoundingClientRect().top).toBe(top);
+                }
+            };
+            check();
+            for (let index = 0; index < 4; index += 1) {
+                await frame();
+                check();
+            }
+            if (mode === "following") {
+                // Status growth holds a logical inset. A native scroll report must
+                // not turn that inset into reader intent before the next switch.
+                shown.set({ activeId: "a", ids: ["a", "b"], entries, running: true });
+                await frame();
+                viewport.dispatchEvent(new Event("scroll"));
+            }
+        }
+    },
+);
 
 it("hides every view while none is active, and unmounts a view its owner lets go", async () => {
     const { view, shown, frameOf } = harness({ activeId: "c", ids: ["a", "b", "c"] });

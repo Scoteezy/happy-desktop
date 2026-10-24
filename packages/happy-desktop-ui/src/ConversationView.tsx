@@ -860,14 +860,22 @@ export function ConversationView(props: ConversationViewProps) {
         conversationId: props.conversationId,
         sentKey,
         liftKey: undefined as string | undefined,
+        followKey: undefined as string | undefined,
     }));
     if (sendLift.conversationId !== props.conversationId)
-        setSendLift({ conversationId: props.conversationId, sentKey, liftKey: undefined });
+        setSendLift({
+            conversationId: props.conversationId,
+            sentKey,
+            liftKey: undefined,
+            followKey: undefined,
+        });
     else if (sendLift.sentKey !== sentKey)
         setSendLift({
             conversationId: props.conversationId,
             sentKey,
             liftKey: sentKey !== undefined && props.running !== true ? sentKey : sendLift.liftKey,
+            followKey:
+                sentKey !== undefined && props.running === true ? sentKey : sendLift.followKey,
         });
     /*
      * The turn ended and the agents it delegated to did not. That is a state of
@@ -1158,9 +1166,10 @@ export function ConversationView(props: ConversationViewProps) {
                                         className="happy-conversation__queued"
                                         data-happy-desktop-ui="conversation-queued"
                                     >
-                                        {queued.map((entry) => (
+                                        {queued.map((entry, index) => (
                                             <ConversationEntryView
                                                 entry={entry}
+                                                grouped={conversationMessageGrouped(queued, index)}
                                                 key={
                                                     entry.kind === "message"
                                                         ? entry.message.id
@@ -1181,6 +1190,8 @@ export function ConversationView(props: ConversationViewProps) {
                            will start rather than having it held below. */
                         footerFollowed={sendPending}
                         liftKey={sendLift.liftKey}
+                        followKey={sendLift.followKey}
+                        dockConsumesSpace={dockedQuestions.length > 0}
                         {...(props.leadingHeader
                             ? {
                                   header: props.leadingHeader.content,

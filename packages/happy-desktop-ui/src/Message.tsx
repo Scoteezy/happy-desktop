@@ -825,6 +825,10 @@ export type MessageListProps = {
      * A key the rows do not carry yet names the footer, where a queued send waits.
      */
     liftKey?: string;
+    /** A send queued during a run: carry it into view from near the bottom, without reserving reply space. */
+    followKey?: string;
+    /** A docked question takes existing blank reply space before moving visible rows. */
+    dockConsumesSpace?: boolean;
     /**
      * Told the first and last of the caller's rows on screen, partly or wholly,
      * each time that range or the number of rows changes. Read from the range
@@ -934,6 +938,8 @@ export interface MessageListLegacyScrollPosition {
 }
 /** A reader returning this close to the bottom (px) can resume following. */
 const FOLLOW_BOTTOM_THRESHOLD = 8;
+/** Sending near the end carries the queued instruction into view. */
+const SEND_FOLLOW_THRESHOLD = 80;
 /** A reader this close to the top (px) is looking at the oldest loaded row. */
 const START_REACHED_THRESHOLD = 64;
 /**
@@ -1071,6 +1077,8 @@ export function MessageList(props: MessageListProps) {
             : 0,
     );
     const viewportGeometry = useRef({ height: 0, width: 0 });
+    const viewportScale = useRef(0);
+    const zoomPlacementPending = useRef(false);
     const viewportGeometryCommitCurrent = useRef((_width: number, _height: number) => {});
     const pendingViewportGeometry = useRef<{ width: number; height: number } | undefined>(
         undefined,
@@ -1084,6 +1092,7 @@ export function MessageList(props: MessageListProps) {
     const geometryFollowInset = useRef(0);
     const footerFollowed = useRef(false);
     const liftSeen = useRef(props.liftKey);
+    const followSeen = useRef(props.followKey);
     footerFollowed.current = props.footerFollowed === true;
     const pendingFollowerTop = useRef<number | undefined>(undefined);
     const readerAnchor = useRef<MessageListVirtualAnchor | undefined>(undefined);
@@ -1345,6 +1354,25 @@ export function MessageList(props: MessageListProps) {
      * the first row whose size or position moved.
      */
     function rowSizeModelLayout(rowWidth: number, from: number, focus: MessageListLayoutFocus) {
+        if (props.followKey !== followSeen.current) {
+            followSeen.current = props.followKey;
+            const bottom =
+                Math.max(estimatedContentHeight(), geometryExtent.current) +
+                geometrySparseInset.current -
+                viewportGeometry.current.height -
+                geometryFollowInset.current;
+            if (
+                props.followKey !== undefined &&
+                bottom - readerScrollTop.current <= SEND_FOLLOW_THRESHOLD
+            ) {
+                following.current = true;
+                escapedFromFollow.current = false;
+                pendingAnchor.current = undefined;
+                readerAnchor.current = undefined;
+                geometryFollowInset.current = 0;
+                focus = { type: "end" };
+            }
+        }
         const model = rowSizeModel;
         const { keys, sizes, starts, exact } = model;
         const count = items.length;
@@ -2036,7 +2064,35 @@ export function MessageList(props: MessageListProps) {
         }
         pendingViewportGeometry.current = undefined;
         const previous = viewportGeometry.current;
-        if (previous.width === nextWidth && previous.height === nextHeight) return;
+        const element = list.current;
+        const scale =
+            element && nextWidth > 0
+                ? (element.getBoundingClientRect().width / nextWidth) *
+                  element.ownerDocument.defaultView!.devicePixelRatio
+                : viewportScale.current;
+        const zoomChanged =
+            viewportScale.current > 0 && Math.abs(scale / viewportScale.current - 1) > 0.01;
+        if (zoomChanged) {
+            // Held blank space has a physical size. Counter a zoom instead of
+            // magnifying it until the transcript has left the visible viewport.
+            const natural = estimatedContentHeight();
+            const ratio = viewportScale.current / scale;
+            const blank = Math.min(
+                Math.max(0, geometryExtent.current - natural) * ratio,
+                nextHeight * (1 - SEND_LIFT_TOP),
+            );
+            geometryExtent.current = blank > 0 ? natural + blank : 0;
+            if (virtualContent.current)
+                virtualContent.current.style.minHeight =
+                    blank > 0 ? `${String(geometryExtent.current)}px` : "";
+            geometryFollowInset.current = Math.min(
+                geometryFollowInset.current * ratio,
+                nextHeight * (1 - SEND_LIFT_TOP),
+            );
+            zoomPlacementPending.current = following.current;
+        }
+        viewportScale.current = scale;
+        if (previous.width === nextWidth && previous.height === nextHeight && !zoomChanged) return;
         const nextRowWidth = messageListRowWidth(nextWidth, estimateRowWidth);
         if (rowSizeModel.width === undefined) {
             /* The first report: there is no earlier geometry to keep a reader
@@ -2083,16 +2139,30 @@ export function MessageList(props: MessageListProps) {
         }
         const previousHeight = previous.height || nextHeight;
         const widthChanged = nextRowWidth !== rowSizeModel.width;
-        const element = list.current;
         if (
             element &&
             virtualContent.current &&
+            !zoomChanged &&
             nextHeight !== previousHeight &&
             /* Rows that fit under a resting header stay with it, as it
                re-centres in the new scrollport. */
             !(headerLeads && estimatedContentHeight() <= previousHeight)
         ) {
             const naturalHeight = estimatedContentHeight();
+            if (
+                props.dockConsumesSpace &&
+                nextHeight < previousHeight &&
+                geometryExtent.current > naturalHeight
+            ) {
+                // The dock occupies blank space already under the transcript
+                // before it carries any visible rows upward. Growing it back
+                // below restores that same space when the dock clears.
+                geometryExtent.current -= Math.min(
+                    previousHeight - nextHeight,
+                    geometryExtent.current - naturalHeight,
+                );
+                virtualContent.current.style.minHeight = `${String(geometryExtent.current)}px`;
+            }
             const inset =
                 geometrySparseInset.current ||
                 Math.max(0, previousHeight - Math.max(naturalHeight, geometryExtent.current));
@@ -2410,6 +2480,20 @@ export function MessageList(props: MessageListProps) {
             if (rowSizeModel.version !== version) return;
         }
         geometryExtentCommit();
+        if (zoomPlacementPending.current) {
+            zoomPlacementPending.current = false;
+            geometryFollowInset.current = Math.min(
+                geometryFollowInset.current,
+                footerIndex === undefined ? 0 : (rowSizeModel.sizes[footerIndex] ?? 0),
+            );
+            pendingFollowerTop.current = Math.max(
+                0,
+                Math.max(estimatedContentHeight(), geometryExtent.current) +
+                    geometrySparseInset.current -
+                    viewportGeometry.current.height -
+                    geometryFollowInset.current,
+            );
+        }
         const lift = props.liftKey !== liftSeen.current ? props.liftKey : undefined;
         liftSeen.current = props.liftKey;
         if (!following.current) pendingFollowerTop.current = undefined;
@@ -2650,7 +2734,10 @@ export function MessageList(props: MessageListProps) {
             }
             const bottomOffset = Math.max(
                 0,
-                element.scrollHeight - element.scrollTop - viewportHeight,
+                element.scrollHeight -
+                    element.scrollTop -
+                    viewportHeight -
+                    geometryFollowInset.current,
             );
             const scrollDelta = element.scrollTop - previousScrollTop;
             const contentHeightChanged =
