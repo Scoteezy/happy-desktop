@@ -1788,23 +1788,10 @@ export function MessageList(props: MessageListProps) {
            send is already there. */
         const inset = headerLeads ? headerRestGap() : geometrySparseInset.current;
         if (headerLeads) headerRestHold(inset);
-        const height = viewportGeometry.current.height;
-        /* What follows the send's top (the send and the live footer) may not
-           fit below the lift in a short viewport. Then the reader is carried
-           as far toward the end as still shows where the send starts. */
-        const end = Math.max(estimatedContentHeight(), geometryExtent.current) + inset;
-        const rowTop = inset + start;
-        const top = Math.min(rowTop, Math.max(rowTop - sendLiftLine(height), end - height));
+        const top = inset + start - sendLiftLine(viewportGeometry.current.height);
         if (top <= element.scrollTop) return;
-        geometryExtentRequire(top, height);
-        /* Following holds that place until new content carries it on. */
-        geometryFollowInset.current = Math.max(
-            0,
-            Math.max(estimatedContentHeight(), geometryExtent.current) +
-                geometrySparseInset.current -
-                height -
-                top,
-        );
+        geometryExtentRequire(top, viewportGeometry.current.height);
+        geometryFollowInset.current = 0;
         scrollTopWrite(element, top);
     }
     function geometryExtentRequire(top: number, height: number) {
@@ -2014,10 +2001,9 @@ export function MessageList(props: MessageListProps) {
            space, which takes the floor gap away, so it counts only the held
            inset, as every scrolled transcript does. */
         const floored = leadingGap(viewportHeight) + point;
-        return {
-            index,
-            scrollTop: floored <= 0 ? 0 : geometrySparseInset.current + point,
-        };
+        return floored <= 0
+            ? { index, scrollTop: 0, floored: true }
+            : { index, scrollTop: geometrySparseInset.current + point, floored: false };
     }
     function modelAnchorRestore(anchor: MessageListVirtualAnchor, viewportHeight: number) {
         const element = list.current;
@@ -2033,7 +2019,9 @@ export function MessageList(props: MessageListProps) {
             readerAnchor.current = undefined;
             return false;
         }
-        geometryExtentRequire(place.scrollTop, viewportHeight);
+        // A floored place is where the floor already puts the rows; held
+        // space would take that floor away.
+        if (!place.floored) geometryExtentRequire(place.scrollTop, viewportHeight);
         // Pending restoration may still use the previous viewport. Persist its
         // point in the current basis before the offset report can render again.
         readerAnchor.current = {
@@ -2688,12 +2676,14 @@ export function MessageList(props: MessageListProps) {
                 geometryExtentRequire(top, viewportGeometry.current.height);
                 scrollTopWrite(element, top);
             }
-            if (lift !== undefined) sendLift(element, lift);
             if (followSentHold.current !== undefined && followSentHold.current !== items.length) {
                 followSentHold.current = undefined;
                 geometryFollowInset.current = 0;
             }
-            const followed = followSentPending.current;
+            if (lift !== undefined) sendLift(element, lift);
+            /* A lifted send is bounded like a followed one: one too tall for
+               the space below the lift shows its end, held until a row arrives. */
+            const followed = followSentPending.current ?? lift;
             followSentPending.current = undefined;
             if (followed !== undefined) sentStartKeep(element, followed);
             scrollBottomFollow(element);

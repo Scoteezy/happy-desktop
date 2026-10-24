@@ -115,7 +115,7 @@ async function pageZoomSet(panel: HTMLElement, baseScale: number, zoom: number) 
 }
 function renderConversation(count: number, withShell = false, withTitle = false) {
     const view = createRenderer();
-    let send!: () => void;
+    let send!: (text?: string) => void;
     let resize!: (height: number) => void;
     let question!: (answered: boolean) => void;
     let stream!: (lines: number) => void;
@@ -221,14 +221,14 @@ function renderConversation(count: number, withShell = false, withTitle = false)
                 );
                 setEntries((previous) => [...previous, { ...entry, delivery: "pending_steering" }]);
             });
-        send = () =>
+        send = (text) =>
             flushSync(() => {
                 sent += 1;
                 setEntries((previous) => [
                     ...previous,
                     message(
                         `sent-message-${String(sent)}`,
-                        `The newly sent message ${String(sent)}`,
+                        text ?? `The newly sent message ${String(sent)}`,
                         true,
                         true,
                     ),
@@ -311,7 +311,7 @@ function renderConversation(count: number, withShell = false, withTitle = false)
     view.render(Harness, { height: 900, width: 1000 });
     return {
         view,
-        send: () => send(),
+        send: (text?: string) => send(text),
         resize: (height: number) => resize(height),
         question: (answered: boolean) => question(answered),
         stream: (lines: number) => stream(lines),
@@ -766,6 +766,38 @@ it.each([0, 40])(
         }
     },
 );
+
+it("shows the end of a send taller than the viewport, then follows its reply", async () => {
+    const { view, send, start, stream } = renderConversation(10);
+    await view.ready();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    send(
+        Array.from(
+            { length: 40 },
+            (_, index) => `Long instruction line ${String(index)} that the reader wrote.`,
+        ).join("\n\n"),
+    );
+    await frames();
+    const bounds = viewport.getBoundingClientRect();
+    const sent = [...viewport.querySelectorAll<HTMLElement>(".happy-message")]
+        .find((element) => element.textContent?.includes("Long instruction line 39"))!
+        .getBoundingClientRect();
+    expect(sent.height).toBeGreaterThan(bounds.height);
+    // The last thing written is in view; nothing holds its start at the lift.
+    expect(sent.bottom).toBeLessThanOrEqual(bounds.bottom + 1);
+    expect(sent.bottom).toBeGreaterThan(bounds.top);
+    start();
+    stream(2);
+    await frames();
+    stream(3);
+    await frames();
+    const reply = [...viewport.querySelectorAll<HTMLElement>(".happy-message")]
+        .find((element) => element.textContent?.includes("Streaming paragraph 2"))!
+        .getBoundingClientRect();
+    expect(reply.bottom, "the streaming reply is followed").toBeLessThanOrEqual(bounds.bottom + 1);
+    expect(reply.bottom).toBeGreaterThan(bounds.top);
+});
 
 it("leaves a parked reader in place through a send and viewport height changes", async () => {
     const { view, send, resize } = renderConversation(60);

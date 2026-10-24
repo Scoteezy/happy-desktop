@@ -219,3 +219,56 @@ it.each(["cached", "prepared"])(
         }
     },
 );
+
+it("keeps a restored short transcript on its floor when the footer grows", async () => {
+    const view = createRenderer();
+    let footerSet!: (height: number) => void;
+    function Fixture() {
+        const [footer, setFooter] = useState(34);
+        footerSet = (height) => flushSync(() => setFooter(height));
+        return (
+            <div style={{ display: "flex", height: 360 }}>
+                <MessageList
+                    virtualize
+                    estimateDependencies={[]}
+                    estimateRowSize={() => 70}
+                    footer={<div style={{ height: footer }} />}
+                    footerHeight={footer}
+                    initialScrollPosition={{
+                        type: "row",
+                        rowKey: ".$1",
+                        offset: 70,
+                        viewportInset: 42,
+                    }}
+                >
+                    {[0, 1].map((index) => (
+                        <div key={index} data-row={index} style={{ height: 70 }}>
+                            Row {index}
+                        </div>
+                    ))}
+                </MessageList>
+            </div>
+        );
+    }
+    try {
+        view.render(Fixture, { width: 620, height: 360 });
+        await view.ready();
+        await nextFrame();
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const row = viewport.querySelector<HTMLElement>('[data-row="1"]')!;
+        const top = row.getBoundingClientRect().top;
+        footerSet(35);
+        await nextFrame();
+        await nextFrame();
+        // The floor rises by the footer's extra pixel; held space never fills
+        // the viewport and lifts the rows off it.
+        expect(Math.abs(row.getBoundingClientRect().top - (top - 1))).toBeLessThanOrEqual(1);
+        expect(
+            viewport.querySelector<HTMLElement>(".happy-message-list__virtual")!.style.minHeight,
+        ).toBe("");
+    } finally {
+        view.destroy();
+    }
+});
