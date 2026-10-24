@@ -243,7 +243,26 @@ it.skipIf(server.browser !== "chromium").each([0, 2])(
                 ).toBeLessThanOrEqual(1);
             }
             expect(visible).toBeGreaterThan(0);
-            const summaryAnchorTop = held.getBoundingClientRect().top;
+            // With two initial replies, the 32px reading point falls in the
+            // notice. The summary enters below it and above the delegation.
+            const summaryAnchor =
+                historyCount === 0
+                    ? held
+                    : rows.find(
+                          (row) => Number(row.dataset.index) === Number(held.dataset.index) - 1,
+                      )!;
+            expect(summaryAnchor).toBeDefined();
+            const summaryAnchorTop = summaryAnchor.getBoundingClientRect().top;
+            const aboveInsertion = rows
+                .filter((row) => {
+                    const rect = row.getBoundingClientRect();
+                    return (
+                        Number(row.dataset.index) < Number(held.dataset.index) &&
+                        rect.bottom > bounds.top &&
+                        rect.top < bounds.bottom
+                    );
+                })
+                .map((row) => ({ row, top: row.getBoundingClientRect().top }));
             elements = [
                 ...elements,
                 {
@@ -259,10 +278,15 @@ it.skipIf(server.browser !== "chromium").each([0, 2])(
             ];
             publish();
             await frames();
+            expect(summaryAnchor.isConnected).toBe(true);
             expect(
-                Math.abs(held.getBoundingClientRect().top - summaryAnchorTop),
-                "parked delegation moved on summary after prepend",
+                Math.abs(summaryAnchor.getBoundingClientRect().top - summaryAnchorTop),
+                "parked reading point moved on summary after prepend",
             ).toBeLessThanOrEqual(1);
+            for (const { row, top } of aboveInsertion) {
+                expect(row.isConnected).toBe(true);
+                expect(Math.abs(row.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
+            }
         } finally {
             view.destroy();
             release();

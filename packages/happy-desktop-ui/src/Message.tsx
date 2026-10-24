@@ -1858,7 +1858,10 @@ export function MessageList(props: MessageListProps) {
     ): MessageListVirtualAnchor | undefined {
         if (following.current || items.length === 0) return undefined;
         const viewportInset = Math.min(VIRTUAL_ANCHOR_INSET, viewportHeight);
-        const point = scrollTop + Math.max(0, viewportHeight - viewportInset);
+        // Model starts exclude the held leading gap; native scroll offsets
+        // include it. Capture and restore the same physical row point.
+        const point =
+            scrollTop + Math.max(0, viewportHeight - viewportInset) - geometrySparseInset.current;
         let item = modeledItemAtOffset(point);
         let heldPoint = point;
         if (!item || item.key === MESSAGE_LIST_FOOTER_KEY) {
@@ -1882,7 +1885,7 @@ export function MessageList(props: MessageListProps) {
             itemOffset: Math.max(0, Math.min(heldPoint - item.start, item.size)),
             key: item.key,
             type: "item",
-            viewportInset: viewportHeight - (heldPoint - scrollTop),
+            viewportInset: viewportHeight - (heldPoint + geometrySparseInset.current - scrollTop),
         };
     }
     const modelAnchorCaptureCurrent = useRef(modelAnchorCapture);
@@ -1946,6 +1949,7 @@ export function MessageList(props: MessageListProps) {
         return {
             index,
             scrollTop:
+                geometrySparseInset.current +
                 item.start +
                 Math.min(anchor.itemOffset, item.size) -
                 Math.max(0, viewportHeight - anchor.viewportInset),
