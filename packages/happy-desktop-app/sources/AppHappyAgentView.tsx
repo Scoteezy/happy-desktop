@@ -7967,6 +7967,10 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                                                             .conversationId
                                                                       : props.chatId,
                                                               content: mainConversationBody,
+                                                              ready:
+                                                                  conversation.type !== "ready" ||
+                                                                  conversation.value.standIn !==
+                                                                      true,
                                                           }
                                                         : undefined
                                                 }
@@ -8886,8 +8890,11 @@ function HappyAgentConversationBody(props: {
  * it streams; so does the open one while a file or tool covers it.
  */
 function HappyAgentConversationViews(props: {
-    /** The conversation the address names, drawn by the surface with everything it knows. */
-    open: { readonly id: string; readonly content: ReactNode } | undefined;
+    /**
+     * The conversation the address names, drawn by the surface with everything
+     * it knows. Not `ready` while it stands in for one being read back.
+     */
+    open: { readonly id: string; readonly content: ReactNode; readonly ready: boolean } | undefined;
     /** Whether the main pane shows the open conversation rather than a file or tool over it. */
     shown: boolean;
     workspace: HappyAgentWorkspaceStore;

@@ -1,4 +1,4 @@
-import { Activity, memo, useCallback, type ReactNode } from "react";
+import { Activity, memo, useCallback, useState, useSyncExternalStore, type ReactNode } from "react";
 import { WindowOverlayRetainedContext } from "./WindowOverlay";
 
 export type RetainedView = {
@@ -9,6 +9,12 @@ export type RetainedView = {
      * again. A view first mounted out of sight is drawn from it once, at idle.
      */
     readonly content?: ReactNode;
+    /**
+     * Whether its content is current enough to be shown. Switched to while
+     * false, the view on screen stays until it is, or until a short wait runs
+     * out. Defaults to true.
+     */
+    readonly ready?: boolean;
 };
 
 export type RetainedViewsProps = {
@@ -53,12 +59,36 @@ export function RetainedViews(props: RetainedViewsProps) {
     const views = [...props.views].sort((left, right) =>
         left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
     );
+    /*
+     * A view switched to before its content is current would be drawn, and its
+     * reader placed, against what it held when it was left, then move to what
+     * arrived since. The view on screen stays, frozen and inert, until the
+     * next one is ready, so the next one appears in the commit that draws it
+     * current: placed where it belongs in its first frame.
+     */
+    const [shown, setShown] = useState(props.activeId);
+    const activeReady = props.views.find((view) => view.id === props.activeId)?.ready !== false;
+    /* One wait for each view switched to while it is not ready. */
+    const waitFor = activeReady ? undefined : props.activeId;
+    const [wait, setWait] = useState(() => ({ id: waitFor, wait: NO_WAIT }));
+    if (wait.id !== waitFor)
+        setWait({ id: waitFor, wait: waitFor === undefined ? NO_WAIT : retainedViewWait() });
+    const waited = useSyncExternalStore(wait.wait.subscribe, wait.wait.get, wait.wait.get);
+    const holding =
+        !activeReady &&
+        !waited &&
+        shown !== undefined &&
+        shown !== props.activeId &&
+        props.views.some((view) => view.id === shown);
+    if (!holding && shown !== props.activeId) setShown(props.activeId);
+    const displayedId = holding ? shown : props.activeId;
     return (
         <>
             {views.map((view) => (
                 <RetainedViewEntry
-                    active={view.id === props.activeId}
+                    active={view.id === displayedId}
                     content={view.content}
+                    held={holding && view.id === displayedId}
                     id={view.id}
                     key={view.id}
                     onHide={props.onViewHide}
@@ -68,9 +98,33 @@ export function RetainedViews(props: RetainedViewsProps) {
     );
 }
 
+/** The longest a switch waits for a view that is not ready before showing it as it is (ms). */
+const RETAINED_VIEW_READY_WAIT_MS = 250;
+
+type RetainedViewWait = { get: () => boolean; subscribe: (notify: () => void) => () => void };
+
+const NO_WAIT: RetainedViewWait = { get: () => false, subscribe: () => () => undefined };
+
+/** Runs out once, after the longest wait, while the view holding for it is mounted. */
+function retainedViewWait(): RetainedViewWait {
+    let waited = false;
+    return {
+        get: () => waited,
+        subscribe(notify) {
+            const timer = setTimeout(() => {
+                waited = true;
+                notify();
+            }, RETAINED_VIEW_READY_WAIT_MS);
+            return () => clearTimeout(timer);
+        },
+    };
+}
+
 type RetainedViewEntryProps = {
     active: boolean;
     content: ReactNode;
+    /** On screen only while the view switched to is made ready: frozen and inert. */
+    held: boolean;
     id: string;
     onHide: RetainedViewsProps["onViewHide"];
 };
@@ -87,7 +141,8 @@ const RetainedViewEntry = memo(
             <Activity mode={props.active ? "visible" : "hidden"}>
                 <RetainedViewFrame
                     content={props.content}
-                    hidden={!props.active}
+                    hidden={!props.active || props.held}
+                    inert={props.held}
                     id={props.id}
                     onHide={props.onHide}
                 />
@@ -96,15 +151,18 @@ const RetainedViewEntry = memo(
     },
     (previous, next) =>
         previous.active === next.active &&
+        previous.held === next.held &&
         previous.id === next.id &&
         previous.onHide === next.onHide &&
-        (!next.active || previous.content === next.content),
+        (!next.active || next.held || previous.content === next.content),
 );
 
 type RetainedViewFrameProps = {
     content: ReactNode;
     /** Freezes the frame as it was last drawn; see the comparison below. */
     hidden: boolean;
+    /** Takes no input while it stays on screen for the view replacing it. */
+    inert: boolean;
     id: string;
     onHide: RetainedViewsProps["onViewHide"];
 };
@@ -118,6 +176,10 @@ type RetainedViewFrameProps = {
 const RetainedViewFrame = memo(
     function RetainedViewFrame(props: RetainedViewFrameProps) {
         const { id, onHide } = props;
+        /* A frozen frame still renders to change `inert`; it draws what it
+           last drew, whatever it is handed now. */
+        const [drawn, setDrawn] = useState(props.content);
+        if (!props.hidden && drawn !== props.content) setDrawn(props.content);
         // React detaches a ref when its Activity hides, before the view is taken
         // off screen, so the cleanup is the moment the view leaves and is still
         // there to be counted. Kept stable so an ordinary render never re-measures.
@@ -141,17 +203,19 @@ const RetainedViewFrame = memo(
                 className="happy-retained-views__view"
                 data-happy-desktop-ui="retained-view"
                 data-view-id={id}
+                inert={props.inert}
                 ref={frame}
             >
                 <WindowOverlayRetainedContext.Provider value>
-                    {props.content}
+                    {props.hidden ? drawn : props.content}
                 </WindowOverlayRetainedContext.Provider>
             </div>
         );
     },
     (previous, next) =>
-        next.hidden ||
+        (next.hidden && previous.inert === next.inert) ||
         (previous.hidden === next.hidden &&
+            previous.inert === next.inert &&
             previous.content === next.content &&
             previous.id === next.id &&
             previous.onHide === next.onHide),

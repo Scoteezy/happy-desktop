@@ -314,6 +314,13 @@ export interface HappyAgentConversationSnapshot {
      * Absent opens at the newest message.
      */
     readonly scrollPosition?: HappyAgentScrollPosition;
+    /**
+     * Published as the conversation was left, standing in until it is read
+     * back. Whatever it received while out of sight is not in it yet, so a
+     * view kept for it waits for the read rather than showing it and then
+     * moving to it.
+     */
+    readonly standIn?: true;
 }
 
 /**
@@ -3066,8 +3073,8 @@ export function happyAgentWorkspaceStoreCreate(
             const pendingMenus =
                 conversationDelegated || models.type !== "ready" ? undefined : models.menus;
             if (chat?.ready || reopened?.conversationId !== openId) reopened = undefined;
-            const next = reopened
-                ? { ...reopened, composer: draft }
+            const next: HappyAgentConversationSnapshot = reopened
+                ? { ...reopened, composer: draft, standIn: true }
                 : chat
                   ? conversationProject(chat, draft, pendingMenus)
                   : conversationAcquiring(

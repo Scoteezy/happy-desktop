@@ -19,6 +19,12 @@ A good chat with an AI follows a few principles:
   the composer, with the earlier conversation still visible above it. No
   pin-to-top, no reserved blank area, no animation. Sending while scrolled up
   into history keeps the reader where they are.
+- **Returning to a chat is invisible.** A chat opened again is where it was
+  left: following the bottom if the reader was following it, holding the same
+  row if they had scrolled up, with whatever arrived meanwhile already in
+  place. It appears at that point in its first frame and does not move after.
+  A chat out of sight does no work to stay placed; it is placed once, in the
+  commit that shows it, and not shown until its content is current.
 - **Space that exists stays put.** If blank space is ever needed to keep content
   still, it keeps its size while any part of it is visible and is removed in one
   step only once it is fully offscreen. It never shrinks or animates.
@@ -41,6 +47,10 @@ Then make every geometry change preserve what the reader sees: composer
 resizing, window and pane resizing, browser zoom, late-loading images and code
 blocks, expanding tool rows, docked questions, and model-switch rows.
 
+Then make switching between chats invisible: a kept chat waits, out of sight,
+until it is read back, and is shown in the same commit that draws it current,
+so the reader never sees it as it was left and then watches it catch up.
+
 Then make ordering and alignment correct: atomic acceptance of sent messages,
 stable ordering, a clear marker for messages sent mid-turn, and one shared text
 column for every kind of row.
@@ -56,6 +66,9 @@ column for every kind of row.
   gesture.
 - After any send, the sent message is fully visible above the composer with no
   large blank area.
+- Switching away from a chat that keeps streaming and back to it shows it, in
+  its first painted frame, at the bottom if the reader was following and at
+  the same row if they were not, and no visible row moves in the frames after.
 - Question cards and every other row align with assistant prose within half a
   pixel at every width.
 - Scrolling and streaming a conversation of several hundred turns keep frame
