@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from "react";
+import { userInputRuleText, type HappyAgentUserInputPromptVariant } from "./userInputRule";
 import type { HappyAgentUserInputRequest, UserError } from "happy-desktop-state";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
@@ -14,7 +15,7 @@ export type HappyAgentUserInputAnswerMap = Record<string, string[]>;
  * `dock` sits directly above the conversation's input, which is also where any
  * question without options is answered.
  */
-export type HappyAgentUserInputPromptVariant = "card" | "dock" | "flat";
+export type { HappyAgentUserInputPromptVariant };
 
 export type HappyAgentUserInputPromptProps = {
     request: HappyAgentUserInputRequest;
@@ -47,30 +48,6 @@ export type HappyAgentUserInputPromptProps = {
     "data-testid"?: string;
     style?: CSSProperties;
 };
-
-/**
- * How many of a question's options may be taken, said beside its name so the
- * rule is read before the options rather than discovered by clicking one. An
- * optional question says so too: nothing under it is holding the submit back.
- */
-function selectionRule(
-    question: {
-        multiSelect: boolean;
-        required: boolean;
-        options: readonly unknown[];
-    },
-    variant: HappyAgentUserInputPromptVariant,
-): string {
-    const count =
-        question.options.length === 0
-            ? variant === "card"
-                ? "Open chat to reply"
-                : "Reply in the message box"
-            : question.multiSelect
-              ? "Choose any"
-              : "Choose one";
-    return question.required ? count : `${count} · optional`;
-}
 
 function toggleValue(current: readonly string[], value: string, multiSelect: boolean): string[] {
     if (multiSelect)
@@ -167,13 +144,11 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
                                         className="happy-agent-input__rule"
                                         data-happy-desktop-ui="happy-agent-user-input-rule"
                                     >
-                                        {resolved
-                                            ? selected.length > 0
-                                                ? "Answered"
-                                                : question.required
-                                                  ? "No answer"
-                                                  : "Skipped"
-                                            : selectionRule(question, props.variant ?? "card")}
+                                        {userInputRuleText(
+                                            question,
+                                            props.variant ?? "card",
+                                            resolved ? selected : undefined,
+                                        )}
                                     </span>
                                 </span>
                                 <span className="happy-agent-input__prompt">

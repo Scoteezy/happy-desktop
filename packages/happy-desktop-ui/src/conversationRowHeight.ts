@@ -73,6 +73,7 @@ import {
     type MediaFlowImage,
 } from "./mediaLayout";
 import { mediaTreeHeight } from "./MediaTree";
+import { userInputRuleText } from "./userInputRule";
 import { conversationMediaRunSignature, type ConversationMediaRun } from "./conversationMediaRuns";
 import {
     conversationMediaVisible,
@@ -413,6 +414,9 @@ const USER_INPUT_CONTEXT_GAP = 12;
 const USER_INPUT_OPTION_HORIZONTAL_CHROME = 30;
 /** A 20px label line, followed by 4px before the question's prose. */
 const USER_INPUT_QUESTION_LEGEND_CHROME = 24;
+/** `.happy-agent-input__eyebrow`: name and rule 8px apart, wrapping 8px below. */
+const USER_INPUT_EYEBROW_GAP = 8;
+const USER_INPUT_EYEBROW_LINE = 20;
 const USER_INPUT_QUESTION_GAP = 20;
 const USER_INPUT_CONTENT_INSET = 8;
 const USER_INPUT_OPTION_GAP = 4;
@@ -783,6 +787,32 @@ function groupedTrailingMetaWidth(
     return width;
 }
 
+/**
+ * What a question's name and rule add beyond their one shared line: a column
+ * too narrow for both wraps the rule below the name, and a name or rule wider
+ * than the column wraps itself.
+ */
+function userInputEyebrowWrap(
+    header: string,
+    rule: string,
+    measure: number,
+    cache?: MessageTextLayoutCache,
+): number {
+    const headerWidth = uiTextNaturalWidth(header, 13, cache, 500);
+    const ruleWidth = uiTextNaturalWidth(rule, 13, cache);
+    if (headerWidth + USER_INPUT_EYEBROW_GAP + ruleWidth <= measure) return 0;
+    return (
+        (headerWidth <= measure
+            ? USER_INPUT_EYEBROW_LINE
+            : uiTextHeight(header, 13, 20, measure, cache)) +
+        USER_INPUT_EYEBROW_GAP +
+        (ruleWidth <= measure
+            ? USER_INPUT_EYEBROW_LINE
+            : uiTextHeight(rule, 13, 20, measure, cache)) -
+        USER_INPUT_EYEBROW_LINE
+    );
+}
+
 /** Height of the structured question form or its compact answered history. */
 function userInputRequestHeight(
     request: Extract<ConversationRequest, { kind: "userInput" }>,
@@ -807,6 +837,18 @@ function userInputRequestHeight(
         if (questionIndex > 0) total += USER_INPUT_QUESTION_GAP;
         total +=
             USER_INPUT_QUESTION_LEGEND_CHROME +
+            userInputEyebrowWrap(
+                question.header,
+                userInputRuleText(
+                    question,
+                    "card",
+                    request.status === "answered"
+                        ? (request.answers[question.id] ?? [])
+                        : undefined,
+                ),
+                promptMeasure,
+                cache,
+            ) +
             uiTextHeight(question.question, 16, 24, promptMeasure, cache);
         if (request.status === "answered") {
             total += USER_INPUT_CONTENT_INSET;
