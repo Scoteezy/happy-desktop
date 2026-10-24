@@ -1101,6 +1101,36 @@
     min-height: 0;
 }
 
+/* The way back to the newest row, centred over the transcript's lower edge.
+   It floats over the rows rather than taking space from them, so showing it
+   moves nothing; it is the composer's send control turned round, in the quiet
+   secondary face. */
+.happy-message-list__jump {
+    display: flex;
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    z-index: 2;
+    transform: translateX(-50%);
+}
+
+.happy-message-list__jump[hidden] {
+    display: none;
+}
+
+.happy-message-list__jump .happy-button[data-icon-only][data-size="small"] {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px var(--shadow-color);
+}
+
+.happy-message-list__jump .happy-button__icon .happy-icon {
+    width: 16px !important;
+    height: 16px !important;
+    font-size: 16px !important;
+}
+
 .happy-message-list__viewport {
     display: flex;
     flex-direction: column;

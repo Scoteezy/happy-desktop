@@ -177,6 +177,23 @@ it("keeps a turn the reader watched finish open until it settles off screen", ()
     expect(rows(chat.store)).toContain("live:text");
 });
 
+it("waits for every view to report before folding, whichever reports first", () => {
+    using chat = storeOpen();
+    const main = { live: () => true };
+    const panel = { live: () => true };
+    chat.change(turn("live", 2_000));
+    chat.store.turnTracesSeen(main, new Set());
+    chat.store.turnTracesSeen(panel, new Set());
+    chat.change([...turn("live", 2_000), end("live", 2_100)]);
+    // The view that scrolled it away reports first; the one showing it has not yet.
+    chat.store.turnTracesSeen(panel, new Set());
+    expect(chat.store.get().expandedTurnIds).toEqual(new Set(["live"]));
+    chat.store.turnTracesSeen(main, new Set(["live"]));
+    expect(chat.store.get().expandedTurnIds).toEqual(new Set(["live"]));
+    chat.store.turnTracesSeen(main, new Set());
+    expect(chat.store.get().expandedTurnIds.size).toBe(0);
+});
+
 it("lets a view that is gone hold nothing open", () => {
     using chat = storeOpen();
     chat.change(turn("live", 2_000));

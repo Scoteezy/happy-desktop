@@ -10,6 +10,7 @@ import type {
     ConversationMediaItem,
     ConversationToolCall,
 } from "happy-desktop-state";
+import { happyReferencePlaceholder } from "happy-desktop-state";
 import { compactCount, changeCountLabel } from "./countText";
 import { Avatar } from "./Avatar";
 import { ConversationMedia } from "./ConversationMedia";
@@ -1522,9 +1523,17 @@ function agentIdSegments(
         const id = match[0];
         // A run of 24 digits is a number, whatever else it might name.
         if (!/[a-z]/.test(id)) continue;
-        const view = references.view({ kind: "agent", id });
-        // A child the reader cannot open still has a name worth more than its ID.
-        if (view.type !== "link" && (view.label === id || view.label.length === 0)) continue;
+        const reference = { kind: "agent", id };
+        const view = references.view(reference);
+        // A child the reader cannot open still has a name worth more than its
+        // ID; an agent the window cannot name keeps the ID that tells it apart.
+        if (
+            view.type !== "link" &&
+            (view.label === id ||
+                view.label.length === 0 ||
+                view.label === happyReferencePlaceholder(reference))
+        )
+            continue;
         if (match.index > cursor) segments.push(text.slice(cursor, match.index));
         segments.push({ id, label: view.label, link: view.type === "link" });
         cursor = match.index + id.length;

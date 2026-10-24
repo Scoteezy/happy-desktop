@@ -42,6 +42,7 @@ export type IconName =
     | "hash"
     | "bell"
     | "more"
+    | "arrow-down"
     | "arrow-right"
     | "arrow-up"
     | "shield"
@@ -229,6 +230,7 @@ const glyphs: Record<IconName, IconGlyph> = {
     more: { set: "ionicons", name: "ellipsis-horizontal" },
     "arrow-right": { set: "ionicons", name: "arrow-forward-outline" },
     "arrow-up": { set: "ionicons", name: "arrow-up-outline" },
+    "arrow-down": { set: "ionicons", name: "arrow-down-outline" },
     // A shield with a checkmark on it: it says a thing is safe, not that a thing
     // went wrong. Nothing that failed may wear it.
     shield: { set: "ionicons", name: "shield-checkmark-outline" },

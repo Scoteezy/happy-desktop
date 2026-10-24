@@ -961,8 +961,15 @@ export function happyAgentChatStoreCreate(
     /* Groups seen finished, and seen still running, in the transcript. */
     const endedGroupIds = new Set<string>();
     const runningGroupIds = new Set<string>();
-    /* What each view showing this chat last reported on screen. */
-    const traceViewers = new Map<HappyAgentTraceViewer, ReadonlySet<string>>();
+    /* What each view showing this chat last reported on screen, and as of
+       which settling: a turn folds only once every view has reported since it
+       began to settle, so the view still showing it is always heard. */
+    const traceViewers = new Map<
+        HappyAgentTraceViewer,
+        { readonly turnIds: ReadonlySet<string>; readonly epoch: number }
+    >();
+    let settleEpoch = 0;
+    const settledAt = new Map<string, number>();
     const turnsOpenPublish = (): void => {
         expandedTurnIds =
             settlingTurnIds.size === 0
@@ -984,11 +991,14 @@ export function happyAgentChatStoreCreate(
             if (element.kind === "group_end") {
                 if (endedGroupIds.has(element.groupId)) break;
                 endedGroupIds.add(element.groupId);
-                if (runningGroupIds.delete(element.groupId) && element.turnKind !== "compaction")
+                if (runningGroupIds.delete(element.groupId) && element.turnKind !== "compaction") {
                     (settled ??= new Set(settlingTurnIds)).add(element.groupId);
+                    settledAt.set(element.groupId, settleEpoch + 1);
+                }
             } else if (!endedGroupIds.has(element.groupId)) runningGroupIds.add(element.groupId);
         }
         if (!settled) return;
+        settleEpoch += 1;
         settlingTurnIds = settled;
         turnsOpenPublish();
     };
@@ -1722,19 +1732,23 @@ export function happyAgentChatStoreCreate(
             commit();
         },
         turnTracesSeen(viewer, turnIds) {
-            traceViewers.set(viewer, turnIds);
+            traceViewers.set(viewer, { turnIds, epoch: settleEpoch });
             if (settlingTurnIds.size === 0) return;
             const seen = new Set<string>();
-            for (const [other, ids] of traceViewers) {
+            /* The oldest settling every live view has reported since. */
+            let heard = settleEpoch;
+            for (const [other, report] of traceViewers) {
                 if (!other.live()) {
                     traceViewers.delete(other);
                     continue;
                 }
-                for (const id of ids) seen.add(id);
+                heard = Math.min(heard, report.epoch);
+                for (const id of report.turnIds) seen.add(id);
             }
             let settling: Set<string> | undefined;
             for (const id of settlingTurnIds)
-                if (!seen.has(id)) (settling ??= new Set(settlingTurnIds)).delete(id);
+                if (!seen.has(id) && (settledAt.get(id) ?? 0) <= heard)
+                    (settling ??= new Set(settlingTurnIds)).delete(id);
             if (!settling) return;
             settlingTurnIds = settling;
             turnsOpenPublish();

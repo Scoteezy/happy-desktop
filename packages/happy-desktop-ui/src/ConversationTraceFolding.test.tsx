@@ -319,10 +319,14 @@ it("changes nothing on screen when a watched turn finishes with an answer", asyn
     viewport.scrollTop = viewport.scrollHeight;
     await vi.waitFor(() =>
         expect(
-            rowsOf(viewport).findLast((row) => row.textContent?.includes("Completed"))?.textContent,
+            rowsOf(viewport)
+                .reverse()
+                .find((row) => row.textContent?.includes("Completed"))?.textContent,
         ).toContain("Hide traces"),
     );
-    const footer = rowsOf(viewport).findLast((row) => row.textContent?.includes("Completed"))!;
+    const footer = rowsOf(viewport)
+        .reverse()
+        .find((row) => row.textContent?.includes("Completed"))!;
     footer.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click();
     await frames();
     expect(store.get().expandedTurnIds.size).toBe(0);

@@ -649,3 +649,50 @@ it("keeps the space under a send until the reply grows into it", async () => {
     expect(held).toBeGreaterThan(2);
     expect(sentRow().getBoundingClientRect().top).toBeLessThan(top);
 });
+
+it("offers a way back to the newest row once the reader scrolls away, and moves nothing showing it", async () => {
+    const { view, stream } = renderConversation(60);
+    await view.ready();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    const jump = () =>
+        view.container.querySelector<HTMLButtonElement>(
+            ".happy-message-list__jump:not([hidden]) button",
+        );
+    expect(jump()).toBeNull();
+    // A small nudge is still reading the end.
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    viewport.scrollTop -= 40;
+    await frames();
+    expect(jump()).toBeNull();
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -600 }));
+    viewport.scrollTop -= 600;
+    await frames();
+    const button = jump()!;
+    expect(button).not.toBeNull();
+    // Centred over the transcript, just above its lower edge.
+    const bounds = viewport.getBoundingClientRect();
+    const place = button.getBoundingClientRect();
+    expect(Math.abs(place.left + place.width / 2 - (bounds.left + bounds.width / 2))).toBeLessThan(
+        1,
+    );
+    expect(bounds.bottom - place.bottom).toBe(12);
+    // It floats over the rows: showing it moves none of them.
+    const tops = () =>
+        [...viewport.querySelectorAll<HTMLElement>(".happy-message")]
+            .map((element) => element.getBoundingClientRect())
+            .filter((rect) => rect.bottom > bounds.top && rect.top < bounds.bottom)
+            .map((rect) => Math.round(rect.top));
+    const before = tops();
+    await frames();
+    expect(tops()).toEqual(before);
+
+    button.click();
+    await frames();
+    expect(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight).toBeLessThan(1);
+    expect(jump()).toBeNull();
+    // And from there it follows what arrives.
+    stream(6);
+    await frames();
+    expect(viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight).toBeLessThan(1);
+});

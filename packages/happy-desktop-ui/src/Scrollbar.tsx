@@ -537,6 +537,8 @@ export type ScrollAreaProps = Omit<HTMLAttributes<HTMLDivElement>, "children"> &
     viewportProps?: Omit<HTMLAttributes<HTMLDivElement>, "children" | "className" | "style">;
     viewportRef?: Ref<HTMLDivElement>;
     viewportStyle?: CSSProperties;
+    /** Drawn over the scrollport, fixed while its content scrolls. */
+    overlay?: ReactNode;
 };
 
 /** A native scrollport with Happy's fixed custom-painted track and thumb. */
@@ -550,6 +552,7 @@ export function ScrollArea(props: ScrollAreaProps) {
         viewportProps,
         viewportRef: externalViewportRef,
         viewportStyle,
+        overlay,
         ...hostProps
     } = props;
     const controller = useScrollbarController(axes);
@@ -583,6 +586,7 @@ export function ScrollArea(props: ScrollAreaProps) {
             >
                 {children}
             </div>
+            {overlay}
             <ScrollbarTracks axes={axes} controller={controller} />
         </div>
     );

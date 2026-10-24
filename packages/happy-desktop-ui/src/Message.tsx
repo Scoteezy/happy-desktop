@@ -23,6 +23,7 @@ import { Avatar, type AvatarSize, type ToneName } from "./Avatar";
 import { happyLogoBlackUrl } from "./assets";
 import { AutomatedTag } from "./AutomatedTag";
 import { ReactionChip } from "./Badge";
+import { Button } from "./Button";
 import { Icon, type IconName } from "./Icon";
 import {
     MESSAGE_MEDIA_LIMITS,
@@ -830,6 +831,11 @@ export type MessageListProps = {
      * the virtual list already computes, so it adds no layout work.
      */
     onVisibleRowsChange?: (first: number, last: number, list: HTMLElement) => void;
+    /**
+     * Offers a button back to the newest row while the reader is scrolled away
+     * from it by more than a third of a screen.
+     */
+    jumpToEnd?: boolean;
     /** Bottom clearance represented inside the virtualizer's coordinate space. */
     paddingEnd?: number;
     /**
@@ -2204,6 +2210,38 @@ export function MessageList(props: MessageListProps) {
      * that or the visible range changes.
      */
     const mountedKeys = useRef<ReadonlySet<Key>>(new Set());
+    /* The way back to the end, shown while the reader is far enough from it.
+       Shown and hidden on the element itself: a commit here, between a scroll
+       and the event reporting it, would hold the reader's old place. */
+    const jump = useRef<HTMLDivElement>(null);
+    const endAwayUpdate = (element: HTMLElement) => {
+        const button = jump.current;
+        if (!button) return;
+        const height = viewportGeometry.current.height || element.clientHeight;
+        /* The modeled end, as following reads it: no layout is forced to know it. */
+        const total = virtualized
+            ? Math.max(estimatedContentHeight(), geometryExtent.current) +
+              geometrySparseInset.current
+            : element.scrollHeight;
+        const away = !following.current && total - height - element.scrollTop > height / 3;
+        if (button.hidden === !away) return;
+        button.hidden = !away;
+    };
+    const endAwayUpdateCurrent = useRef(endAwayUpdate);
+    endAwayUpdateCurrent.current = endAwayUpdate;
+    /** Takes the reader back to the newest row, following it from there. */
+    const jumpToEnd = () => {
+        const element = list.current;
+        if (!element) return;
+        geometryFollowInset.current = 0;
+        escapedFromFollow.current = false;
+        following.current = true;
+        pendingAnchor.current = undefined;
+        readerAnchor.current = undefined;
+        sparseInsetRelease();
+        scrollBottomFollow(element);
+        endAwayUpdate(element);
+    };
     const visibleRowsReported = useRef<{ first: number; last: number; rows: number } | undefined>(
         undefined,
     );
@@ -2359,6 +2397,7 @@ export function MessageList(props: MessageListProps) {
         if (!element || !modelRendered) return;
         if (!rowModelCurrent()) return;
         visibleRowsReport(element);
+        endAwayUpdate(element);
         const actualHeight = messageListViewportHeight(element);
         const geometry =
             pendingViewportGeometry.current ??
@@ -2640,6 +2679,7 @@ export function MessageList(props: MessageListProps) {
                 : modelAnchorCaptureCurrent.current(viewportHeight, readerScrollTop.current);
             positionReport();
             startReachedReport(element);
+            endAwayUpdateCurrent.current(element);
         };
         /* Capture runs before TanStack's own scroll listener on this element,
            whose range change can commit synchronously: the commit must see
@@ -2695,6 +2735,20 @@ export function MessageList(props: MessageListProps) {
                 style={props.style}
                 viewportClassName="happy-message-list__viewport"
                 viewportRef={list}
+                overlay={
+                    props.jumpToEnd ? (
+                        <div className="happy-message-list__jump" hidden ref={jump}>
+                            <Button
+                                aria-label="Jump to latest"
+                                icon="arrow-down"
+                                iconOnly
+                                onClick={jumpToEnd}
+                                size="small"
+                                variant="secondary"
+                            />
+                        </div>
+                    ) : undefined
+                }
             >
                 <div
                     className="happy-message-list__content"

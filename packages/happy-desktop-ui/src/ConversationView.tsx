@@ -1226,7 +1226,7 @@ export function ConversationView(props: ConversationViewProps) {
                         key={props.conversationId}
                         onScrollPositionChange={props.onScrollPositionChange}
                         onStartReached={props.onStartReached}
-                        {...(props.onTracesSeen && traceSpans.size > 0
+                        {...(props.onTracesSeen
                             ? {
                                   onVisibleRowsChange: (
                                       first: number,
@@ -1241,6 +1241,7 @@ export function ConversationView(props: ConversationViewProps) {
                                   },
                               }
                             : {})}
+                        jumpToEnd
                         paddingEnd={24}
                         virtualize
                     >
