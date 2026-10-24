@@ -2613,7 +2613,16 @@ export function MessageList(props: MessageListProps) {
         getScrollElement: () => list.current,
         observeElementOffset: (instance, report) => {
             virtualOffsetReport.current = report;
-            const unobserve = observeElementOffset(instance, report);
+            const unobserve = observeElementOffset(instance, (offset, scrolling) => {
+                // An idle callback can retain the native offset from before a
+                // model-owned restore. Its later scroll event has not arrived
+                // yet; read back that write instead of mounting the old range.
+                if (!scrolling) {
+                    const current = instance.scrollElement?.scrollTop;
+                    if (current !== undefined && current !== offset) offset = current;
+                }
+                report(offset, scrolling);
+            });
             return () => {
                 virtualOffsetReport.current = undefined;
                 unobserve?.();
