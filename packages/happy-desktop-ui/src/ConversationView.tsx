@@ -747,14 +747,13 @@ export function ConversationView(props: ConversationViewProps) {
     /* The reader's message is on its way and nothing has answered it yet. The
        status line arrives with the message, in the same commit, rather than a
        beat later when the run is reported started. */
-    const awaitingReply =
-        props.running !== true &&
-        props.entries.some(
-            (entry) =>
-                entry.kind === "message" &&
-                entry.sentHere === true &&
-                (entry.delivery === "sending" || entry.delivery === "pending_steering"),
-        );
+    const sendPending = props.entries.some(
+        (entry) =>
+            entry.kind === "message" &&
+            entry.sentHere === true &&
+            (entry.delivery === "sending" || entry.delivery === "pending_steering"),
+    );
+    const awaitingReply = props.running !== true && sendPending;
     /*
      * The turn ended and the agents it delegated to did not. That is a state of
      * its own rather than a continuation of the turn: the conversation is still
@@ -1062,6 +1061,10 @@ export function ConversationView(props: ConversationViewProps) {
                                 ) : null}
                             </>
                         }
+                        /* The status and any queued message arrive with a
+                           send; a reader at the bottom sees where the reply
+                           will start rather than having it held below. */
+                        footerFollowed={sendPending}
                         footerHeight={(width) =>
                             Math.max(
                                 workingStatusHeight,

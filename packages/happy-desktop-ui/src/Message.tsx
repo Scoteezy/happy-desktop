@@ -789,6 +789,13 @@ export type MessageListProps = {
      * the last row, which may read that same state as its successor.
      */
     footerHeight?: number | ((width: number) => number);
+    /**
+     * While true, a follower keeps the whole footer in view as it grows: the
+     * reader has just sent, and the reply starts in the footer. Otherwise a
+     * follower holds footer growth below the fold, so a status that appears on
+     * its own never moves the transcript.
+     */
+    footerFollowed?: boolean;
     /** Bottom clearance represented inside the virtualizer's coordinate space. */
     paddingEnd?: number;
     /**
@@ -1026,6 +1033,8 @@ export function MessageList(props: MessageListProps) {
     const geometryExtent = useRef(0);
     const geometrySparseInset = useRef(0);
     const geometryFollowInset = useRef(0);
+    const footerFollowed = useRef(false);
+    footerFollowed.current = props.footerFollowed === true;
     const pendingFollowerTop = useRef<number | undefined>(undefined);
     const readerAnchor = useRef<MessageListVirtualAnchor | undefined>(undefined);
     const pendingAnchor = useRef<
@@ -1388,7 +1397,11 @@ export function MessageList(props: MessageListProps) {
         const footerDelta =
             (footerIndex === undefined ? 0 : (sizes[footerIndex] ?? 0)) - footerBefore;
         if (following.current && initialPositionApplied.current)
-            geometryFollowInset.current = Math.max(0, geometryFollowInset.current + footerDelta);
+            geometryFollowInset.current = Math.max(
+                0,
+                geometryFollowInset.current +
+                    (footerFollowed.current ? Math.min(0, footerDelta) : footerDelta),
+            );
         // A content update can also discover cached sizes for cold rows. Only
         // their placeholder correction (or a width reflow) changes coordinates;
         // appended content and changes to already exact rows remain real growth.
