@@ -12,7 +12,6 @@ import {
     StoryEditor,
     StoryInlineCard,
     StoryViewer,
-    storyHaptic,
     type InlinePageFit,
     type StoriesRowAuthor,
     type StorySticker,
@@ -37,14 +36,14 @@ function firstName(name: string): string {
     return name.trim().split(/\s+/u)[0] ?? name;
 }
 
-/** "now", "5m", "3h": how long ago a story was posted, as Telegram writes it. */
+/** "just now", "5m ago", "3h ago": how long ago a story was posted, as iOS writes it. */
 function postedLabel(story: Story): string {
     const at = story.postedAt ?? story.updatedAt;
     const minutes = Math.max(0, Math.floor((Date.now() - at) / 60_000));
     if (story.status === "draft") return "Draft";
     if (minutes < 1) return "just now";
-    if (minutes < 60) return `${String(minutes)}m`;
-    return `${String(Math.floor(minutes / 60))}h`;
+    if (minutes < 60) return `${String(minutes)}m ago`;
+    return `${String(Math.floor(minutes / 60))}h ago`;
 }
 
 /**
@@ -92,46 +91,43 @@ export interface HappyAgentStoriesRowProps {
     readonly hub: HappyAgentStories;
 }
 
-/** The stories row above the sidebar, from the feed, in the daemon's order. */
+/**
+ * The stories row above the sidebar, from the feed, in the daemon's order:
+ * everyone with a story up, the person first while theirs is, under their own
+ * name, as on iOS. It is drawn once the daemon has answered, folded until the
+ * person opens it; a story is made only from a conversation.
+ */
 export function HappyAgentStoriesRow(props: HappyAgentStoriesRowProps) {
     const store = props.hub.stories();
     const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
+    const rowStore = props.hub.row();
+    const row = useSyncExternalStore(rowStore.subscribe, rowStore.get, rowStore.get);
     const screen = props.hub.screen();
     const feed = snapshot.feed;
-    // A daemon without Stories has no row to show.
-    if (feed.status === "unavailable") return null;
-    const authors: readonly StoriesRowAuthor[] =
-        feed.status === "ready"
-            ? feed.authors.map((author) => ({
-                  id: authorKey(author),
-                  name: firstName(author.name),
-                  ...(author.photo ? { photoUrl: props.hub.urls.photo(author.photo) } : {}),
-                  initials: initialsOf(author.name),
-                  self: author.isSelf,
-                  stories: {
-                      total: author.storyIds.length,
-                      unseen: author.isSelf ? 0 : author.unseenCount,
-                  },
-                  ring: author.isSelf
-                      ? author.storyIds.length > 0
-                          ? "seen"
-                          : "none"
-                      : author.unseenCount > 0
-                        ? "unseen"
-                        : "seen",
-              }))
-            : // The person's own circle stands from the first frame, so the
-              // band's height and its first circle are there before the daemon answers.
-              [{ id: "self", name: "My Story", initials: "", self: true, ring: "none" }];
+    if (feed.status !== "ready") return null;
+    const authors: readonly StoriesRowAuthor[] = feed.authors
+        .filter((author) => author.storyIds.length > 0)
+        .map((author) => ({
+            id: authorKey(author),
+            // Your own circle reads as iOS has it.
+            name: author.isSelf ? "My Story" : firstName(author.name),
+            ...(author.photo ? { photoUrl: props.hub.urls.photo(author.photo) } : {}),
+            initials: initialsOf(author.name),
+            self: author.isSelf,
+            stories: {
+                total: author.storyIds.length,
+                unseen: author.isSelf ? 0 : author.unseenCount,
+            },
+            ring: !author.isSelf && author.unseenCount > 0 ? "unseen" : "seen",
+        }));
     return (
         <StoriesRow
             authors={authors}
+            collapsed={row.collapsed}
             data-testid="stories-row"
-            onAuthorOpen={(authorId) => {
-                storyHaptic("story.open");
-                screen.viewerOpen({ kind: "row", authorId });
-            }}
-            onCreate={() => screen.editorOpen({})}
+            onAuthorOpen={(authorId) => screen.viewerOpen({ kind: "row", authorId })}
+            onCollapse={rowStore.rowCollapse}
+            onExpand={rowStore.rowExpand}
         />
     );
 }
@@ -156,8 +152,6 @@ function viewerAuthors(
 
 export interface HappyAgentStoriesScreensProps {
     readonly hub: HappyAgentStories;
-    /** The conversation on screen, whose media the editor offers when opened from the row. */
-    readonly agentId?: string;
     onLinkOpen(url: string): void;
     onSourceOpen(agentId: string): void;
 }
@@ -167,13 +161,7 @@ export function HappyAgentStoriesScreens(props: HappyAgentStoriesScreensProps) {
     const screenStore = props.hub.screen();
     const screen = useSyncExternalStore(screenStore.subscribe, screenStore.get, screenStore.get);
     if (screen.editor)
-        return (
-            <HappyAgentStoryEditorScreen
-                agentId={screen.editor.agentId ?? props.agentId}
-                editor={screen.editor.store}
-                hub={props.hub}
-            />
-        );
+        return <HappyAgentStoryEditorScreen editor={screen.editor.store} hub={props.hub} />;
     if (screen.viewer)
         return (
             <HappyAgentStoryViewerScreen
@@ -270,7 +258,6 @@ function HappyAgentStoryViewerScreen(props: {
 function HappyAgentStoryEditorScreen(props: {
     readonly hub: HappyAgentStories;
     readonly editor: HappyAgentStoryEditorStore;
-    readonly agentId: string | undefined;
 }) {
     const { hub, editor } = props;
     const snapshot = useSyncExternalStore(editor.subscribe, editor.get, editor.get);
@@ -319,21 +306,6 @@ function HappyAgentStoryEditorScreen(props: {
             frameIndex={snapshot.frameIndex}
             frameUrl={(frame) => (storyId ? hub.urls.frame(storyId, frame.id) : undefined)}
             frames={snapshot.frames}
-            {...(snapshot.media
-                ? {
-                      media:
-                          snapshot.media.status === "ready"
-                              ? { status: "ready" as const, items: snapshot.media.items }
-                              : snapshot.media.status === "failed"
-                                ? {
-                                      status: "failed" as const,
-                                      message: snapshot.media.error.message,
-                                  }
-                                : { status: "loading" as const },
-                  }
-                : {})}
-            mediaOffered={props.agentId !== undefined}
-            mediaUrl={(item) => hub.urls.asset(item.asset)}
             onCaptionChange={editor.captionUpdate}
             onClose={close}
             onDraftOpen={editor.draftOpen}
@@ -341,10 +313,6 @@ function HappyAgentStoryEditorScreen(props: {
             onFilesAdd={editor.filesAdd}
             onFrameRemove={editor.frameRemove}
             onFrameSelect={editor.frameSelect}
-            onMediaAdd={editor.mediaAdd}
-            onMediaRequest={() => {
-                if (props.agentId) editor.mediaRequest(props.agentId);
-            }}
             onOverlayAdd={(overlay) => {
                 editor.overlayAdd(overlay);
                 if (overlay.type === "sticker")
@@ -356,12 +324,10 @@ function HappyAgentStoryEditorScreen(props: {
             onOverlayRemove={editor.overlayRemove}
             onOverlayUpdate={editor.overlayUpdate}
             onPost={() => {
+                // A refused post shows its error in the editor.
                 void editor.post().then(
-                    () => {
-                        storyHaptic("story.post");
-                        screen.editorClose();
-                    },
-                    () => storyHaptic("error"),
+                    () => screen.editorClose(),
+                    () => undefined,
                 );
             }}
             overlayIdCreate={editor.idCreate}
@@ -463,21 +429,15 @@ export function HappyAgentStoryInline(props: HappyAgentStoryInlineProps) {
                 <StoryInlineCard
                     data-testid="story-inline"
                     frameUrl={hub.urls.frame}
-                    onEdit={(story) =>
-                        screen.editorOpen({
-                            story,
-                            ...(story.source ? { agentId: story.source.agentId } : {}),
-                        })
-                    }
+                    onEdit={(story) => screen.editorOpen(story)}
                     onOpen={(story) => {
-                        storyHaptic("story.open");
                         screen.viewerOpen({ kind: "story", storyId: story.id });
                     }}
                     onPost={(story) => {
-                        void store.storyPost(story.id, story.artifactVersion).then(
-                            () => storyHaptic("story.post"),
-                            () => storyHaptic("error"),
-                        );
+                        // A refused post shows its error on the card.
+                        void store
+                            .storyPost(story.id, story.artifactVersion)
+                            .catch(() => undefined);
                     }}
                     state={
                         entry === undefined || entry.type === "loading"

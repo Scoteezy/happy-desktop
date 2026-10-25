@@ -3727,6 +3727,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             : storiesSettings.status === "loading" && storiesSettings.hint === true;
     const stories = storiesOn ? storiesHub : undefined;
     const storiesRow = stories ? <HappyAgentStoriesRow hub={stories} /> : undefined;
+    // Scrolling on through the sidebar's rows folds the stories row out of the way.
+    const storiesBodyWheel = stories
+        ? (deltaY: number) => {
+              if (deltaY > 0) stories.row().rowCollapse();
+          }
+        : undefined;
     const storyRender = stories
         ? (artifactId: string, fit: InlinePageFit) => (
               <HappyAgentStoryInline fit={fit} hub={stories} storyId={artifactId} />
@@ -3896,6 +3902,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 // spaces sidebar never shows the wordmark.
                 brand={false}
                 {...(storiesRow ? { topAccessory: storiesRow } : {})}
+                {...(storiesBodyWheel ? { onBodyWheel: storiesBodyWheel } : {})}
                 {...(spaces.stemCellError
                     ? {
                           headerAccessory: (
@@ -4067,6 +4074,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             // the product mark stands down.
             brand={false}
             {...(storiesRow ? { topAccessory: storiesRow } : {})}
+            {...(storiesBodyWheel ? { onBodyWheel: storiesBodyWheel } : {})}
             footer={sidebarFooter}
             headerAccessory={
                 // Reachability is the footer's line, not this heading's. What
@@ -4981,7 +4989,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             {stories && active ? (
                 <HappyAgentStoriesScreens
                     hub={stories}
-                    {...(props.chatId !== undefined ? { agentId: props.chatId } : {})}
                     onLinkOpen={props.onExternalLinkOpen ?? openExternalLink}
                     onSourceOpen={(agentId) => {
                         const groupId = chatGroupFind(active.projects ?? NO_PROJECTS, agentId);

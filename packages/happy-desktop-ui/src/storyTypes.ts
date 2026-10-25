@@ -24,7 +24,6 @@ export type Sticker = happyAgentProtocol.Sticker;
 export type StickerPack = happyAgentProtocol.StickerPack;
 export type StickerRef = happyAgentProtocol.StickerRef;
 export type StickerPackKind = happyAgentProtocol.StickerPackKind;
-export type StoryHapticMoment = happyAgentProtocol.StoryHapticMoment;
 
 /** The canvas every frame is drawn on, in canvas units: a 9:16 portrait. */
 export const STORY_CANVAS_WIDTH = 1080;

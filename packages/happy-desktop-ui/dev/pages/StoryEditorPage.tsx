@@ -1,12 +1,10 @@
 import { useState, type ReactNode } from "react";
 import { StickerPicker, StoryEditor, type StoryEditorProps } from "../../src";
-import type { StoryFrame, StoryMediaItem, StoryOverlay } from "../../src/storyTypes";
+import type { StoryFrame, StoryOverlay } from "../../src/storyTypes";
 import { ComponentPage, Specimen } from "../kit";
 import {
-    FIXTURE_NOW,
     STICKER_PACKS,
     STORY_DRAFT,
-    STORY_PHOTOS,
     STORY_SUNSET,
     fixtureFrameMedia,
     fixtureSticker,
@@ -17,16 +15,6 @@ import {
 export const componentNumber = "C-317";
 
 const noop = () => {};
-
-const media: readonly StoryMediaItem[] = STORY_PHOTOS.map((_, index) => ({
-    asset: { type: "chat_media", agentId: "agent", toolCallId: `call-${String(index)}`, index: 0 },
-    kind: "image",
-    name: `photo-${String(index)}.png`,
-    width: 1080,
-    height: 1440,
-    thumbhash: null,
-    createdAt: FIXTURE_NOW,
-}));
 
 let overlaySequence = 0;
 const overlayIdCreate = () => `overlay-${String((overlaySequence += 1))}`;
@@ -50,10 +38,6 @@ const fixed: Omit<
     saved: true,
     frameUrl: fixtureFrameMedia,
     sticker: fixtureSticker,
-    media: { status: "ready", items: media },
-    mediaOffered: true,
-    mediaUrl: (item) =>
-        STORY_PHOTOS[Number(item.name.replace(/\D/gu, "")) % STORY_PHOTOS.length] ?? "",
     drafts: { loading: false, drafts: [STORY_DRAFT] },
     draftUrl: (story) => (story.frames[0] ? fixtureFrameMedia(story.frames[0]) : undefined),
     stickerPicker: (handlers) => (
@@ -71,8 +55,6 @@ const fixed: Omit<
     ),
     overlayIdCreate,
     onFilesAdd: noop,
-    onMediaRequest: noop,
-    onMediaAdd: noop,
     onDraftsRequest: noop,
     onDraftOpen: noop,
     onPost: noop,
@@ -132,7 +114,7 @@ export function StoryEditorPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The full-window story editor: frames on the left, the 9:16 canvas in the middle, and tools on the right — text, link, stickers, reaction, conversation media, and drafts. Overlays drag with centre and edge snapping, scale and rotate from a corner knob with 45° detents, and drop onto the trash."
+            summary="The full-window story editor: frames on the left, the 9:16 canvas in the middle, and tools on the right — text, link, stickers, reaction, and drafts; photos and videos come from files. Overlays drag with centre and edge snapping, scale and rotate from a corner knob with 45° detents, and drop onto the trash."
             title="Story editor"
             width={1104}
         >

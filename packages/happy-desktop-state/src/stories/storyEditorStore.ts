@@ -6,7 +6,6 @@ import {
     type Story,
     type StoryFrame,
     type StoryFrameInput,
-    type StoryMediaItem,
     type StoryOverlay,
 } from "@slopus/happy-agent-client";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
@@ -15,16 +14,6 @@ import { cuid2Create } from "../utils/cuid2Create.js";
 
 /** API.md, Overlays: a frame holds at most five reaction overlays; the client exports no constant. */
 const MAX_STORY_REACTION_OVERLAYS = 5;
-
-/** One conversation's images and videos the person may put in the story. */
-export type HappyAgentStoryEditorMedia =
-    | { readonly status: "loading"; readonly agentId: string }
-    | {
-          readonly status: "ready";
-          readonly agentId: string;
-          readonly items: readonly StoryMediaItem[];
-      }
-    | { readonly status: "failed"; readonly agentId: string; readonly error: UserError };
 
 export type HappyAgentStoryEditorDrafts =
     | { readonly status: "idle" }
@@ -47,7 +36,6 @@ export interface HappyAgentStoryEditorSnapshot {
     readonly saving: boolean;
     readonly posting: boolean;
     readonly error?: UserError;
-    readonly media?: HappyAgentStoryEditorMedia;
     readonly drafts: HappyAgentStoryEditorDrafts;
 }
 
@@ -66,12 +54,8 @@ export interface HappyAgentStoryEditorStore {
     draftOpen(storyId: string): void;
     /** Reads the person's drafts, for returning to one. */
     draftsRequest(): void;
-    /** Reads one conversation's images and videos to choose from. */
-    mediaRequest(agentId: string): void;
     /** Uploads files from the device and adds each as a frame. */
     filesAdd(files: readonly File[]): void;
-    /** Adds an image or video from a conversation as a frame. */
-    mediaAdd(item: StoryMediaItem): void;
     frameSelect(index: number): void;
     frameRemove(frameId: string): void;
     captionUpdate(caption: string): void;
@@ -95,7 +79,6 @@ export interface HappyAgentStoryEditorDeps {
         | "getStory"
         | "postStory"
         | "listStories"
-        | "listStoryMedia"
         | "uploadArtifactFile"
     >;
     /** A draft already held, to edit; without it the editor starts a new one. */
@@ -298,22 +281,6 @@ export function happyAgentStoryEditorStoreCreate(
                     if (!disposed) publish({ drafts: { status: "ready", drafts: [] } });
                 });
         },
-        mediaRequest(agentId) {
-            if (disposed || snapshot.media?.agentId === agentId) return;
-            publish({ media: { status: "loading", agentId } });
-            void deps.client
-                .listStoryMedia({ agentId, limit: 100 }, { signal: aborts.signal })
-                .then((answer) => {
-                    if (!disposed && snapshot.media?.agentId === agentId)
-                        publish({ media: { status: "ready", agentId, items: answer.items } });
-                })
-                .catch((error: unknown) => {
-                    if (!disposed && snapshot.media?.agentId === agentId)
-                        publish({
-                            media: { status: "failed", agentId, error: happyAgentUserError(error) },
-                        });
-                });
-        },
         filesAdd(files) {
             if (disposed || files.length === 0 || !frameRoom(files.length)) return;
             const accepted = files.filter(
@@ -351,18 +318,6 @@ export function happyAgentStoryEditorStoreCreate(
                 })
                 .finally(() => {
                     if (!disposed) publish({ uploading: snapshot.uploading - accepted.length });
-                });
-        },
-        mediaAdd(item) {
-            if (disposed || !frameRoom(1)) return;
-            publish({ uploading: snapshot.uploading + 1 });
-            void send([{ id: idCreate(), asset: item.asset, overlays: [] } as StoryFrameInput])
-                .then((story) => {
-                    if (!disposed) publish({ frameIndex: story.frames.length - 1 });
-                })
-                .catch(() => undefined)
-                .finally(() => {
-                    if (!disposed) publish({ uploading: snapshot.uploading - 1 });
                 });
         },
         frameSelect(index) {

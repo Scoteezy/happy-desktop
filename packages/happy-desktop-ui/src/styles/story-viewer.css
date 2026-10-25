@@ -1,7 +1,11 @@
 /*
- * StoryViewer — the full-window dark room a story is watched in. The canvas
- * is as tall as the window allows, less a 16px margin above and below, and
- * never wider than the window less the 64px step lanes on either side.
+ * StoryViewer — the full-window dark room a story is watched in, to the iOS
+ * viewer's numbers (Telegram's): the canvas with 12px corners as tall as the
+ * window allows, less 16px above and the 52px bar beneath it, and never wider
+ * than the window less the 64px step lanes on either side. On the canvas,
+ * progress 8px in, 2px tall, 3px apart; the author's 32px photo with name and
+ * time stacked beside it. Under it the bar: the author's views, or a viewer's
+ * heart.
  */
 
 .happy-story-viewer {
@@ -24,6 +28,15 @@
     font-synthesis: none;
 }
 
+.happy-story-viewer__column {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    padding-top: 16px;
+}
+
 .happy-story-viewer__stage {
     display: flex;
     flex: none;
@@ -33,16 +46,39 @@
 }
 
 .happy-story-viewer__canvas {
-    height: min(calc(100cqh - 32px), calc((100cqw - 160px) * 16 / 9));
-    border-radius: var(--happy-radius-md);
+    height: min(calc(100cqh - 68px), calc((100cqw - 160px) * 16 / 9));
+    border-radius: 12px;
     background-color: var(--story-stage);
     cursor: pointer;
 }
 
-/* The caption clears the bottom chrome's 56px row, so views and delete never
-   sit on its text. */
-.happy-story-viewer__canvas .happy-story-canvas__caption {
-    padding-bottom: 56px;
+.happy-story-viewer__bar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    height: 52px;
+    padding: 0 4px;
+}
+
+.happy-story-viewer__views {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 44px;
+    margin: 0;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--happy-hover-radius);
+    background: transparent;
+    color: var(--story-ink);
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+}
+
+.happy-story-viewer__views:hover {
+    background: var(--story-control);
 }
 
 .happy-story-viewer__gone {
@@ -76,30 +112,20 @@
     cursor: default;
 }
 
-/* The chrome lies over the frame: progress and author above, actions below.
-   Holding the frame hides it, as Telegram does, without moving anything. */
+/* The chrome lies over the frame's top: progress, then the author. Holding
+   the frame hides it, as Telegram does, without moving anything. */
 .happy-story-viewer__chrome {
     /* Laid over its parent rather than in its flow, so it is placed by position. */
     position: absolute;
+    top: 0;
     right: 0;
     left: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 10px 12px;
-}
-
-.happy-story-viewer__chrome[data-part="top"] {
-    top: 0;
+    gap: 8px;
+    padding: 8px 8px 24px;
     background: linear-gradient(to bottom, var(--story-scrim), transparent);
     pointer-events: none;
-}
-
-.happy-story-viewer__chrome[data-part="bottom"] {
-    bottom: 0;
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-end;
 }
 
 .happy-story-viewer__stage[data-held] .happy-story-viewer__chrome {
@@ -150,6 +176,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    padding-left: 4px;
     pointer-events: auto;
 }
 
@@ -178,23 +205,23 @@
 .happy-story-viewer__who {
     display: flex;
     flex: 1;
-    align-items: baseline;
-    gap: 8px;
+    flex-direction: column;
     min-width: 0;
 }
 
 .happy-story-viewer__name {
     overflow: hidden;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
+    line-height: 16px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .happy-story-viewer__when {
-    flex: none;
     color: var(--story-ink-secondary);
-    font-size: 13px;
+    font-size: 11px;
+    line-height: 14px;
 }
 
 .happy-story-viewer__icon {
@@ -202,8 +229,8 @@
     flex: none;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     margin: 0;
     padding: 0;
     border: 0;
@@ -217,34 +244,6 @@
     background: var(--story-control);
 }
 
-.happy-story-viewer__pill {
-    display: flex;
-    flex: 1;
-    align-items: center;
-    gap: 6px;
-    height: 36px;
-    margin: 0;
-    padding: 0 12px;
-    border: 0;
-    border-radius: var(--happy-radius-pill);
-    background: var(--story-control);
-    color: var(--story-ink);
-    cursor: pointer;
-    font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.happy-story-viewer__pill:hover {
-    background: var(--story-control-hover);
-}
-
-.happy-story-viewer__reaction-tally {
-    margin-left: auto;
-    color: var(--story-ink-secondary);
-    font-weight: 500;
-}
-
 .happy-story-viewer__heart {
     display: flex;
     flex: none;
@@ -252,55 +251,120 @@
     justify-content: center;
     width: 44px;
     height: 44px;
-    margin: 0;
+    margin: 0 0 0 auto;
     padding: 0;
     border: 0;
     border-radius: 50%;
-    background: var(--story-control);
+    background: transparent;
+    color: var(--story-ink);
     cursor: pointer;
 }
 
 .happy-story-viewer__heart:hover {
-    background: var(--story-control-hover);
+    background: var(--story-control);
 }
 
 .happy-story-viewer__heart-emoji {
     display: flex;
     font-family: var(--happy-font-emoji);
-    font-size: 22px;
+    font-size: 24px;
     line-height: 1;
 }
 
-.happy-story-viewer__heart-emoji[data-off] {
-    filter: grayscale(1) brightness(1.6);
-    opacity: 0.8;
-}
-
-/* A sheet rises over the frame's lower part and pauses it. */
+/* Whatever opens over the frame pauses it. The viewers list rises from the
+   bottom, a link or a deletion asks in a card at the centre, the menu hangs
+   under its button, and the reactions float over the frame's foot. */
 .happy-story-viewer__sheet-scrim {
     /* Laid over its parent rather than in its flow, so it is placed by position. */
     position: absolute;
     inset: 0;
     display: flex;
     align-items: flex-end;
+    justify-content: center;
     background: var(--story-scrim);
     cursor: default;
+}
+
+.happy-story-viewer__sheet-scrim[data-kind="link"],
+.happy-story-viewer__sheet-scrim[data-kind="delete"] {
+    align-items: center;
+}
+
+.happy-story-viewer__sheet-scrim[data-kind="more"] {
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 52px 8px 0 0;
+    background: transparent;
+}
+
+.happy-story-viewer__sheet-scrim[data-kind="reactions"] {
+    padding-bottom: 12px;
+    background: transparent;
 }
 
 .happy-story-viewer__sheet {
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     max-height: 60%;
-    padding: 16px;
-    border-radius: var(--happy-radius-md) var(--happy-radius-md) 0 0;
+    padding: 8px 8px 16px 16px;
+    border-radius: 12px 12px 0 0;
     background: var(--story-sheet);
+}
+
+.happy-story-viewer__sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
 .happy-story-viewer__sheet-title {
     font-size: 15px;
     font-weight: 600;
+}
+
+.happy-story-viewer__card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: min(260px, calc(100% - 48px));
+    padding: 16px;
+    border-radius: 14px;
+    background: var(--story-sheet);
+}
+
+.happy-story-viewer__menu {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 180px;
+    padding: 6px;
+    border-radius: 12px;
+    background: var(--story-sheet);
+}
+
+.happy-story-viewer__menu-item {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    margin: 0;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--story-ink);
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+}
+
+.happy-story-viewer__menu-item:hover {
+    background: var(--story-control);
+}
+
+.happy-story-viewer__menu-item[data-danger] {
+    color: var(--story-danger);
 }
 
 .happy-story-viewer__url {
@@ -346,8 +410,10 @@
 
 .happy-story-viewer__reaction-row {
     display: flex;
-    justify-content: space-between;
-    gap: 4px;
+    gap: 2px;
+    padding: 4px;
+    border-radius: var(--happy-radius-pill);
+    background: var(--story-sheet);
 }
 
 .happy-story-viewer__reaction-choice {
@@ -363,7 +429,7 @@
     background: transparent;
     cursor: pointer;
     font-family: var(--happy-font-emoji);
-    font-size: 24px;
+    font-size: 22px;
 }
 
 .happy-story-viewer__reaction-choice:hover,
@@ -374,7 +440,7 @@
 .happy-story-viewer__viewers {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -396,6 +462,9 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    height: 44px;
+    padding-right: 8px;
+    border-bottom: 1px solid var(--story-control);
 }
 
 .happy-story-viewer__viewer-name {

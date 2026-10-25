@@ -1078,7 +1078,6 @@ export {
     type StoryInlineCardState,
 } from "./StoryInlineCard";
 export { StickerView, type StickerViewProps, type StorySticker } from "./StickerView";
-export { storyHaptic, storyHapticPlayerSet } from "./storyHaptics";
 export {
     StoryEditor,
     STORY_COLORS,

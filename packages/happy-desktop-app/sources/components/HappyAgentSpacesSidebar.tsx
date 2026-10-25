@@ -565,6 +565,8 @@ export interface HappyAgentSpacesSidebarProps {
     readonly headerAccessory?: ReactNode;
     /** A band above everything the sidebar lists, such as the stories row. */
     readonly topAccessory?: ReactNode;
+    /** The wheel turned over the rows, for a top accessory that folds away. */
+    readonly onBodyWheel?: (deltaY: number) => void;
     /**
      * What the reader had folded and hidden in the classic sidebar. The
      * daemon's first document mirrors that sidebar without knowing these, so
@@ -1014,6 +1016,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             }
             headerAccessory={props.headerAccessory}
             {...(props.topAccessory ? { topAccessory: props.topAccessory } : {})}
+            {...(props.onBodyWheel ? { onBodyWheel: props.onBodyWheel } : {})}
             foldControlPlacement="trailing"
             foldControlReveal="hover"
             onItemSelect={open}

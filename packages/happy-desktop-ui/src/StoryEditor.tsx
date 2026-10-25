@@ -5,7 +5,6 @@ import { ModalOverlay } from "./ModalOverlay";
 import { ScrollArea } from "./Scrollbar";
 import { STORY_FONTS, StoryCanvas, storyContrastInk } from "./StoryCanvas";
 import type { StorySticker } from "./StickerView";
-import { storyHaptic } from "./storyHaptics";
 import { STORY_QUICK_REACTIONS } from "./StoryViewer";
 import {
     STORY_CANVAS_HEIGHT,
@@ -15,7 +14,6 @@ import {
     type StoryFrame,
     type StoryLinkOverlay,
     type StoryLinkStyle,
-    type StoryMediaItem,
     type StoryOverlay,
     type StoryTextFill,
     type StoryTextFont,
@@ -88,20 +86,11 @@ export interface StoryEditorProps {
     readonly error?: string;
     readonly frameUrl: (frame: StoryFrame) => string | undefined;
     readonly sticker: (packId: string, stickerId: string) => StorySticker | undefined;
-    /** Media from the conversation the editor was opened from. */
-    readonly media?:
-        | { readonly status: "loading" }
-        | { readonly status: "ready"; readonly items: readonly StoryMediaItem[] }
-        | { readonly status: "failed"; readonly message: string };
-    readonly mediaOffered: boolean;
-    readonly mediaUrl: (item: StoryMediaItem) => string;
     readonly drafts?: { readonly loading: boolean; readonly drafts: readonly Story[] };
     readonly draftUrl: (story: Story) => string | undefined;
     readonly stickerPicker: (handlers: StoryEditorPickerHandlers) => ReactNode;
     readonly overlayIdCreate: () => string;
     onFilesAdd(files: readonly File[]): void;
-    onMediaRequest(): void;
-    onMediaAdd(item: StoryMediaItem): void;
     onDraftsRequest(): void;
     onDraftOpen(storyId: string): void;
     onFrameSelect(index: number): void;
@@ -114,7 +103,7 @@ export interface StoryEditorProps {
     onClose(): void;
 }
 
-type Panel = "stickers" | "reaction" | "media" | "drafts";
+type Panel = "stickers" | "reaction" | "drafts";
 
 interface TextDraft {
     readonly overlay: StoryTextOverlay;
@@ -328,11 +317,6 @@ export function StoryEditor(props: StoryEditorProps) {
                 SNAP / ASPECT,
                 drag.snapY,
             );
-            if (
-                (snapX !== undefined && snapX !== drag.snapX) ||
-                (snapY !== undefined && snapY !== drag.snapY)
-            )
-                storyHaptic("overlay.snap");
             const trashBox = trashRef.current?.getBoundingClientRect();
             const trash =
                 trashBox !== undefined &&
@@ -340,7 +324,6 @@ export function StoryEditor(props: StoryEditorProps) {
                 event.clientX <= trashBox.right + 8 &&
                 event.clientY >= trashBox.top - 8 &&
                 event.clientY <= trashBox.bottom + 8;
-            if (trash && !drag.trash) storyHaptic("overlay.trash");
             setDrag({
                 ...drag,
                 snapX,
@@ -369,7 +352,6 @@ export function StoryEditor(props: StoryEditorProps) {
                 : Math.abs(rotationNormalize(raw - nearest)) < ROTATION_SNAP
                   ? nearest
                   : undefined;
-        if (snapAngle !== undefined && snapAngle !== drag.snapAngle) storyHaptic("overlay.snap");
         setDrag({ ...drag, snapAngle });
         transformSet(drag.overlay, {
             ...start,
@@ -680,9 +662,10 @@ export function StoryEditor(props: StoryEditorProps) {
                                 <button
                                     aria-label="Add photos or videos"
                                     className="happy-story-editor__thumb-add"
-                                    onClick={() =>
-                                        setPanel(panel === "media" ? undefined : "media")
-                                    }
+                                    data-testid="story-editor-add"
+                                    // Photos and videos come from files only.
+                                    onClick={() => fileRef.current?.click()}
+                                    title="Add photos or videos"
                                     type="button"
                                 >
                                     <Icon name="plus" size={18} />
@@ -899,19 +882,6 @@ export function StoryEditor(props: StoryEditorProps) {
                                     >
                                         Choose files
                                     </Button>
-                                    {props.mediaOffered ? (
-                                        <Button
-                                            data-testid="story-editor-from-chat"
-                                            icon="chat"
-                                            onClick={() => {
-                                                props.onMediaRequest();
-                                                setPanel("media");
-                                            }}
-                                            variant="secondary"
-                                        >
-                                            From this conversation
-                                        </Button>
-                                    ) : null}
                                 </div>
                             </div>
                         )}
@@ -1105,7 +1075,6 @@ export function StoryEditor(props: StoryEditorProps) {
                             // eslint-disable-next-line react-hooks/refs -- the handlers given to the picker read the canvas only when a sticker is chosen, never while rendering
                             props.stickerPicker({
                                 onSticker: (sticker) => {
-                                    storyHaptic("sticker.drop");
                                     addCentered({
                                         id: props.overlayIdCreate(),
                                         type: "sticker",
@@ -1116,7 +1085,6 @@ export function StoryEditor(props: StoryEditorProps) {
                                     setPanel(undefined);
                                 },
                                 onEmoji: (emoji) => {
-                                    storyHaptic("sticker.drop");
                                     addCentered({
                                         id: props.overlayIdCreate(),
                                         type: "emoji",
@@ -1162,82 +1130,6 @@ export function StoryEditor(props: StoryEditorProps) {
                                         </button>
                                     ))}
                                 </div>
-                            </div>
-                        ) : panel === "media" ? (
-                            <div
-                                className="happy-story-editor__panel"
-                                data-testid="story-editor-media-panel"
-                            >
-                                <span className="happy-story-editor__panel-title">
-                                    Add photos or videos
-                                </span>
-                                <Button
-                                    icon="image"
-                                    onClick={() => fileRef.current?.click()}
-                                    variant="secondary"
-                                >
-                                    Choose files
-                                </Button>
-                                {props.mediaOffered ? (
-                                    props.media === undefined ? (
-                                        <Button
-                                            icon="chat"
-                                            onClick={props.onMediaRequest}
-                                            variant="secondary"
-                                        >
-                                            From this conversation
-                                        </Button>
-                                    ) : props.media.status === "ready" ? (
-                                        props.media.items.length === 0 ? (
-                                            <span className="happy-story-editor__panel-detail">
-                                                This conversation has no photos or videos yet.
-                                            </span>
-                                        ) : (
-                                            <ScrollArea
-                                                className="happy-story-editor__media-scroll"
-                                                viewportClassName="happy-story-editor__media-viewport"
-                                            >
-                                                <div className="happy-story-editor__media">
-                                                    {props.media.items.map((item, index) => (
-                                                        <button
-                                                            aria-label={`Add ${item.name}`}
-                                                            className="happy-story-editor__media-item"
-                                                            data-testid="story-editor-media-item"
-                                                            key={`${String(index)}:${item.name}`}
-                                                            onClick={() => {
-                                                                props.onMediaAdd(item);
-                                                                setPanel(undefined);
-                                                            }}
-                                                            type="button"
-                                                        >
-                                                            {item.kind === "video" ? (
-                                                                <video
-                                                                    muted
-                                                                    preload="metadata"
-                                                                    src={props.mediaUrl(item)}
-                                                                />
-                                                            ) : (
-                                                                <img
-                                                                    alt=""
-                                                                    draggable={false}
-                                                                    src={props.mediaUrl(item)}
-                                                                />
-                                                            )}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </ScrollArea>
-                                        )
-                                    ) : props.media.status === "failed" ? (
-                                        <span className="happy-story-editor__panel-detail">
-                                            {props.media.message}
-                                        </span>
-                                    ) : (
-                                        <span className="happy-story-editor__panel-detail">
-                                            Loading…
-                                        </span>
-                                    )
-                                ) : null}
                             </div>
                         ) : panel === "drafts" ? (
                             <div

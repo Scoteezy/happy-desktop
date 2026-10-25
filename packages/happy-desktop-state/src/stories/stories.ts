@@ -13,6 +13,10 @@ import {
     type HappyAgentStoriesSettingsStore,
 } from "./storiesSettingsStore.js";
 import {
+    happyAgentStoriesRowStoreCreate,
+    type HappyAgentStoriesRowStore,
+} from "./storiesRowStore.js";
+import {
     happyAgentStoriesScreenStoreCreate,
     type HappyAgentStoriesScreenStore,
 } from "./storiesScreenStore.js";
@@ -40,6 +44,8 @@ export interface HappyAgentStoryUrls {
 export interface HappyAgentStories {
     settings(): HappyAgentStoriesSettingsStore;
     stories(): HappyAgentStoriesStore;
+    /** Whether the row above the sidebar is open or folded. */
+    row(): HappyAgentStoriesRowStore;
     stickers(): HappyAgentStickersStore;
     /** Which full-window Stories screen is open. */
     screen(): HappyAgentStoriesScreenStore;
@@ -60,6 +66,7 @@ export function happyAgentStoriesCreate(deps: HappyAgentStoriesCreateDeps): Happ
     let settings: HappyAgentStoriesSettingsStore | undefined;
     let stories: HappyAgentStoriesStore | undefined;
     let stickers: HappyAgentStickersStore | undefined;
+    let row: HappyAgentStoriesRowStore | undefined;
     let screen: HappyAgentStoriesScreenStore | undefined;
     let screenRelease: (() => void) | undefined;
     const editorCreate = (story?: Story) =>
@@ -71,33 +78,40 @@ export function happyAgentStoriesCreate(deps: HappyAgentStoriesCreateDeps): Happ
         );
         return settings;
     };
+    const storiesGet = (): HappyAgentStoriesStore => {
+        stories ??= happyAgentStoriesStoreCreate({ client, sync: deps.sync });
+        return stories;
+    };
+    const screenGet = (): HappyAgentStoriesScreenStore => {
+        if (screen) return screen;
+        const created = happyAgentStoriesScreenStoreCreate(editorCreate);
+        screen = created;
+        // Turning Stories off closes whatever Stories screen is open and
+        // folds the row, so turning it on again never brings back a stale
+        // one, and an open editor stops its uploads.
+        const setting = settingsGet();
+        screenRelease = setting.subscribe(() => {
+            const current = setting.get();
+            if (current.status === "ready" && !current.storiesEnabled) {
+                created.viewerClose();
+                created.editorClose();
+                row?.rowCollapse();
+            }
+        });
+        return created;
+    };
     return {
         settings: settingsGet,
-        stories() {
-            stories ??= happyAgentStoriesStoreCreate({ client, sync: deps.sync });
-            return stories;
+        stories: storiesGet,
+        row() {
+            row ??= happyAgentStoriesRowStoreCreate(storiesGet(), screenGet());
+            return row;
         },
         stickers() {
             stickers ??= happyAgentStickersStoreCreate({ client, sync: deps.sync });
             return stickers;
         },
-        screen() {
-            if (screen) return screen;
-            const created = happyAgentStoriesScreenStoreCreate(editorCreate);
-            screen = created;
-            // Turning Stories off closes whatever Stories screen is open, so
-            // turning it on again never brings back a stale one, and an open
-            // editor stops its uploads.
-            const setting = settingsGet();
-            screenRelease = setting.subscribe(() => {
-                const current = setting.get();
-                if (current.status === "ready" && !current.storiesEnabled) {
-                    created.viewerClose();
-                    created.editorClose();
-                }
-            });
-            return created;
-        },
+        screen: screenGet,
         editorCreate,
         urls: {
             frame: (storyId, frameId) => client.storyFrameUrl(storyId, frameId),
@@ -113,10 +127,11 @@ export function happyAgentStoriesCreate(deps: HappyAgentStoriesCreateDeps): Happ
             screenRelease?.();
             screenRelease = undefined;
             settings?.[Symbol.dispose]();
+            row?.[Symbol.dispose]();
             stories?.[Symbol.dispose]();
             stickers?.[Symbol.dispose]();
             screen?.[Symbol.dispose]();
-            settings = stories = stickers = screen = undefined;
+            settings = stories = stickers = screen = row = undefined;
         },
     };
 }

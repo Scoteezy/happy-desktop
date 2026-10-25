@@ -5,7 +5,6 @@ import { ModalOverlay } from "./ModalOverlay";
 import { ScrollArea } from "./Scrollbar";
 import { StoryCanvas } from "./StoryCanvas";
 import type { StorySticker } from "./StickerView";
-import { storyHaptic } from "./storyHaptics";
 import {
     STORY_IMAGE_MS,
     STORY_VIDEO_MAX_MS,
@@ -58,7 +57,7 @@ export interface StoryViewerProps {
 }
 
 /** The emoji held-heart offers, the heart first. */
-export const STORY_QUICK_REACTIONS = ["❤️", "🔥", "👍", "😂", "😮", "😢", "🎉", "👏"] as const;
+export const STORY_QUICK_REACTIONS = ["❤️", "👍", "🔥", "🎉", "😂", "😮", "😢", "👏"] as const;
 
 const HOLD_MS = 200;
 const SWIPE_CLOSE_PX = 120;
@@ -66,6 +65,7 @@ const SWIPE_CLOSE_PX = 120;
 type Sheet =
     | { readonly kind: "link"; readonly overlay: StoryLinkOverlay }
     | { readonly kind: "viewers" }
+    | { readonly kind: "more" }
     | { readonly kind: "reactions" }
     | { readonly kind: "delete"; readonly deleting: boolean; readonly error?: string };
 
@@ -79,6 +79,13 @@ function frameMs(frame: StoryFrame, measured: number | undefined): number | unde
     if (frame.kind === "image") return STORY_IMAGE_MS;
     const ms = measured ?? frame.durationMs ?? undefined;
     return ms === undefined ? undefined : Math.min(ms, STORY_VIDEO_MAX_MS);
+}
+
+function initialsOf(name: string): string {
+    const words = name.trim().split(/\s+/u).filter(Boolean);
+    const first = words[0]?.[0] ?? "";
+    const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
+    return (first + last).toUpperCase();
 }
 
 function startStory(author: StoryViewerAuthor, storyId?: string): Story | undefined {
@@ -141,12 +148,14 @@ export function StoryViewer(props: StoryViewerProps) {
 
     const go = (next: Position | undefined): void => {
         ended.current = undefined;
+        // A heart held as the frame ends offers nothing on the next one.
+        if (heartPress.current) clearTimeout(heartPress.current.timer);
+        heartPress.current = null;
         setSheet(undefined);
         if (!next) {
             props.onClose();
             return;
         }
-        storyHaptic("story.advance");
         setPosition(next);
     };
     const authorStep = (step: 1 | -1): Position | undefined => {
@@ -251,12 +260,25 @@ export function StoryViewer(props: StoryViewerProps) {
     };
     const react = (emoji: string): void => {
         if (!story) return;
-        storyHaptic("story.react");
         props.onReact(story.id, emoji);
     };
 
     const viewers = story && sheet?.kind === "viewers" ? props.viewers?.(story.id) : undefined;
     const reactedEmoji = story?.myReaction ?? null;
+    const viewsLabel = (count: number | null): string =>
+        count === null || count === 0
+            ? "No views yet"
+            : `${String(count)} ${count === 1 ? "view" : "views"}`;
+    // Anyone who may open the conversation a story came from can, from the
+    // menu; only its author may delete it. No items, no menu.
+    const sourceOffered = story?.source != null && props.onSourceOpen !== undefined;
+    const deleteOffered = author?.self === true && props.onDelete !== undefined;
+    const menuOffered = sourceOffered || deleteOffered;
+    /** A press inside a sheet or the bar is its own, never the frame's. */
+    const own = {
+        onPointerDown: (event: ReactPointerEvent) => event.stopPropagation(),
+        onPointerUp: (event: ReactPointerEvent) => event.stopPropagation(),
+    };
 
     return (
         <ModalOverlay
@@ -279,6 +301,8 @@ export function StoryViewer(props: StoryViewerProps) {
                         event.target instanceof HTMLElement &&
                         event.target !== event.currentTarget &&
                         event.target.closest("button, [role='button'], input, textarea") !== null;
+                    // An open sheet holds the story where it is.
+                    if (sheet) return;
                     if (event.key === "ArrowRight") next();
                     else if (event.key === "ArrowLeft") previous();
                     else if (event.key === " " && !control) setHeld((value) => !value);
@@ -300,292 +324,208 @@ export function StoryViewer(props: StoryViewerProps) {
                     <Icon name="chevron-left" size={20} />
                 </button>
                 {author && story && frame ? (
-                    <div
-                        className="happy-story-viewer__stage"
-                        data-held={held ? "" : undefined}
-                        onPointerCancel={stagePointerCancel}
-                        onPointerDown={stagePointerDown}
-                        onPointerUp={stagePointerUp}
-                        ref={shownRef}
-                    >
-                        <StoryCanvas
-                            caption={story.caption}
-                            className="happy-story-viewer__canvas"
-                            data-testid="story-viewer-canvas"
-                            frame={frame}
-                            mediaUrl={props.frameUrl(story.id, frame.id)}
-                            muted={muted}
-                            myReaction={story.myReaction}
-                            onOverlayActivate={(overlay) => {
-                                if (overlay.type === "link") setSheet({ kind: "link", overlay });
-                                else if (!author.self) react(overlay.emoji);
-                            }}
-                            onVideoDuration={(ms) =>
-                                setMeasured((map) => new Map(map).set(frame.id, ms))
-                            }
-                            onVideoEnded={frameEnd}
-                            playing={!paused}
-                            reactions={story.reactions}
-                            sticker={props.sticker}
+                    <div className="happy-story-viewer__column">
+                        <div
+                            className="happy-story-viewer__stage"
+                            data-held={held ? "" : undefined}
+                            onPointerCancel={stagePointerCancel}
+                            onPointerDown={stagePointerDown}
+                            onPointerUp={stagePointerUp}
+                            ref={shownRef}
                         >
-                            <div className="happy-story-viewer__chrome" data-part="top">
-                                <div className="happy-story-viewer__progress" role="presentation">
-                                    {segments?.map((segment, index) => (
-                                        <span
-                                            className="happy-story-viewer__segment"
-                                            key={`${segment.story.id}:${segment.frame.id}`}
-                                        >
-                                            <span
-                                                className="happy-story-viewer__segment-fill"
-                                                data-state={
-                                                    index < (current ?? 0)
-                                                        ? "done"
-                                                        : index === current
-                                                          ? "playing"
-                                                          : "waiting"
-                                                }
-                                                // The bar is the frame's clock: when its fill
-                                                // ends, the frame does.
-                                                key={
-                                                    index === current
-                                                        ? `${story.id}:${frame.id}`
-                                                        : undefined
-                                                }
-                                                onAnimationEnd={
-                                                    index === current ? frameEnd : undefined
-                                                }
-                                                style={
-                                                    index === current
-                                                        ? {
-                                                              animationDuration: `${String(duration ?? STORY_VIDEO_MAX_MS)}ms`,
-                                                              animationPlayState:
-                                                                  paused || duration === undefined
-                                                                      ? "paused"
-                                                                      : "running",
-                                                          }
-                                                        : undefined
-                                                }
-                                            />
-                                        </span>
-                                    ))}
-                                </div>
-                                <div className="happy-story-viewer__header">
-                                    <span className="happy-story-viewer__avatar" aria-hidden="true">
-                                        {author.photoUrl ? (
-                                            <img alt="" draggable={false} src={author.photoUrl} />
-                                        ) : (
-                                            author.initials
-                                        )}
-                                    </span>
-                                    <span className="happy-story-viewer__who">
-                                        <span className="happy-story-viewer__name">
-                                            {author.self ? "My Story" : author.name}
-                                        </span>
-                                        <span className="happy-story-viewer__when">
-                                            {props.postedLabel(story)}
-                                        </span>
-                                    </span>
-                                    {story.source && props.onSourceOpen ? (
-                                        <button
-                                            className="happy-story-viewer__icon"
-                                            aria-label="Open conversation"
-                                            onPointerDown={(event) => event.stopPropagation()}
-                                            onPointerUp={(event) => event.stopPropagation()}
-                                            onClick={() => props.onSourceOpen?.(story)}
-                                            title="Open conversation"
-                                            type="button"
-                                        >
-                                            <Icon name="chat" size={18} />
-                                        </button>
-                                    ) : null}
-                                    {frame.kind === "video" ? (
-                                        <button
-                                            className="happy-story-viewer__icon"
-                                            aria-label={muted ? "Unmute" : "Mute"}
-                                            onPointerDown={(event) => event.stopPropagation()}
-                                            onPointerUp={(event) => event.stopPropagation()}
-                                            onClick={() => setMuted((value) => !value)}
-                                            type="button"
-                                        >
-                                            <Ionicon
-                                                name={
-                                                    muted
-                                                        ? "volume-mute-outline"
-                                                        : "volume-high-outline"
-                                                }
-                                                size={18}
-                                            />
-                                        </button>
-                                    ) : null}
-                                    <button
-                                        className="happy-story-viewer__icon"
-                                        aria-label="Close"
-                                        data-testid="story-viewer-close"
-                                        onPointerDown={(event) => event.stopPropagation()}
-                                        onPointerUp={(event) => event.stopPropagation()}
-                                        onClick={props.onClose}
-                                        type="button"
-                                    >
-                                        <Icon name="close" size={18} />
-                                    </button>
-                                </div>
-                            </div>
-                            <div
-                                className="happy-story-viewer__chrome"
-                                data-part="bottom"
-                                onPointerDown={(event) => event.stopPropagation()}
-                                onPointerUp={(event) => event.stopPropagation()}
+                            <StoryCanvas
+                                caption={story.caption}
+                                className="happy-story-viewer__canvas"
+                                data-testid="story-viewer-canvas"
+                                frame={frame}
+                                mediaUrl={props.frameUrl(story.id, frame.id)}
+                                muted={muted}
+                                myReaction={story.myReaction}
+                                onOverlayActivate={(overlay) => {
+                                    if (overlay.type === "link")
+                                        setSheet({ kind: "link", overlay });
+                                    else if (!author.self) react(overlay.emoji);
+                                }}
+                                onVideoDuration={(ms) =>
+                                    setMeasured((map) => new Map(map).set(frame.id, ms))
+                                }
+                                onVideoEnded={frameEnd}
+                                playing={!paused}
+                                reactions={story.reactions}
+                                sticker={props.sticker}
                             >
-                                {author.self ? (
-                                    <>
-                                        <button
-                                            className="happy-story-viewer__pill"
-                                            data-testid="story-viewer-views"
-                                            onClick={() => {
-                                                props.onViewersRequest?.(story.id);
-                                                setSheet({ kind: "viewers" });
-                                            }}
-                                            type="button"
-                                        >
-                                            <Icon name="eye" size={16} />
-                                            <span>
-                                                {story.viewCount === null
-                                                    ? "Views"
-                                                    : `${String(story.viewCount)} ${story.viewCount === 1 ? "view" : "views"}`}
+                                <div className="happy-story-viewer__chrome">
+                                    <div
+                                        className="happy-story-viewer__progress"
+                                        role="presentation"
+                                    >
+                                        {segments?.map((segment, index) => (
+                                            <span
+                                                className="happy-story-viewer__segment"
+                                                key={`${segment.story.id}:${segment.frame.id}`}
+                                            >
+                                                <span
+                                                    className="happy-story-viewer__segment-fill"
+                                                    data-state={
+                                                        index < (current ?? 0)
+                                                            ? "done"
+                                                            : index === current
+                                                              ? "playing"
+                                                              : "waiting"
+                                                    }
+                                                    // The bar is the frame's clock: when its
+                                                    // fill ends, the frame does.
+                                                    key={
+                                                        index === current
+                                                            ? `${story.id}:${frame.id}`
+                                                            : undefined
+                                                    }
+                                                    onAnimationEnd={
+                                                        index === current ? frameEnd : undefined
+                                                    }
+                                                    style={
+                                                        index === current
+                                                            ? {
+                                                                  animationDuration: `${String(duration ?? STORY_VIDEO_MAX_MS)}ms`,
+                                                                  animationPlayState:
+                                                                      paused ||
+                                                                      duration === undefined
+                                                                          ? "paused"
+                                                                          : "running",
+                                                              }
+                                                            : undefined
+                                                    }
+                                                />
                                             </span>
-                                            {story.reactions.length > 0 ? (
-                                                <span className="happy-story-viewer__reaction-tally">
-                                                    {story.reactions
-                                                        .slice(0, 3)
-                                                        .map(
-                                                            (each) =>
-                                                                `${each.emoji} ${String(each.count)}`,
-                                                        )
-                                                        .join("  ")}
-                                                </span>
-                                            ) : null}
-                                        </button>
-                                        {props.onDelete ? (
+                                        ))}
+                                    </div>
+                                    <div className="happy-story-viewer__header">
+                                        <span
+                                            className="happy-story-viewer__avatar"
+                                            aria-hidden="true"
+                                        >
+                                            {author.photoUrl ? (
+                                                <img
+                                                    alt=""
+                                                    draggable={false}
+                                                    src={author.photoUrl}
+                                                />
+                                            ) : (
+                                                author.initials
+                                            )}
+                                        </span>
+                                        <span className="happy-story-viewer__who">
+                                            <span className="happy-story-viewer__name">
+                                                {author.self ? "My Story" : author.name}
+                                            </span>
+                                            <span className="happy-story-viewer__when">
+                                                {props.postedLabel(story)}
+                                            </span>
+                                        </span>
+                                        {frame.kind === "video" ? (
                                             <button
+                                                {...own}
+                                                aria-label={muted ? "Unmute" : "Mute"}
                                                 className="happy-story-viewer__icon"
-                                                aria-label="Delete story"
-                                                onClick={() =>
-                                                    setSheet({ kind: "delete", deleting: false })
-                                                }
-                                                title="Delete story"
+                                                onClick={() => setMuted((value) => !value)}
                                                 type="button"
                                             >
-                                                <Icon name="trash" size={18} />
+                                                <Ionicon
+                                                    name={
+                                                        muted
+                                                            ? "volume-mute-outline"
+                                                            : "volume-high-outline"
+                                                    }
+                                                    size={20}
+                                                />
                                             </button>
                                         ) : null}
-                                    </>
-                                ) : (
-                                    <button
-                                        aria-label={
-                                            reactedEmoji
-                                                ? `Reacted ${reactedEmoji}`
-                                                : "React with ❤️"
-                                        }
-                                        aria-pressed={reactedEmoji !== null}
-                                        className="happy-story-viewer__heart"
-                                        data-testid="story-viewer-heart"
+                                        {menuOffered ? (
+                                            <button
+                                                {...own}
+                                                aria-expanded={sheet?.kind === "more"}
+                                                aria-label="More"
+                                                className="happy-story-viewer__icon"
+                                                data-testid="story-viewer-more"
+                                                onClick={() =>
+                                                    setSheet(
+                                                        sheet?.kind === "more"
+                                                            ? undefined
+                                                            : { kind: "more" },
+                                                    )
+                                                }
+                                                type="button"
+                                            >
+                                                <Ionicon name="ellipsis-horizontal" size={20} />
+                                            </button>
+                                        ) : null}
+                                        <button
+                                            {...own}
+                                            aria-label="Close"
+                                            className="happy-story-viewer__icon"
+                                            data-testid="story-viewer-close"
+                                            onClick={props.onClose}
+                                            type="button"
+                                        >
+                                            <Icon name="close" size={20} />
+                                        </button>
+                                    </div>
+                                </div>
+                                {sheet ? (
+                                    <div
+                                        {...own}
+                                        className="happy-story-viewer__sheet-scrim"
+                                        data-kind={sheet.kind}
+                                        role="presentation"
+                                        onKeyDown={(event) => event.stopPropagation()}
                                         onClick={(event) => {
                                             event.stopPropagation();
-                                            const pressed = heartPress.current;
-                                            heartPress.current = null;
-                                            if (pressed) clearTimeout(pressed.timer);
-                                            if (!pressed?.offered) react(reactedEmoji ?? "❤️");
+                                            if (event.target === event.currentTarget)
+                                                setSheet(undefined);
                                         }}
-                                        onContextMenu={(event) => {
-                                            event.preventDefault();
-                                            heartRelease();
-                                            setSheet({ kind: "reactions" });
-                                        }}
-                                        onPointerCancel={heartRelease}
-                                        onPointerDown={(event) => {
-                                            event.stopPropagation();
-                                            if (event.button !== 0) return;
-                                            heartRelease();
-                                            const timer = setTimeout(() => {
-                                                if (heartPress.current)
-                                                    heartPress.current.offered = true;
-                                                setSheet({ kind: "reactions" });
-                                            }, 400);
-                                            heartPress.current = { timer, offered: false };
-                                        }}
-                                        onPointerLeave={() => {
-                                            // Leaving before the hold completes is no hold.
-                                            if (heartPress.current && !heartPress.current.offered)
-                                                heartRelease();
-                                        }}
-                                        onPointerUp={(event) => event.stopPropagation()}
-                                        title="React; hold or right-click for more"
-                                        type="button"
                                     >
-                                        {reactedEmoji && reactedEmoji !== "❤️" ? (
-                                            <span className="happy-story-viewer__heart-emoji">
-                                                {reactedEmoji}
-                                            </span>
-                                        ) : (
-                                            <span
-                                                className="happy-story-viewer__heart-emoji"
-                                                data-off={reactedEmoji ? undefined : ""}
+                                        {sheet.kind === "more" ? (
+                                            <div
+                                                className="happy-story-viewer__menu"
+                                                data-testid="story-viewer-menu"
+                                                role="menu"
                                             >
-                                                ❤️
-                                            </span>
-                                        )}
-                                    </button>
-                                )}
-                            </div>
-                            {sheet ? (
-                                <div
-                                    className="happy-story-viewer__sheet-scrim"
-                                    role="presentation"
-                                    onKeyDown={(event) => event.stopPropagation()}
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        if (event.target === event.currentTarget)
-                                            setSheet(undefined);
-                                    }}
-                                    onPointerDown={(event) => event.stopPropagation()}
-                                    onPointerUp={(event) => event.stopPropagation()}
-                                >
-                                    <div
-                                        className="happy-story-viewer__sheet"
-                                        data-kind={sheet.kind}
-                                        data-testid="story-viewer-sheet"
-                                    >
-                                        {sheet.kind === "link" ? (
-                                            <>
-                                                <span className="happy-story-viewer__sheet-title">
-                                                    Open this link?
-                                                </span>
-                                                <span className="happy-story-viewer__url">
-                                                    {sheet.overlay.url}
-                                                </span>
-                                                <div className="happy-story-viewer__sheet-actions">
+                                                {sourceOffered ? (
                                                     <button
-                                                        className="happy-story-viewer__sheet-button"
-                                                        onClick={() => setSheet(undefined)}
-                                                        type="button"
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                    <button
-                                                        className="happy-story-viewer__sheet-button"
-                                                        data-primary=""
+                                                        className="happy-story-viewer__menu-item"
                                                         onClick={() => {
                                                             setSheet(undefined);
-                                                            props.onLinkOpen(sheet.overlay.url);
+                                                            props.onSourceOpen?.(story);
                                                         }}
+                                                        role="menuitem"
                                                         type="button"
                                                     >
-                                                        Open
+                                                        Open conversation
                                                     </button>
-                                                </div>
-                                            </>
+                                                ) : null}
+                                                {deleteOffered ? (
+                                                    <button
+                                                        className="happy-story-viewer__menu-item"
+                                                        data-danger=""
+                                                        data-testid="story-viewer-delete"
+                                                        onClick={() =>
+                                                            setSheet({
+                                                                kind: "delete",
+                                                                deleting: false,
+                                                            })
+                                                        }
+                                                        role="menuitem"
+                                                        type="button"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                ) : null}
+                                            </div>
                                         ) : sheet.kind === "reactions" ? (
-                                            <div className="happy-story-viewer__reaction-row">
+                                            <div
+                                                className="happy-story-viewer__reaction-row"
+                                                data-testid="story-viewer-reactions"
+                                            >
                                                 {STORY_QUICK_REACTIONS.map((emoji) => (
                                                     <button
                                                         aria-label={`React with ${emoji}`}
@@ -602,16 +542,50 @@ export function StoryViewer(props: StoryViewerProps) {
                                                     </button>
                                                 ))}
                                             </div>
-                                        ) : sheet.kind === "delete" ? (
-                                            <>
-                                                <span className="happy-story-viewer__sheet-title">
-                                                    Delete this story?
+                                        ) : sheet.kind === "link" ? (
+                                            <div
+                                                className="happy-story-viewer__card"
+                                                data-testid="story-viewer-sheet"
+                                            >
+                                                <span className="happy-story-viewer__url">
+                                                    {sheet.overlay.url}
                                                 </span>
-                                                {sheet.error ? (
-                                                    <span className="happy-story-viewer__url">
-                                                        {sheet.error}
-                                                    </span>
-                                                ) : null}
+                                                <button
+                                                    className="happy-story-viewer__sheet-button"
+                                                    onClick={() => {
+                                                        setSheet(undefined);
+                                                        props.onLinkOpen(sheet.overlay.url);
+                                                    }}
+                                                    type="button"
+                                                >
+                                                    Open
+                                                </button>
+                                                <button
+                                                    className="happy-story-viewer__sheet-button"
+                                                    onClick={() => {
+                                                        setSheet(undefined);
+                                                        void navigator.clipboard
+                                                            ?.writeText(sheet.overlay.url)
+                                                            .catch(() => undefined);
+                                                    }}
+                                                    type="button"
+                                                >
+                                                    Copy link
+                                                </button>
+                                            </div>
+                                        ) : sheet.kind === "delete" ? (
+                                            <div
+                                                className="happy-story-viewer__card"
+                                                data-testid="story-viewer-sheet"
+                                                role="alertdialog"
+                                            >
+                                                <span className="happy-story-viewer__sheet-title">
+                                                    Delete story?
+                                                </span>
+                                                <span className="happy-story-viewer__url">
+                                                    {sheet.error ??
+                                                        "This story will be removed for everyone."}
+                                                </span>
                                                 <div className="happy-story-viewer__sheet-actions">
                                                     <button
                                                         className="happy-story-viewer__sheet-button"
@@ -623,14 +597,15 @@ export function StoryViewer(props: StoryViewerProps) {
                                                     <button
                                                         className="happy-story-viewer__sheet-button"
                                                         data-danger=""
+                                                        data-testid="story-viewer-delete-confirm"
                                                         disabled={sheet.deleting}
                                                         onClick={() => {
                                                             setSheet({
                                                                 kind: "delete",
                                                                 deleting: true,
                                                             });
-                                                            // Where the walk goes once the story
-                                                            // is gone, while it is still here.
+                                                            // Where the walk goes once the
+                                                            // story is gone, while it is here.
                                                             const at = author.stories.findIndex(
                                                                 (each) => each.id === story.id,
                                                             );
@@ -644,12 +619,8 @@ export function StoryViewer(props: StoryViewerProps) {
                                                                   }
                                                                 : authorStep(1);
                                                             void props.onDelete?.(story.id).then(
-                                                                () => {
-                                                                    storyHaptic("story.delete");
-                                                                    go(after);
-                                                                },
-                                                                (error: unknown) => {
-                                                                    storyHaptic("error");
+                                                                () => go(after),
+                                                                (error: unknown) =>
                                                                     setSheet({
                                                                         kind: "delete",
                                                                         deleting: false,
@@ -657,8 +628,7 @@ export function StoryViewer(props: StoryViewerProps) {
                                                                             error instanceof Error
                                                                                 ? error.message
                                                                                 : String(error),
-                                                                    });
-                                                                },
+                                                                    }),
                                                             );
                                                         }}
                                                         type="button"
@@ -666,14 +636,25 @@ export function StoryViewer(props: StoryViewerProps) {
                                                         Delete
                                                     </button>
                                                 </div>
-                                            </>
+                                            </div>
                                         ) : (
-                                            <>
-                                                <span className="happy-story-viewer__sheet-title">
-                                                    {story.viewCount === null
-                                                        ? "Viewers"
-                                                        : `Viewed by ${String(story.viewCount)}`}
-                                                </span>
+                                            <div
+                                                className="happy-story-viewer__sheet"
+                                                data-testid="story-viewer-sheet"
+                                            >
+                                                <div className="happy-story-viewer__sheet-head">
+                                                    <span className="happy-story-viewer__sheet-title">
+                                                        {viewsLabel(story.viewCount)}
+                                                    </span>
+                                                    <button
+                                                        aria-label="Done"
+                                                        className="happy-story-viewer__icon"
+                                                        onClick={() => setSheet(undefined)}
+                                                        type="button"
+                                                    >
+                                                        <Icon name="close" size={18} />
+                                                    </button>
+                                                </div>
                                                 <ScrollArea
                                                     className="happy-story-viewer__viewers-scroll"
                                                     viewportClassName="happy-story-viewer__viewers-viewport"
@@ -682,7 +663,7 @@ export function StoryViewer(props: StoryViewerProps) {
                                                         {viewers?.status === "ready" ? (
                                                             viewers.viewers.length === 0 ? (
                                                                 <li className="happy-story-viewer__viewer-empty">
-                                                                    Nobody has seen it yet.
+                                                                    No views yet
                                                                 </li>
                                                             ) : (
                                                                 viewers.viewers.map((viewer) => {
@@ -702,9 +683,9 @@ export function StoryViewer(props: StoryViewerProps) {
                                                                                         src={photo}
                                                                                     />
                                                                                 ) : (
-                                                                                    viewer.name
-                                                                                        .slice(0, 1)
-                                                                                        .toUpperCase()
+                                                                                    initialsOf(
+                                                                                        viewer.name,
+                                                                                    )
                                                                                 )}
                                                                             </span>
                                                                             <span className="happy-story-viewer__viewer-name">
@@ -729,15 +710,81 @@ export function StoryViewer(props: StoryViewerProps) {
                                                         )}
                                                     </ul>
                                                 </ScrollArea>
-                                            </>
+                                            </div>
                                         )}
                                     </div>
-                                </div>
-                            ) : null}
-                        </StoryCanvas>
+                                ) : null}
+                            </StoryCanvas>
+                        </div>
+                        {/* Under the frame, as on iOS and Telegram: the author's
+                            views, or a viewer's heart. Always 52px, so the frame
+                            never moves between them. */}
+                        <div {...own} className="happy-story-viewer__bar">
+                            {author.self ? (
+                                <button
+                                    className="happy-story-viewer__views"
+                                    data-testid="story-viewer-views"
+                                    onClick={() => {
+                                        props.onViewersRequest?.(story.id);
+                                        setSheet({ kind: "viewers" });
+                                    }}
+                                    type="button"
+                                >
+                                    <Icon name="eye" size={18} />
+                                    <span>{viewsLabel(story.viewCount)}</span>
+                                </button>
+                            ) : (
+                                <button
+                                    aria-label={
+                                        reactedEmoji ? `Reacted ${reactedEmoji}` : "React with ❤️"
+                                    }
+                                    aria-pressed={reactedEmoji !== null}
+                                    className="happy-story-viewer__heart"
+                                    data-testid="story-viewer-heart"
+                                    onClick={() => {
+                                        const pressed = heartPress.current;
+                                        heartPress.current = null;
+                                        if (pressed) clearTimeout(pressed.timer);
+                                        if (!pressed?.offered) react(reactedEmoji ?? "❤️");
+                                    }}
+                                    onContextMenu={(event) => {
+                                        event.preventDefault();
+                                        heartRelease();
+                                        setSheet({ kind: "reactions" });
+                                    }}
+                                    onPointerCancel={heartRelease}
+                                    onPointerDown={(event) => {
+                                        event.stopPropagation();
+                                        if (event.button !== 0) return;
+                                        heartRelease();
+                                        const timer = setTimeout(() => {
+                                            if (heartPress.current)
+                                                heartPress.current.offered = true;
+                                            setSheet({ kind: "reactions" });
+                                        }, 400);
+                                        heartPress.current = { timer, offered: false };
+                                    }}
+                                    onPointerLeave={() => {
+                                        // Leaving before the hold completes is no hold.
+                                        if (heartPress.current && !heartPress.current.offered)
+                                            heartRelease();
+                                    }}
+                                    title="React; hold or right-click for more"
+                                    type="button"
+                                >
+                                    {reactedEmoji ? (
+                                        <span className="happy-story-viewer__heart-emoji">
+                                            {reactedEmoji}
+                                        </span>
+                                    ) : (
+                                        <Ionicon name="heart-outline" size={26} />
+                                    )}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 ) : (
-                    <div className="happy-story-viewer__stage">
+                    <div className="happy-story-viewer__column">
                         <span className="happy-story-viewer__gone">
                             This story is no longer available.
                         </span>

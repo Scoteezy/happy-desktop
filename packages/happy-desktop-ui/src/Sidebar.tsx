@@ -509,6 +509,12 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
      * is under it.
      */
     topAccessory?: ReactNode;
+    /**
+     * The wheel turned over the sidebar's rows, with its vertical delta: the
+     * top accessory may fold away as the person scrolls on, as the stories
+     * row does.
+     */
+    onBodyWheel?: (deltaY: number) => void;
     /** Compact context anchored at the trailing edge of the 56px top heading. */
     headerTrailing?: ReactNode;
     /**
@@ -2646,6 +2652,7 @@ export function Sidebar(props: SidebarProps) {
         "foldControlReveal",
         "headerAccessory",
         "topAccessory",
+        "onBodyWheel",
         "headerAction",
         "onHeaderMenuSelect",
         "headerTrailing",
@@ -4238,6 +4245,11 @@ export function Sidebar(props: SidebarProps) {
                 viewportClassName="happy-sidebar__body-viewport"
                 viewportProps={{
                     onScroll: (event) => setScrolled(event.currentTarget.scrollTop > 0),
+                    // Only a mostly vertical turn: a sideways trackpad swipe folds nothing.
+                    onWheel: (event) => {
+                        if (Math.abs(event.deltaY) > Math.abs(event.deltaX))
+                            local.onBodyWheel?.(event.deltaY);
+                    },
                 }}
             >
                 <div

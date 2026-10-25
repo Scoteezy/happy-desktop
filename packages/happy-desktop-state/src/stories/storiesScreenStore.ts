@@ -10,11 +10,7 @@ export type HappyAgentStoriesViewerTarget =
 
 export interface HappyAgentStoriesScreenSnapshot {
     readonly viewer?: HappyAgentStoriesViewerTarget;
-    readonly editor?: {
-        readonly store: HappyAgentStoryEditorStore;
-        /** The conversation whose media the editor offers, when it was opened from one. */
-        readonly agentId?: string;
-    };
+    readonly editor?: { readonly store: HappyAgentStoryEditorStore };
 }
 
 /**
@@ -26,14 +22,14 @@ export interface HappyAgentStoriesScreenStore {
     subscribe(listener: () => void): () => void;
     viewerOpen(target: HappyAgentStoriesViewerTarget): void;
     viewerClose(): void;
-    /** Opens the editor on `story`, or on a new draft. */
-    editorOpen(options: { readonly story?: Story; readonly agentId?: string }): void;
+    /** Opens the editor on a draft a conversation made. */
+    editorOpen(story: Story): void;
     editorClose(): void;
     [Symbol.dispose](): void;
 }
 
 export function happyAgentStoriesScreenStoreCreate(
-    editorCreate: (story?: Story) => HappyAgentStoryEditorStore,
+    editorCreate: (story: Story) => HappyAgentStoryEditorStore,
 ): HappyAgentStoriesScreenStore {
     const listeners = new Set<() => void>();
     let snapshot: HappyAgentStoriesScreenSnapshot = {};
@@ -60,16 +56,10 @@ export function happyAgentStoriesScreenStoreCreate(
             const { viewer: _viewer, ...rest } = snapshot;
             publish(rest);
         },
-        editorOpen(options) {
+        editorOpen(story) {
             editorRelease();
             const { viewer: _viewer, ...rest } = snapshot;
-            publish({
-                ...rest,
-                editor: {
-                    store: editorCreate(options.story),
-                    ...(options.agentId ? { agentId: options.agentId } : {}),
-                },
-            });
+            publish({ ...rest, editor: { store: editorCreate(story) } });
         },
         editorClose() {
             if (!snapshot.editor) return;

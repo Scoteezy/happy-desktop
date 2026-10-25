@@ -346,5 +346,5 @@ export const STORY_GONE_MEDIA = fixtureStory(
 export function fixturePostedLabel(story: Story): string {
     if (story.postedAt === null) return "Draft";
     const hours = Math.round((FIXTURE_NOW - story.postedAt) / HOUR);
-    return hours < 1 ? "just now" : `${String(hours)}h`;
+    return hours < 1 ? "just now" : `${String(hours)}h ago`;
 }

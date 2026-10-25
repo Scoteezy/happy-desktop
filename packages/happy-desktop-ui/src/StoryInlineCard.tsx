@@ -27,16 +27,17 @@ export interface StoryInlineCardProps {
     readonly "data-testid"?: string;
 }
 
-/** The card's canvas: 9:16 in whole pixels. */
-export const STORY_INLINE_WIDTH = 162;
-export const STORY_INLINE_HEIGHT = 288;
+/** The card's canvas: 9:16 in whole pixels, at most iOS's 200 wide. */
+export const STORY_INLINE_WIDTH = 180;
+export const STORY_INLINE_HEIGHT = 320;
 
 /**
- * A story an agent drafted, in its chat: the story itself, drawn from its
- * latest version, with Post and Edit beside it while it is the reader's draft.
- * Others see it labelled "Draft"; once posted it reads "Posted" and opens the
- * viewer. It is always the same height, so nothing in the chat moves when the
- * story loads, changes version, or is posted.
+ * A story an agent drafted, in its chat, as on iOS: the story itself, drawn
+ * from its latest version, and under it a 32px bar with Post and Edit while it
+ * is the reader's draft, or what became of it. Others see it labelled
+ * "Draft"; once posted it reads "Posted" and opens the viewer. It is always
+ * the same height, so nothing in the chat moves when the story loads, changes
+ * version, or is posted.
  */
 export function StoryInlineCard(props: StoryInlineCardProps) {
     const state = props.state;
@@ -46,30 +47,35 @@ export function StoryInlineCard(props: StoryInlineCardProps) {
     // A story another person has not posted is not readable to anyone else:
     // what reaches them is that it exists, as a draft.
     const label = deleted
-        ? "This story was deleted"
+        ? "Deleted"
         : state.type === "missing"
           ? "Draft"
           : story === undefined
-            ? "Loading story…"
+            ? ""
             : story.status === "posted"
               ? "Posted"
               : "Draft";
     const actionable =
         state.type === "ready" && state.mine && story?.status === "draft" && !deleted;
+    const posting = state.type === "ready" && state.posting === true;
     return (
         <div
             className="happy-story-inline"
             data-happy-desktop-ui="story-inline"
             data-status={deleted ? "deleted" : story?.status}
             data-testid={props["data-testid"]}
+            // The bar and its error stay within the card's column.
+            style={{ width: STORY_INLINE_WIDTH }}
         >
             <button
                 aria-label={
-                    story ? `Open story${story.caption ? `: ${story.caption}` : ""}` : "Story"
+                    story
+                        ? `${story.status === "draft" ? "Edit story draft" : "Open story"}${story.caption ? `: ${story.caption}` : ""}`
+                        : "Story"
                 }
                 className="happy-story-inline__frame"
-                // A draft is not in the viewer yet: its author edits it.
-                disabled={!story || deleted || (story.status === "draft" && !actionable)}
+                // A draft is not in the viewer yet: its author edits it, but not mid-post.
+                disabled={!story || deleted || posting || (story.status === "draft" && !actionable)}
                 onClick={() => {
                     if (!story) return;
                     if (story.status !== "draft") props.onOpen(story);
@@ -91,24 +97,12 @@ export function StoryInlineCard(props: StoryInlineCardProps) {
                     />
                 ) : null}
             </button>
-            <div className="happy-story-inline__side">
-                <span className="happy-story-inline__label" data-testid="story-inline-label">
-                    {label}
-                </span>
-                {story && !deleted ? (
-                    <span className="happy-story-inline__detail">
-                        {story.frames.length === 1
-                            ? story.frames[0]?.kind === "video"
-                                ? "1 video"
-                                : "1 photo"
-                            : `${String(story.frames.length)} photos and videos`}
-                    </span>
-                ) : null}
+            <div className="happy-story-inline__bar">
                 {actionable && story ? (
-                    <div className="happy-story-inline__actions">
+                    <>
                         <Button
                             data-testid="story-inline-post"
-                            loading={state.type === "ready" && state.posting === true}
+                            loading={posting}
                             onClick={() => props.onPost(story)}
                             size="small"
                             variant="ghost"
@@ -117,15 +111,19 @@ export function StoryInlineCard(props: StoryInlineCardProps) {
                         </Button>
                         <Button
                             data-testid="story-inline-edit"
-                            disabled={state.type === "ready" && state.posting === true}
+                            disabled={posting}
                             onClick={() => props.onEdit(story)}
                             size="small"
                             variant="ghost"
                         >
                             Edit
                         </Button>
-                    </div>
-                ) : null}
+                    </>
+                ) : (
+                    <span className="happy-story-inline__label" data-testid="story-inline-label">
+                        {label}
+                    </span>
+                )}
                 {state.type === "ready" && state.error ? (
                     <span className="happy-story-inline__error" role="alert">
                         {state.error}
