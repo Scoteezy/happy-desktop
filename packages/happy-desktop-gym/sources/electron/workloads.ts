@@ -7,6 +7,7 @@ import type { ElectronApplication, Locator, Page } from "playwright";
 import { gymGoldReplayMaterialRead, type GymGoldReplayMaterial } from "./goldReplay.js";
 import { hiddenWindowRun } from "./hiddenWindow.js";
 import { sidebarDragChaosRun } from "./sidebarDragChaos.js";
+import { nestedRowMenusRun } from "./nestedRowMenus.js";
 import {
     stopShimmerRun,
     stopShimmerSpacesSubtaskStart,
@@ -941,6 +942,21 @@ async function workloadRun(
     await mark("route-ready");
     if (workload === "hidden-window")
         return finish(await hiddenWindowRun(page, app, options.paths.artifacts, mark));
+    if (workload === "nested-row-menus") {
+        await options.runtime.client.stemCellsEnable();
+        await page.reload();
+        await page
+            .locator('[data-happy-desktop-ui="sidebar-item"][data-item-id="create"]')
+            .first()
+            .waitFor({ timeout: 45_000 });
+        await mark("sidebar-ready");
+        const result = await nestedRowMenusRun(
+            page,
+            options.runtime.client,
+            options.paths.artifacts,
+        );
+        return finish({ ...result });
+    }
     if (workload === "sidebar-drag") {
         await options.runtime.client.stemCellsEnable();
         await page.evaluate(() =>

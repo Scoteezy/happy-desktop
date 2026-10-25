@@ -3857,6 +3857,24 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                             .catch(() => undefined),
                     surfaceLeave: (surfaceId) =>
                         surfaceCatalogStore.surfaceLeave(surfaceId as HappyAgentSurfaceId),
+                    subtaskArchive: (agentId) =>
+                        void active?.session?.workspace
+                            .subtaskArchive(agentId as HappyAgentSessionId)
+                            .catch(() => undefined),
+                    worktreeArchive: (worktreeId) => {
+                        const owner = rowOwnerFind(active?.projects ?? NO_PROJECTS, worktreeId);
+                        if (owner?.worktreeId === undefined) return;
+                        void active?.session?.workspace
+                            .worktreeArchive(owner.project.id, owner.worktreeId)
+                            .catch(() => undefined);
+                    },
+                    worktreeRename: (worktreeId, name) => {
+                        const owner = rowOwnerFind(active?.projects ?? NO_PROJECTS, worktreeId);
+                        if (owner?.worktreeId === undefined) return;
+                        void active?.session?.workspace
+                            .worktreeRename(owner.project.id, owner.worktreeId, name)
+                            .catch(() => undefined);
+                    },
                     ...(active && happyAgentTaskCreateSupported(active)
                         ? {
                               taskRename: (taskId: string, name: string) =>

@@ -101,6 +101,42 @@ export class GymHappyAgentClient {
         });
     }
 
+    /** The Spaces sidebar document as the daemon holds it, and the person's spaces. */
+    async spaceSidebar(): Promise<{
+        readonly html: string;
+        readonly spaces: readonly {
+            readonly id: string;
+            readonly title: string | null;
+            readonly target: {
+                readonly kind: string;
+                readonly id: string;
+                readonly agentId?: string | null;
+            };
+        }[];
+    }> {
+        return await this.#client.getSpaceSidebar();
+    }
+
+    /** Attaches one space under another row, as the person carrying it there would. */
+    async spaceAttach(spaceId: string, parentId: string): Promise<void> {
+        const sidebar = await this.#client.getSpaceSidebar();
+        await this.#client.applySpaceSidebarOperations({
+            baseVersion: sidebar.version,
+            mutationId: randomUUID(),
+            operations: [{ type: "move", id: spaceId, to: { parent: parentId } }],
+        });
+    }
+
+    /** A task's current name. */
+    async taskName(taskId: string): Promise<string> {
+        return (await this.#client.getTask(cuid(taskId))).task.name;
+    }
+
+    /** Whether the agent is archived. */
+    async agentArchived(agentId: string): Promise<boolean> {
+        return (await this.#client.getAgent(cuid(agentId))).agent.archivedAt !== null;
+    }
+
     async projects(): Promise<{ readonly projects: readonly HappyAgentProject[] }> {
         const response = await this.#client.listProjects();
         return { projects: response.projects.map(projectProject) };

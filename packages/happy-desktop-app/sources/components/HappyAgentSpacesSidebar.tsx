@@ -133,6 +133,7 @@ const MENU_DISCARD = "discard";
 const MENU_RENAME = "rename";
 const MENU_SUBTASKS_SHOW = "subtasks-show";
 const MENU_SUBTASKS_HIDE = "subtasks-hide";
+const MENU_SECTION_DELETE = "section-delete";
 /** The one list every item stands in: the sidebar has no sections of its own. */
 const LIST = "spaces";
 /** Rows the window draws under a node, which the document does not name. */
@@ -336,13 +337,109 @@ function spaceRow(
     };
 }
 
+const MENU_OPEN_ITEM = {
+    kind: "item",
+    id: MENU_OPEN,
+    label: "Open",
+    icon: "open-external",
+} as const satisfies MenuItem;
+
+/**
+ * What a drawn row stands for. A row nested under another is one of the
+ * person's spaces when it is one — attached, or a session whose conversation
+ * is a space's — and is then that space in every way; otherwise a subtask with
+ * no space of its own, or a worktree the window draws.
+ */
+export type HappyAgentSpacesRowSubject =
+    | { readonly kind: "space"; readonly space: HappyAgentSpace }
+    | {
+          readonly kind: "subtask";
+          readonly agentId: string;
+          readonly subtask: HappyAgentTask["subtasks"][number];
+          /** Whether the reader may archive it: a bot's, or a task's they may archive. */
+          readonly archivable: boolean;
+      }
+    | { readonly kind: "worktree"; readonly worktreeId: string };
+
+/** What the row drawn under `id` stands for, or nothing for a row that holds none. */
+export function happyAgentSpacesRowSubject(
+    id: string,
+    snapshot: HappyAgentSpacesSnapshot,
+    places: HappyAgentSpacesPlaces,
+): HappyAgentSpacesRowSubject | undefined {
+    if (id.startsWith("space:")) {
+        const space = snapshot.spaces.get(id.slice("space:".length) as HappyAgentSpaceId);
+        return space === undefined ? undefined : { kind: "space", space };
+    }
+    if (id.startsWith(WORKTREE_PREFIX))
+        return { kind: "worktree", worktreeId: id.slice(WORKTREE_PREFIX.length) };
+    if (!id.startsWith("session:")) return undefined;
+    const agentId = id.slice("session:".length);
+    for (const space of snapshot.spaces.values())
+        if (spaceAgentId(space) === agentId) return { kind: "space", space };
+    const match = (subtask: HappyAgentTask["subtasks"][number]) =>
+        subtask.conversation.id === agentId;
+    for (const task of places.tasks) {
+        const subtask = subtaskWhere([task], match);
+        if (subtask) return { kind: "subtask", agentId, subtask, archivable: task.canArchive };
+    }
+    const subtask = subtaskWhere(places.bots, match);
+    return subtask ? { kind: "subtask", agentId, subtask, archivable: true } : undefined;
+}
+
+/** What a subtask's row offers. Its title is the daemon's to write, so it has no rename. */
+function subtaskMenu(archivable: boolean, actions: HappyAgentSpacesActions): MenuItem[] {
+    return [
+        MENU_OPEN_ITEM,
+        ...(archivable && actions.subtaskArchive
+            ? [
+                  { kind: "separator" as const },
+                  {
+                      kind: "item" as const,
+                      id: MENU_ARCHIVE,
+                      label: "Archive subtask",
+                      icon: "archive" as const,
+                  },
+              ]
+            : []),
+    ];
+}
+
+/** What a worktree's row offers, as its row in the project list does. */
+function worktreeMenu(actions: HappyAgentSpacesActions): MenuItem[] {
+    return [
+        MENU_OPEN_ITEM,
+        ...(actions.worktreeRename
+            ? [
+                  {
+                      kind: "item" as const,
+                      id: MENU_RENAME,
+                      label: "Rename workspace",
+                      icon: "edit" as const,
+                  },
+              ]
+            : []),
+        ...(actions.worktreeArchive
+            ? [
+                  { kind: "separator" as const },
+                  {
+                      kind: "item" as const,
+                      id: MENU_ARCHIVE,
+                      label: "Archive workspace",
+                      icon: "archive" as const,
+                  },
+              ]
+            : []),
+    ];
+}
+
 /** What a row's menu offers, by what the row holds. */
 function spaceMenu(
     space: HappyAgentSpace,
     places: HappyAgentSpacesPlaces,
     actions: HappyAgentSpacesActions,
 ): MenuItem[] {
-    const open: MenuItem = { kind: "item", id: MENU_OPEN, label: "Open", icon: "open-external" };
+    const open = MENU_OPEN_ITEM;
     if (happyAgentSpaceHappyIs(space, places))
         return [
             open,
@@ -425,6 +522,12 @@ export interface HappyAgentSpacesActions {
     taskArchive(taskId: string): void;
     botArchive(botId: string): void;
     surfaceLeave(surfaceId: string): void;
+    /** Archives a subtask by its conversation; its row goes when the host says it is archived. */
+    subtaskArchive?(agentId: string): void;
+    /** Archives a worktree drawn under a node; absent where the window cannot. */
+    worktreeArchive?(worktreeId: string): void;
+    /** Renames a worktree drawn under a node; its row wears the name at once. */
+    worktreeRename?(worktreeId: string, name: string): void;
     /**
      * Renames a task by hand, resolving whether the host took the name;
      * absent for a Happy Agent that cannot.
@@ -540,6 +643,19 @@ export function sidebarDocumentRelabel(
     };
 }
 
+/**
+ * The document without one section's heading. Its items join the block above,
+ * as the daemon's own `remove` of a section leaves them.
+ */
+export function sidebarDocumentSectionRemove(
+    view: SidebarDocumentView,
+    key: string,
+): SidebarDocumentView | undefined {
+    if (!view.items.some((node) => sidebarDocumentKey(node) === key && node.kind === "section"))
+        return undefined;
+    return { ...view, items: view.items.filter((node) => sidebarDocumentKey(node) !== key) };
+}
+
 /** What the document's rows are drawn from, beside the document itself. */
 export interface HappyAgentSpacesItemsInput {
     readonly view: SidebarDocumentView;
@@ -613,9 +729,16 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
             anchorOf.set(key, key);
             last = key;
             const children = nested(session.id, session.children, depth + 1);
+            // A session that is a space's own conversation — a task shown under
+            // the work that started it — goes by that space's name, which its
+            // menu renames.
+            const named = [...snapshot.spaces.values()].find(
+                (candidate) => spaceAgentId(candidate) === session.id,
+            );
             rows.push(
                 {
                     ...row,
+                    ...(named ? { label: happyAgentSpaceLabel(named) } : {}),
                     ...happyAgentSessionMark(snapshot, session.id),
                     id: key,
                     depth,
@@ -768,17 +891,39 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         id.startsWith("space:")
             ? snapshot.spaces.get(id.slice("space:".length) as HappyAgentSpaceId)
             : undefined;
-    /** The sessions a space's conversation has, as its subtasks nest. */
-    const subtasksOf = (space: HappyAgentSpace): readonly SidebarDocumentSessionTree[] =>
-        sessionTreeOf(
-            (targetTask(space.target, places) ?? targetBot(space.target, places))?.subtasks ?? [],
-        );
+    const subjectOf = (id: string) => happyAgentSpacesRowSubject(id, snapshot, places);
+    /** The sessions a row's conversation has, as its subtasks nest; a worktree has none. */
+    const subtasksOf = (
+        subject: HappyAgentSpacesRowSubject,
+    ): readonly SidebarDocumentSessionTree[] =>
+        subject.kind === "space"
+            ? sessionTreeOf(
+                  (
+                      targetTask(subject.space.target, places) ??
+                      targetBot(subject.space.target, places)
+                  )?.subtasks ?? [],
+              )
+            : subject.kind === "subtask"
+              ? sessionTreeOf(subject.subtask.subtasks)
+              : [];
+    /** The conversation a row opens beside the one on screen, and the name of its tab. */
+    const asideOf = (
+        subject: HappyAgentSpacesRowSubject,
+        item: SidebarItem,
+    ): { readonly agentId: string; readonly label: string } | undefined => {
+        if (subject.kind === "subtask") return { agentId: subject.agentId, label: item.label };
+        if (subject.kind !== "space") return undefined;
+        const agentId = spaceAgentId(subject.space);
+        return agentId === undefined
+            ? undefined
+            : { agentId, label: happyAgentSpaceLabel(subject.space) };
+    };
     /** Show subtasks where some are not drawn, Hide subtasks where some are. */
-    const subtasksMenu = (id: string, space: HappyAgentSpace): MenuItem[] => {
+    const subtasksMenu = (id: string, subject: HappyAgentSpacesRowSubject): MenuItem[] => {
         const key = anchorOf.get(id);
-        if (!editable || !key) return [];
+        if (!editable || !key || subject.kind === "worktree") return [];
         return [
-            ...(sidebarDocumentSessionsReveal(view, key, subtasksOf(space))
+            ...(sidebarDocumentSessionsReveal(view, key, subtasksOf(subject))
                 ? [
                       {
                           kind: "item" as const,
@@ -877,19 +1022,40 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 if (key) documentEdit((current) => sidebarDocumentFold(current, key));
             }}
             itemMenuItems={(item) => {
-                // A section's label is the person's to write, through the document.
-                if (item.kind === "section" && editable)
-                    return [
-                        { kind: "item", id: MENU_RENAME, label: "Rename section", icon: "edit" },
-                    ];
-                const space = spaceOf(item.id);
-                if (space === undefined) return [];
-                const agentId = spaceAgentId(space);
-                const own = spaceMenu(space, places, props.actions);
+                // A section's heading is the person's to write and to take
+                // out, through the document.
+                if (item.kind === "section")
+                    return editable
+                        ? [
+                              {
+                                  kind: "item",
+                                  id: MENU_RENAME,
+                                  label: "Rename section",
+                                  icon: "edit",
+                              },
+                              { kind: "separator" },
+                              {
+                                  kind: "item",
+                                  id: MENU_SECTION_DELETE,
+                                  label: "Delete section",
+                                  icon: "trash",
+                              },
+                          ]
+                        : [];
+                // A row at any depth offers what the row holds, as it would at
+                // the top level.
+                const subject = subjectOf(item.id);
+                if (subject === undefined) return [];
+                const own =
+                    subject.kind === "space"
+                        ? spaceMenu(subject.space, places, props.actions)
+                        : subject.kind === "subtask"
+                          ? subtaskMenu(subject.archivable, props.actions)
+                          : worktreeMenu(props.actions);
                 // Opening comes first, then what the row shows under it.
                 const menu: MenuItem[] = [
                     ...own.slice(0, 1),
-                    ...(agentId !== undefined && props.onChatAside
+                    ...(asideOf(subject, item) !== undefined && props.onChatAside
                         ? [
                               {
                                   kind: "item" as const,
@@ -899,11 +1065,14 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                               },
                           ]
                         : []),
-                    ...subtasksMenu(item.id, space),
+                    ...subtasksMenu(item.id, subject),
                     ...own.slice(1),
                 ];
                 // The sidebar document is Happy's to show, from Happy's row.
-                return sidebarDoc && props.onSidebarOpen && happyAgentSpaceHappyIs(space, places)
+                return sidebarDoc &&
+                    props.onSidebarOpen &&
+                    subject.kind === "space" &&
+                    happyAgentSpaceHappyIs(subject.space, places)
                     ? [
                           ...menu,
                           {
@@ -926,7 +1095,12 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                             documentEdit((current) => sidebarDocumentRelabel(current, key, label));
                         return;
                     }
-                    const space = spaceOf(item.id);
+                    const subject = subjectOf(item.id);
+                    if (subject?.kind === "worktree") {
+                        props.actions.worktreeRename?.(subject.worktreeId, label);
+                        return;
+                    }
+                    const space = subject?.kind === "space" ? subject.space : undefined;
                     const rename =
                         space?.target.kind === "task"
                             ? props.actions.taskRename
@@ -944,19 +1118,30 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 },
             }}
             onItemMenuSelect={(item, actionId) => {
-                const space = spaceOf(item.id);
-                if (space === undefined) return;
-                const target = space.target;
+                if (item.kind === "section") {
+                    const key = anchorOf.get(item.id);
+                    // The heading goes at once and its rows stay where they
+                    // stand; a refusal puts the heading back.
+                    if (actionId === MENU_SECTION_DELETE && key)
+                        documentEdit((current) => sidebarDocumentSectionRemove(current, key));
+                    return;
+                }
+                const subject = subjectOf(item.id);
+                if (subject === undefined) return;
                 if (actionId === MENU_OPEN) open(item.id);
-                else if (actionId === MENU_TIDY) props.store.tidyRequest();
                 else if (actionId === MENU_SUBTASKS_SHOW) {
                     const key = anchorOf.get(item.id);
                     if (!editable || !key) return;
                     const html = sidebarDocumentEdit(sidebarDoc.html, (current) =>
-                        sidebarDocumentSessionsReveal(current, key, subtasksOf(space)),
+                        sidebarDocumentSessionsReveal(current, key, subtasksOf(subject)),
                     );
-                    // The person opened the row to show them, so its fold is theirs.
-                    if (html !== undefined) props.store.sidebarSessionsRevealWrite(html, space.id);
+                    // The person opened the row to show them, so its fold is
+                    // theirs: the row's node, a space's or a session's.
+                    if (html !== undefined)
+                        props.store.sidebarSessionsRevealWrite(
+                            html,
+                            key.slice(key.indexOf(":") + 1),
+                        );
                 } else if (actionId === MENU_SUBTASKS_HIDE) {
                     const key = anchorOf.get(item.id);
                     if (key)
@@ -964,20 +1149,30 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                             sidebarDocumentSessionsHide(current, key, attached),
                         );
                 } else if (actionId === MENU_ASIDE) {
-                    const agentId = spaceAgentId(space);
-                    if (agentId !== undefined)
-                        props.onChatAside?.(agentId, happyAgentSpaceLabel(space));
-                } else if (actionId === MENU_SIDEBAR && sidebarDoc)
-                    props.onSidebarOpen?.(sidebarDoc.artifactId);
-                else if (actionId === MENU_LEAVE && target.kind === "task")
-                    props.actions.taskLeave(target.id);
-                else if (actionId === MENU_LEAVE && target.kind === "surface")
-                    props.actions.surfaceLeave(target.id);
-                else if (actionId === MENU_DISCARD) props.store.stemCellDiscard(space.id);
-                else if (actionId === MENU_ARCHIVE && target.kind === "task")
-                    props.actions.taskArchive(target.id);
-                else if (actionId === MENU_ARCHIVE && target.kind === "bot")
-                    props.actions.botArchive(target.id);
+                    const aside = asideOf(subject, item);
+                    if (aside !== undefined) props.onChatAside?.(aside.agentId, aside.label);
+                } else if (subject.kind === "subtask") {
+                    if (actionId === MENU_ARCHIVE && subject.archivable)
+                        props.actions.subtaskArchive?.(subject.agentId);
+                } else if (subject.kind === "worktree") {
+                    if (actionId === MENU_ARCHIVE)
+                        props.actions.worktreeArchive?.(subject.worktreeId);
+                } else {
+                    const { space } = subject;
+                    const target = space.target;
+                    if (actionId === MENU_TIDY) props.store.tidyRequest();
+                    else if (actionId === MENU_SIDEBAR && sidebarDoc)
+                        props.onSidebarOpen?.(sidebarDoc.artifactId);
+                    else if (actionId === MENU_LEAVE && target.kind === "task")
+                        props.actions.taskLeave(target.id);
+                    else if (actionId === MENU_LEAVE && target.kind === "surface")
+                        props.actions.surfaceLeave(target.id);
+                    else if (actionId === MENU_DISCARD) props.store.stemCellDiscard(space.id);
+                    else if (actionId === MENU_ARCHIVE && target.kind === "task")
+                        props.actions.taskArchive(target.id);
+                    else if (actionId === MENU_ARCHIVE && target.kind === "bot")
+                        props.actions.botArchive(target.id);
+                }
             }}
             // A move is an edit of the document: a node after one of its own
             // siblings, or first among them. A worktree is the window's, so a
