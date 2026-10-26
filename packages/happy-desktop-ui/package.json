@@ -27,7 +27,7 @@
         "@blocknote/core": "^0.51.4",
         "@blocknote/mantine": "^0.51.4",
         "@blocknote/react": "^0.51.4",
-        "@chenglou/pretext": "^0.0.8",
+        "@chenglou/pretext": "^1.0.0",
         "@codemirror/commands": "^6.10.4",
         "@codemirror/language": "^6.12.4",
         "@codemirror/language-data": "^6.5.2",

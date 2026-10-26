@@ -312,6 +312,10 @@ export {
     type SystemNoticeSegment,
 } from "./Message";
 export {
+    messageListRowHeightCheckInstall,
+    type MessageListRowHeightMismatch,
+} from "./messageListRowHeightCheck";
+export {
     type LinkOpenHandler,
     type LinkOpenPlacement,
     type MessageGenerationStatus,

@@ -1,7 +1,6 @@
 import {
     clearCache,
     layout,
-    layoutNextLine,
     layoutNextLineRange,
     materializeLineRange,
     measureNaturalWidth,
@@ -12,11 +11,13 @@ import {
     type PreparedTextWithSegments,
 } from "@chenglou/pretext";
 import {
+    layoutNextRichInlineLineRange,
     measureRichInlineStats,
     prepareRichInline,
-    walkRichInlineLineRanges,
     type PreparedRichInline,
+    type RichInlineCursor,
     type RichInlineItem,
+    type RichInlineLineRange,
 } from "@chenglou/pretext/rich-inline";
 import {
     mathDisplayHeightMeasure,
@@ -145,26 +146,6 @@ const WEBKIT_INLINE_SLICE =
     /AppleWebKit\//u.test(navigator.userAgent) &&
     !/(?:Chrome|Chromium|CriOS|Edg|OPR)\//u.test(navigator.userAgent);
 const GECKO_INLINE_SLICE = typeof navigator !== "undefined" && /Gecko\//u.test(navigator.userAgent);
-/** Gecko follows UAX #14 and may break after a `/` that precedes a letter, so
- * paths and URLs wrap at their slashes; Blink and WebKit keep such a token
- * whole, and so does Pretext. In Gecko, mark that opportunity with a
- * zero-width break before the text is measured. */
-const GECKO_SLASH_BREAK = /\/(?=\p{L})/gu;
-/** Pretext keeps a URL-like run (`scheme://…`, `www.…`) whole up to its query,
- * but browsers have no notion of a URL: they break inside one exactly where
- * they break in prose, such as after the hyphen in `happy-desktop`. A word
- * joiner before `://` or after a leading `www` stops Pretext recognising the
- * run, so it is segmented like the prose the browser sees; the joiner has no
- * advance and is itself no break opportunity. */
-const URL_SCHEME_RUN = /(?<=[A-Za-z][A-Za-z0-9+.-]*)(?=:\/\/)/gu;
-const URL_WWW_RUN = /(?<![\p{L}\p{N}])www(?=\.)/gu;
-function inlineBreaksMark(text: string): string {
-    const prose =
-        text.includes("://") || text.includes("www.")
-            ? text.replace(URL_SCHEME_RUN, "\u2060").replace(URL_WWW_RUN, "www\u2060")
-            : text;
-    return GECKO_INLINE_SLICE ? prose.replace(GECKO_SLASH_BREAK, "/\u200b") : prose;
-}
 /** `.happy-system-notice__text` — 13px copy on a 20px line. */
 const NOTICE_SIZE = 13;
 const NOTICE_LINE = 20;
@@ -186,15 +167,6 @@ const dictionaryCreate = <T>(): Dictionary<T> => Object.create(null) as Dictiona
 const PREPARED_BYTES_BUDGET = 8 * 1_024 * 1_024;
 const PREPARED_RUN_BYTES = 800;
 const PREPARED_CHAR_BYTES = 16;
-/*
- * Pretext keeps one process-global map of segment widths per font and never
- * evicts it, so every distinct word ever prepared stayed for the life of the
- * window. The widths are exact and cheap to measure again, so once preparation
- * has charged four times one budget since the map last emptied, it is dropped
- * and refills from the text still being laid out.
- */
-const GLYPH_METRICS_CLEAR_AFTER_BYTES = 4 * PREPARED_BYTES_BUDGET;
-let glyphMetricsBytes = 0;
 type PreparedValue = PreparedText | PreparedRichInline;
 type PreparedEntry = {
     /** The dictionary holding this value, so eviction can delete its key. */
@@ -279,7 +251,6 @@ function watchFonts() {
 }
 function fontGenerationAdvance() {
     fontGeneration += 1;
-    glyphMetricsBytes = 0;
     clearCache();
     mathLayoutClear();
     for (const listener of fontListeners) listener();
@@ -390,13 +361,6 @@ function preparationHit<T extends PreparedValue>(
     cache.preparedOrder.set(hit, entry);
     return hit;
 }
-/** Counts a new preparation against Pretext's global segment widths, dropping them past their bound. */
-function glyphMetricsCharge(bytes: number): void {
-    glyphMetricsBytes += bytes;
-    if (glyphMetricsBytes < GLYPH_METRICS_CLEAR_AFTER_BYTES) return;
-    glyphMetricsBytes = 0;
-    clearCache();
-}
 /** Retains a new preparation, evicting the least recently used past the budget.
  * A value larger than the whole budget is measured exactly and not retained. */
 function preparationRetain<T extends PreparedValue>(
@@ -406,7 +370,6 @@ function preparationRetain<T extends PreparedValue>(
     value: T,
     bytes: number,
 ): T {
-    glyphMetricsCharge(bytes);
     if (bytes > PREPARED_BYTES_BUDGET) return value;
     while (cache.preparedBytes + bytes > PREPARED_BYTES_BUDGET) {
         const [oldest, entry] = cache.preparedOrder.entries().next().value!;
@@ -511,8 +474,6 @@ type MarkdownInlineItem = RichInlineItem & {
     math?: MathInlineBox;
     /** Inline code a table cell keeps on one line, which floors its column. */
     keepsLine?: true;
-    /** Carries the next element's leading token in `extraWidth`. */
-    glued?: true;
 };
 /** Stand-in glyph for a formula item; its own advance is subtracted again. */
 const MATH_PLACEHOLDER = "x";
@@ -536,6 +497,29 @@ function preparedRichItems(
     for (const item of items) bytes += PREPARED_RUN_BYTES + item.text.length * PREPARED_CHAR_BYTES;
     return preparationRetain(ready, ready.richPrepared, key, prepareRichInline([...items]), bytes);
 }
+/**
+ * Lays rich items out a line at a time as the browser breaks them. A browser
+ * fits a line one layout unit wider than its box where it breaks between
+ * words, since rounding each run up to a whole unit leaves the last run's
+ * rounding outside, but not where it cuts a word between letters, nor past an
+ * item that overflows. Such a line is laid out again at the box's width.
+ */
+function richItemsLinesWalk(
+    measured: PreparedRichInline,
+    measure: number,
+    onLine: (line: RichInlineLineRange) => void,
+): void {
+    const relaxedMeasure = measure + inlineLayoutUnit;
+    let cursor: RichInlineCursor | undefined;
+    for (;;) {
+        let line = layoutNextRichInlineLineRange(measured, relaxedMeasure, cursor);
+        if (line === null) return;
+        if (line.width > measure && (line.end.graphemeIndex > 0 || line.width > relaxedMeasure))
+            line = layoutNextRichInlineLineRange(measured, measure, cursor)!;
+        onLine(line);
+        cursor = line.end;
+    }
+}
 function richItemsHeight(
     items: readonly MarkdownInlineItem[],
     lineHeight: number,
@@ -543,21 +527,11 @@ function richItemsHeight(
     cache: MessageTextLayoutCache,
 ): number {
     if (measure <= 0 || items.length === 0) return lineHeight;
-    const measured = preparedRichItems(items, cache);
-    const relaxedMeasure = measure + inlineLayoutUnit;
-    const relaxed = measureRichInlineStats(measured, relaxedMeasure);
-    /* Pretext can hang a token slightly beyond its supplied measure. Keep the
-       one-layout-unit tolerance only when the resulting line also stays inside
-       that contract; otherwise resolve the real, unrelaxed line break. */
-    const fits = relaxed.maxLineWidth <= relaxedMeasure;
-    const stats = fits ? relaxed : measureRichInlineStats(measured, measure);
-    if (!items.some((item) => item.math !== undefined))
-        return Math.max(1, stats.lineCount) * lineHeight;
     /* A line holding a formula is as tall as the highest ascent plus the
        deepest descent on it; each extent was measured with the line's own
        strut, so a formula that fits the line leaves it at `lineHeight`. */
     let height = 0;
-    walkRichInlineLineRanges(measured, fits ? relaxedMeasure : measure, (line) => {
+    richItemsLinesWalk(preparedRichItems(items, cache), measure, (line) => {
         let ascent = 0;
         let descent = 0;
         for (const fragment of line.fragments) {
@@ -601,146 +575,67 @@ function markdownInlineFont(style: MarkdownInlineStyle): string {
 function markdownImageLabel(node: Extract<MarkdownPhrasing, { type: "image" }>): string {
     return node.alt?.trim() || node.url || "image";
 }
-/** Preserve the browser's Unicode line-breaking boundary across adjacent AST
- * nodes. In particular, punctuation immediately after a styled node belongs to
- * that preceding word; it cannot start a new line independently just because
- * Markdown represented the two fonts as separate nodes. */
-function markdownInlineLeadingTokenAttach(
+/** Inline code's 5px padding on each side, as `.happy-message__body--markdown code` paints it. */
+const INLINE_CODE_PADDING = 5;
+/** Inline code as rich items. Pretext charges an item's `extraWidth` on every
+ * line it reaches (`box-decoration-break: clone`), while the code span slices
+ * its padding: Blink and WebKit pad only the first and last fragment. Its
+ * first and last graphemes carry that padding, and Pretext breaks them with
+ * the rest of the paragraph's text. Gecko pads the start once and the end on
+ * every line a code span fragments onto, so there the rest carries the end. */
+function markdownInlineCodeItems(
+    text: string,
+    font: string,
+    measure: number,
+    cache: MessageTextLayoutCache,
+): MarkdownInlineItem[] {
+    const graphemes = [...GRAPHEME_SEGMENTER.segment(text)].map((part) => part.segment);
+    if (graphemes.length <= 1) return [{ extraWidth: INLINE_CODE_PADDING * 2, font, text }];
+    /* WebKit reserves only the opening padding before it fragments a word:
+       one whose letters fit after that padding stays whole, and its closing
+       padding hangs past the line, where Pretext would cut it. A word with a
+       break opportunity of its own, as after a hyphen, breaks there. */
+    if (WEBKIT_INLINE_SLICE && preparedTextSegments(text, font, cache).segments.length === 1) {
+        const width = naturalTextWidth(text, font, cache);
+        if (width + INLINE_CODE_PADDING <= measure && width + INLINE_CODE_PADDING * 2 > measure)
+            return [{ break: "never", extraWidth: INLINE_CODE_PADDING * 2, font, text }];
+    }
+    if (GECKO_INLINE_SLICE)
+        return [
+            { extraWidth: INLINE_CODE_PADDING, font, text: graphemes[0]! },
+            { extraWidth: INLINE_CODE_PADDING, font, text: graphemes.slice(1).join("") },
+        ];
+    const items: MarkdownInlineItem[] = [
+        { extraWidth: INLINE_CODE_PADDING, font, text: graphemes[0]! },
+    ];
+    if (graphemes.length > 2) items.push({ font, text: graphemes.slice(1, -1).join("") });
+    items.push({ extraWidth: INLINE_CODE_PADDING, font, text: graphemes.at(-1)! });
+    return items;
+}
+/** Pretext may break on either side of an atomic item, whatever touches it,
+ * as the browser does at a footnote reference's `inline-flex` box. It keeps a
+ * formula's or a nowrap code span's `,` or `'s` on its line, though: charge
+ * text that continues one without a space to it, while the two fit a line;
+ * past that, CSS wraps at the boundary too. */
+function markdownAtomicContinuationAttach(
     items: MarkdownInlineItem[],
     text: string,
     font: string,
     cache: MessageTextLayoutCache,
     measure: number,
-    enabled: boolean,
 ): string {
     const previous = items.at(-1);
-    if (!enabled || !previous || /\s$/u.test(previous.text) || /^\s/u.test(text)) return text;
-    const match = /^\S+/u.exec(text);
-    if (!match) return text;
-    const tokenWidth = naturalTextWidth(match[0], font, cache);
-    /* Punctuation and other no-space continuations belong to the preceding
-       fragment only while that combined fragment fits. Otherwise CSS can wrap
-       at the inline-element boundary; charging the continuation as chrome would
-       incorrectly repeat it on every emergency fragment. */
+    if (previous?.math === undefined && previous?.keepsLine !== true) return text;
+    const token = /^\S+/u.exec(text)?.[0];
+    if (token === undefined) return text;
+    const width = naturalTextWidth(token, font, cache);
     if (
-        naturalTextWidth(previous.text, previous.font, cache) +
-            (previous.extraWidth ?? 0) +
-            tokenWidth >
+        naturalTextWidth(previous.text, previous.font, cache) + (previous.extraWidth ?? 0) + width >
         measure
     )
         return text;
-    previous.extraWidth = (previous.extraWidth ?? 0) + tokenWidth;
-    previous.glued = true;
-    return text.slice(match[0].length);
-}
-/** The hyphens Pretext prefers to break after inside an overlong segment. */
-const PREFERRED_BREAK = /[-\u058A\u2010\u2012\u2013\u2014]/u;
-/** Split one overlong decorated segment. Pretext chooses the grapheme
- * boundaries; separate atomic items expose the true final fragment for link
- * punctuation and keep code padding on only its first/last fragments. */
-function markdownInlineFragmentItems(
-    text: string,
-    font: string,
-    measure: number,
-    startExtraWidth: number,
-    endExtraWidth: number,
-    cache: MessageTextLayoutCache,
-    decoratedFlow = false,
-): MarkdownInlineItem[] {
-    /* `overflow-wrap: break-word` emergency-breaks the glyph run, not an intact
-       word whose text fits and whose inline start/end decoration alone hangs
-       beyond the measure. Keep that word atomic and let its box chrome occupy
-       the same slight overflow the browser paints. */
-    const textWidth = naturalTextWidth(text, font, cache);
-    if (
-        textWidth + (decoratedFlow ? startExtraWidth + endExtraWidth : 0) <=
-        measure + INLINE_MEASURE_EPSILON
-    )
-        return [
-            {
-                break: "never",
-                extraWidth: startExtraWidth + endExtraWidth,
-                font,
-                text,
-            },
-        ];
-    const graphemes = [...GRAPHEME_SEGMENTER.segment(text)].map((part) => part.segment);
-    const items: MarkdownInlineItem[] = [];
-    let graphemeIndex = 0;
-    let first = true;
-    while (graphemeIndex < graphemes.length) {
-        const firstExtraWidth = first ? startExtraWidth : 0;
-        const finalAvailable = Math.max(1, measure - firstExtraWidth - endExtraWidth);
-        const remaining = graphemes.slice(graphemeIndex).join("");
-        const prepared = preparedTextSegments(remaining, font, cache);
-        let available = finalAvailable;
-        let line = layoutNextLine(prepared, { graphemeIndex: 0, segmentIndex: 0 }, available);
-        if (!line) break;
-        let count = [...GRAPHEME_SEGMENTER.segment(line.text)].length;
-        if (count < graphemes.length - graphemeIndex && endExtraWidth > 0) {
-            const fullAvailable = Math.max(1, measure - firstExtraWidth);
-            const fullLine = layoutNextLine(
-                prepared,
-                { graphemeIndex: 0, segmentIndex: 0 },
-                fullAvailable,
-            );
-            if (fullLine) {
-                const fullCount = [...GRAPHEME_SEGMENTER.segment(fullLine.text)].length;
-                /* The closing inset belongs only to the code element's final
-                   fragment. Use the unreserved candidate only when content
-                   still remains after it. */
-                if (fullCount < graphemes.length - graphemeIndex) {
-                    available = fullAvailable;
-                    count = fullCount;
-                    line = fullLine;
-                }
-            }
-        }
-        let fragment = graphemes.slice(graphemeIndex, graphemeIndex + count).join("");
-        let fragmentWidth = naturalTextWidth(fragment, font, cache);
-        /* Pretext follows Blink's punctuation hanging and can return a preferred
-           hyphen breakpoint whose painted width exceeds the supplied measure.
-           A padded inline fragment has no space for that overhang in WebKit.
-           Retreat to the last real grapheme fit, retaining Pretext's chosen
-           boundary whenever it already fits. */
-        while (count > 1 && fragmentWidth > available + INLINE_MEASURE_EPSILON) {
-            count -= 1;
-            fragment = graphemes.slice(graphemeIndex, graphemeIndex + count).join("");
-            fragmentWidth = naturalTextWidth(fragment, font, cache);
-        }
-        /* Without a hyphen to prefer, Pretext slices where the graphemes' own
-           advances stop fitting, and that sum runs wider than the shaped run
-           the browser fits: `…%2Fcod` sums to 385.35px but shapes to 384.95px,
-           so Blink still fits the `e` at 394px. Extend to the last grapheme
-           whose shaped prefix fits, as Blink does, wrapping after a hyphen
-           crossed on the way. */
-        if (!PREFERRED_BREAK.test(fragment)) {
-            let hyphenCount = 0;
-            for (let next = count + 1; graphemeIndex + next <= graphemes.length; next += 1) {
-                const candidate = graphemes.slice(graphemeIndex, graphemeIndex + next).join("");
-                const limit = graphemeIndex + next >= graphemes.length ? finalAvailable : available;
-                if (naturalTextWidth(candidate, font, cache) > limit + INLINE_MEASURE_EPSILON)
-                    break;
-                count = next;
-                fragment = candidate;
-                if (PREFERRED_BREAK.test(graphemes[graphemeIndex + next - 1]!)) hyphenCount = next;
-            }
-            if (hyphenCount > 0 && graphemeIndex + count < graphemes.length) {
-                count = hyphenCount;
-                fragment = graphemes.slice(graphemeIndex, graphemeIndex + count).join("");
-            }
-        }
-        const final = graphemeIndex + count >= graphemes.length;
-        items.push({
-            break: "never",
-            extraWidth: firstExtraWidth + (final ? endExtraWidth : 0),
-            font,
-            text: fragment,
-        });
-        graphemeIndex += count;
-        first = false;
-    }
-    return items;
+    previous.extraWidth = (previous.extraWidth ?? 0) + width;
+    return text.slice(token.length);
 }
 /** Preserve the last token as an attachment/rounding boundary, while preparing
  * the rest of a same-font text node together. Trailing whitespace stays its own
@@ -749,6 +644,22 @@ function markdownTextChunks(text: string): string[] {
     const match = /^(.*\S)(\s+)$/su.exec(text) ?? /^([\s\S]*\s)(\S+)$/u.exec(text);
     return match ? [match[1]!, match[2]!] : [text];
 }
+/** Right-to-left words, with the spaces between them, split from the
+ * left-to-right text around them: the stretches a paragraph's bidi levels
+ * give, since spaces between opposite directions take the paragraph's. */
+const RTL_RUN =
+    /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]+(?:\s+[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]+)*/gu;
+function markdownBidiRuns(text: string): string[] {
+    const runs: string[] = [];
+    let start = 0;
+    for (const match of text.matchAll(RTL_RUN)) {
+        if (match.index > start) runs.push(text.slice(start, match.index));
+        runs.push(match[0]);
+        start = match.index + match[0].length;
+    }
+    if (start < text.length) runs.push(text.slice(start));
+    return runs;
+}
 function markdownInlineItemsAppend(
     node: MarkdownPhrasing,
     style: MarkdownInlineStyle,
@@ -756,142 +667,61 @@ function markdownInlineItemsAppend(
     cache: MessageTextLayoutCache,
     footnotes: MarkdownFootnotes,
     measure: number,
-    bindDecoratedPunctuation: boolean,
-    fragmentLong = false,
     atomic = false,
     tableCell = false,
 ): void {
     const current = () => runs[runs.length - 1]!;
     if (node.type === "text") {
         const font = markdownInlineFont(style);
-        const text = markdownInlineLeadingTokenAttach(
-            current(),
-            inlineBreaksMark(node.value),
-            font,
-            cache,
-            measure,
-            bindDecoratedPunctuation,
-        );
+        const text = markdownAtomicContinuationAttach(current(), node.value, font, cache, measure);
         if (text.length === 0) return;
-        const tokens = atomic
-            ? [text]
-            : fragmentLong
-              ? (text.match(/\s*\S+|\s+$/gu) ?? [text])
-              : markdownTextChunks(text);
-        const itemStart = current().length;
-        for (const token of tokens) {
-            const match = /^(\s*)(\S+)$/u.exec(token);
-            if (
-                fragmentLong &&
-                match &&
-                naturalTextWidth(match[2]!, font, cache) > measure + INLINE_MEASURE_EPSILON
-            ) {
-                if (match[1]!.length > 0) current().push({ font, text: match[1]! });
-                /* Only a piece with no break opportunity of its own needs an
-                   emergency break. The pieces before the first such piece stay
-                   one item, which breaks where it may: separate items that
-                   touch would not.
-                   After it, a breakable item would meet the last fragment
-                   without whitespace, and Pretext does not wrap there: it
-                   slices the next piece mid-word onto the fragment's line, a
-                   line short of the browser, which wraps at the piece boundary
-                   (after the hyphen in `…PiE-p_Oq…`). An atomic item may
-                   always wrap before itself, so each following piece, which
-                   fits a line, is one. */
-                let breakable = "";
-                let fragmented = false;
-                for (const piece of preparedTextSegments(match[2]!, font, cache).segments) {
-                    if (naturalTextWidth(piece, font, cache) <= measure + INLINE_MEASURE_EPSILON) {
-                        if (fragmented) current().push({ break: "never", font, text: piece });
-                        else breakable += piece;
-                        continue;
-                    }
-                    if (breakable.length > 0) current().push({ font, text: breakable });
-                    breakable = "";
-                    current().push(
-                        ...markdownInlineFragmentItems(piece, font, measure, 0, 0, cache),
-                    );
-                    fragmented = true;
-                }
-                if (breakable.length > 0) current().push({ font, text: breakable });
-                continue;
-            }
-            current().push({
-                break: atomic ? "never" : undefined,
-                font,
-                text: token,
-            });
-        }
         /* Blink rounds each shaped inline text run upward to 1/64px before
-           the next run starts. Keep that advance at the AST boundary, rather
-           than rounding the final line: several inline runs can otherwise
-           consume the line-fit tolerance and hide a real wrapped line. */
-        if (!WEBKIT_INLINE_SLICE && !GECKO_INLINE_SLICE) {
-            const last = current().at(-1);
-            if (current().length > itemStart && last && last.text.trim().length > 0) {
-                const width = naturalTextWidth(text, font, cache);
+           the next run starts, and a right-to-left stretch is its own run.
+           Keep that advance at the run boundary, rather than rounding the
+           final line: several inline runs can otherwise consume the line-fit
+           tolerance and hide a real wrapped line. */
+        const blink = !WEBKIT_INLINE_SLICE && !GECKO_INLINE_SLICE;
+        for (const run of blink ? markdownBidiRuns(text) : [text]) {
+            const itemStart = current().length;
+            for (const token of atomic ? [run] : markdownTextChunks(run))
+                current().push({ break: atomic ? "never" : undefined, font, text: token });
+            if (!blink) continue;
+            /* A run's closing space is its own item; the run's word before it
+               carries the rounding, since a space that ends a line hangs. */
+            let last: MarkdownInlineItem | undefined;
+            for (const item of current().slice(itemStart))
+                if (item.text.trim().length > 0) last = item;
+            if (last) {
+                /* The run's own spaces are in the shaped run, so in its width. */
+                const width = measureNaturalWidth(
+                    preparedTextSegments(run, font, cache, "pre-wrap"),
+                );
                 last.extraWidth = (last.extraWidth ?? 0) + Math.ceil(width * 64) / 64 - width;
             }
         }
         return;
     }
     if (node.type === "inlineCode") {
-        const text = inlineBreaksMark(node.value.replace(/\r?\n|\r/gu, " "));
+        const text = node.value.replace(/\r?\n|\r/gu, " ");
         const font = INLINE_CODE_FONT;
-        /* An opening bracket in the preceding prose cannot end a browser line
-           independently of the code it introduces: `(` + `code` wraps as one
-           run. Keep its whitespace in flow, but charge the bracket to the
-           first code fragment so a font boundary cannot create that break. */
-        const previous = current().at(-1);
-        const opening = previous?.text.match(/[\p{Ps}\p{Pi}]+$/u)?.[0];
-        const openingWidth =
-            opening && previous ? naturalTextWidth(opening, previous.font, cache) : 0;
-        if (opening && previous) previous.text = previous.text.slice(0, -opening.length);
         if (tableCell && markdownTableCodeLineKeeps(node.value, cache)) {
             current().push({
                 break: "never",
-                extraWidth: 10 + openingWidth,
+                extraWidth: INLINE_CODE_PADDING * 2,
                 font,
                 keepsLine: true,
                 text,
             });
             return;
         }
-        const textWidth = naturalTextWidth(text, font, cache);
-        /* Gecko reserves sliced code padding while breaking continuation lines
-           too: the closing 5px on every line the code fragments onto, the
-           opening 5px only on its first. A breakable run carries its decoration
-           on each fragment, and fragments sharing a line add up: the first word
-           carries the opening padding and the rest the closing padding that
-           every line reserves. Charging only the first/last words can omit a
-           whole wrapped line. */
-        if (GECKO_INLINE_SLICE && textWidth > measure && /\s/u.test(text)) {
-            const first = /^\S*/u.exec(text)![0];
-            if (first.length > 0)
-                current().push({ extraWidth: 5 + openingWidth, font, text: first });
-            current().push({
-                extraWidth: first.length > 0 ? 5 : 10 + openingWidth,
-                font,
-                text: text.slice(first.length),
-            });
-            return;
+        const items = markdownInlineCodeItems(text, font, measure, cache);
+        /* The code span's text is its own shaped run, rounded like any other. */
+        if (!WEBKIT_INLINE_SLICE && !GECKO_INLINE_SLICE) {
+            const width = naturalTextWidth(text, font, cache);
+            const last = items.at(-1)!;
+            last.extraWidth = (last.extraWidth ?? 0) + Math.ceil(width * 64) / 64 - width;
         }
-        const decoratedFlow =
-            openingWidth + textWidth + (WEBKIT_INLINE_SLICE ? 5 : 10) >
-            measure + INLINE_MEASURE_EPSILON;
-        const segments = preparedTextSegments(text, font, cache).segments;
-        for (const [index, segment] of segments.entries()) {
-            const items = markdownInlineFragmentItems(
-                segment,
-                font,
-                measure,
-                index === 0 ? 5 + openingWidth : 0,
-                index === segments.length - 1 ? 5 : 0,
-                cache,
-                decoratedFlow,
-            );
-            current().push(...items);
-        }
+        current().push(...items);
         return;
     }
     if (node.type === "break") {
@@ -916,6 +746,7 @@ function markdownInlineItemsAppend(
     }
     if (node.type === "footnoteReference") {
         const number = footnotes.numbers.get(node.identifier.toUpperCase());
+        /* An `inline-flex` box: a line may break on either side of it. */
         current().push({
             break: "never",
             font: markdownInlineFont(style),
@@ -934,8 +765,6 @@ function markdownInlineItemsAppend(
                 cache,
                 footnotes,
                 measure,
-                bindDecoratedPunctuation,
-                fragmentLong,
                 atomic,
                 /* `MathFormula` paints it, not the cell's code renderer. */
                 false,
@@ -950,8 +779,8 @@ function markdownInlineItemsAppend(
         });
         /* Blink may break between a word and a formula that touches it; Gecko
            keeps that word on the formula's line. Either way the text after a
-           formula stays with it (`$n$-th`, `$x$,`), which the leading-token
-           attachment of the next text node already models. */
+           formula stays with it (`$n$-th`, `$x$,`), which
+           `markdownAtomicContinuationAttach` models. */
         const previous = current().at(-1);
         let attached = 0;
         if (
@@ -982,9 +811,6 @@ function markdownInlineItemsAppend(
             : node.type === "emphasis"
               ? { ...style, italic: true }
               : style;
-    const nestedAtomic = atomic;
-    const nestedFragmentLong =
-        fragmentLong || node.type === "link" || node.type === "linkReference";
     for (const child of node.children)
         markdownInlineItemsAppend(
             child,
@@ -993,9 +819,7 @@ function markdownInlineItemsAppend(
             cache,
             footnotes,
             measure,
-            bindDecoratedPunctuation,
-            nestedFragmentLong,
-            nestedAtomic,
+            atomic,
             tableCell,
         );
 }
@@ -1081,20 +905,7 @@ function markdownInlineRuns(
     for (const [index, child] of children.entries()) {
         if (index === children.length - 1)
             lastChildStart = { item: runs.at(-1)!.length, run: runs.length - 1 };
-        // Footnote return controls appended later do not change punctuation
-        // binding between the authored inline nodes before them.
-        markdownInlineItemsAppend(
-            child,
-            style,
-            runs,
-            cache,
-            footnotes,
-            measure,
-            true,
-            false,
-            false,
-            tableCell,
-        );
+        markdownInlineItemsAppend(child, style, runs, cache, footnotes, measure, false, tableCell);
     }
     const lastChild = children.at(-1);
     if (lastChild)
@@ -1181,122 +992,23 @@ function preparedPlainSegments(
 ): PreparedTextWithSegments {
     return preparedTextSegments(text, PLAIN_FONT, cache, "pre-wrap");
 }
-/** Pretext fuses the label and URL in `[label](https://…)`, hiding the
- * browser's break opportunity between closing and opening brackets. */
-const BRACKET_BREAK = /(?<=[\])}])(?=[([{])/gu;
 
-/** Gecko skips a tab stop less than half a `ch` ahead, compared exactly. Pretext only models
- * the next stop. Resolve tab advances from this line's origin without
- * changing the text that the browser renders or the reader can copy. */
-function plainTabStopsApply(
-    prepared: PreparedTextWithSegments,
-    cursor: LayoutCursor,
-    cache: MessageTextLayoutCache,
-): PreparedTextWithSegments {
-    if (!GECKO_INLINE_SLICE || prepared.kinds.indexOf("tab", cursor.segmentIndex) < 0)
-        return prepared;
-    const widths = [...prepared.widths];
-    const kinds = [...prepared.kinds];
-    const lineEndFitAdvances = [...prepared.lineEndFitAdvances];
-    const lineEndPaintAdvances = [...prepared.lineEndPaintAdvances];
-    const minimum = naturalTextWidth("0", PLAIN_FONT, cache) / 2;
-    const stop = prepared.tabStopAdvance;
-    let advance = 0;
-    for (let index = cursor.segmentIndex; index < widths.length; index += 1) {
-        if (kinds[index] === "tab") {
-            let width = stop - (advance % stop);
-            if (width < minimum) width += stop;
-            widths[index] = width;
-            kinds[index] = "preserved-space";
-            lineEndFitAdvances[index] = 0;
-            lineEndPaintAdvances[index] = width;
-        }
-        advance += widths[index]!;
-    }
-    return { ...prepared, widths, kinds, lineEndFitAdvances, lineEndPaintAdvances };
-}
 /** Advance of plain text with its spaces preserved. */
 function plainTextWidth(text: string, cache: MessageTextLayoutCache): number {
-    return measureNaturalWidth(
-        plainTabStopsApply(
-            preparedPlainSegments(text, cache),
-            { segmentIndex: 0, graphemeIndex: 0 },
-            cache,
-        ),
-    );
+    return measureNaturalWidth(preparedPlainSegments(text, cache));
 }
-/** Where a Pretext cursor falls in the text it was prepared from. */
-function plainCursorOffset(prepared: PreparedTextWithSegments, cursor: LayoutCursor): number {
-    let offset = 0;
-    for (let index = 0; index < cursor.segmentIndex; index += 1)
-        offset += prepared.segments[index]!.length;
-    if (cursor.graphemeIndex > 0) {
-        let graphemes = 0;
-        for (const { segment } of GRAPHEME_SEGMENTER.segment(
-            prepared.segments[cursor.segmentIndex] ?? "",
-        )) {
-            if (graphemes === cursor.graphemeIndex) break;
-            offset += segment.length;
-            graphemes += 1;
-        }
-    }
-    return offset;
-}
-/**
- * Lines under `pre-wrap` and `overflow-wrap: anywhere`. Pretext does not
- * emergency-break symbol runs and gives URLs preferred break points the
- * browser does not use. Fill overlong runs by grapheme, then prepare the
- * remainder so normal break opportunities apply again on the next line.
- */
+/** Lines under `pre-wrap` and `overflow-wrap: anywhere`, which breaks a word
+ * too long for its line between graphemes as Pretext does. */
 function plainLineBoxes(line: string, measure: number, cache: MessageTextLayoutCache): string[] {
     if (line.length === 0) return [""];
+    const prepared = preparedPlainSegments(line, cache);
     const boxes: string[] = [];
-    let rest = inlineBreaksMark(line).replace(BRACKET_BREAK, "\u200b");
+    let cursor: LayoutCursor | undefined;
     for (;;) {
-        const prepared = preparedPlainSegments(rest, cache);
-        let cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 };
-        let overflow: { readonly start: number; readonly text: string } | undefined;
-        for (;;) {
-            const range = layoutNextLineRange(
-                plainTabStopsApply(prepared, cursor, cache),
-                cursor,
-                measure,
-            );
-            if (!range) break;
-            const text = materializeLineRange(prepared, range).text;
-            /* Trailing spaces hang past the edge of a wrapped line. */
-            if (
-                range.end.graphemeIndex > 0 ||
-                (range.width > measure + INLINE_MEASURE_EPSILON &&
-                    plainTextWidth(text.replace(/\s+$/u, ""), cache) >
-                        measure + INLINE_MEASURE_EPSILON)
-            ) {
-                const start = plainCursorOffset(prepared, range.start);
-                overflow = { start, text: rest.slice(start) };
-                break;
-            }
-            boxes.push(text);
-            cursor = range.end;
-        }
-        if (!overflow) return boxes.length > 0 ? boxes : [""];
-        const graphemes = [...GRAPHEME_SEGMENTER.segment(overflow.text)].map(
-            (part) => part.segment,
-        );
-        let low = 1;
-        let high = graphemes.length;
-        while (low < high) {
-            const count = Math.ceil((low + high) / 2);
-            if (
-                plainTextWidth(graphemes.slice(0, count).join(""), cache) <=
-                measure + INLINE_MEASURE_EPSILON
-            )
-                low = count;
-            else high = count - 1;
-        }
-        const fitted = graphemes.slice(0, low).join("");
-        boxes.push(fitted);
-        rest = rest.slice(overflow.start + fitted.length);
-        if (rest.length === 0) return boxes;
+        const range = layoutNextLineRange(prepared, measure, cursor);
+        if (!range) return boxes.length > 0 ? boxes : [""];
+        boxes.push(materializeLineRange(prepared, range).text);
+        cursor = range.end;
     }
 }
 /** Height of literal human text, including any grouped hover metadata. */
@@ -1594,6 +1306,15 @@ function markdownBlocksHeight(
     }
     return total + pendingMargin;
 }
+/** Whether a list renders its items' paragraphs as `<p>`: mdast-util-to-hast
+ * unwraps every paragraph of a tight list into its `<li>`, and a list is loose
+ * when it or any of its items is spread. */
+function markdownListLoose(list: MarkdownList): boolean {
+    return (
+        list.spread === true ||
+        list.children.some((item) => item.spread ?? item.children.length > 1)
+    );
+}
 function markdownListHeight(
     list: MarkdownList,
     measure: number,
@@ -1603,6 +1324,7 @@ function markdownListHeight(
     mermaidEnabled: boolean,
 ): number {
     const itemMeasure = measure - LIST_INDENT;
+    const loose = markdownListLoose(list);
     let total = 0;
     for (const [itemIndex, item] of list.children.entries()) {
         const blocks = item.children
@@ -1613,7 +1335,9 @@ function markdownListHeight(
                     cache,
                     footnotes,
                     false,
-                    trailing,
+                    /* The hover time joins the last `<p>`; a tight item's
+                       paragraph is no `<p>`, so it takes none. */
+                    node.type === "paragraph" && !loose ? undefined : trailing,
                     childIndex === 0 && item.checked !== null,
                     mermaidEnabled,
                 ),
@@ -1951,14 +1675,18 @@ function markdownTableCellExtent(
         let wordParts = 0;
         let wordItem: MarkdownInlineItem | undefined;
         const wordAdd = (item: MarkdownInlineItem, width: number) => {
-            /* Fragments of one code span break between themselves like prose,
-               and the code fragment model owns the brackets glued to it. */
+            /* The items of one code span are one part of a word, and so are
+               the brackets and punctuation that touch it, as in `(code),`. */
+            const code = (part: MarkdownInlineItem | undefined) => part?.font === INLINE_CODE_FONT;
+            const punctuation = (part: MarkdownInlineItem | undefined) =>
+                part !== undefined && /^\p{P}+$/u.test(part.text.trim());
             if (
                 item !== wordItem &&
-                !(wordItem?.font === INLINE_CODE_FONT && item.font === INLINE_CODE_FONT)
+                !(code(wordItem) && code(item)) &&
+                !(code(wordItem) && punctuation(item)) &&
+                !(punctuation(wordItem) && code(item))
             )
                 wordParts += 1;
-            if (item.glued && item.font !== INLINE_CODE_FONT) wordParts += 1;
             wordItem = item;
             word += width;
         };
@@ -1988,14 +1716,13 @@ function markdownTableCellExtent(
                 const prepared = preparedTextSegments(item.text, item.font, cache);
                 let previous: string | undefined;
                 for (const [index, kind] of prepared.kinds.entries()) {
-                    if (kind === "text" || kind === "glue") {
+                    if (kind === "text" || kind === "zero-width-glue") {
                         /* Pretext splits one item's text exactly where it may break. */
                         if (kind === "text" && previous === "text") wordEnd();
                         wordAdd(item, prepared.widths[index]!);
                     } else wordEnd();
                     previous = kind;
                 }
-                if (item.glued && item.font !== INLINE_CODE_FONT) wordParts += 1;
                 word += item.extraWidth ?? 0;
             }
             if (/\s$/u.test(item.text)) wordEnd();
@@ -2441,10 +2168,7 @@ function naturalTextWidth(text: string, font: string, cache: MessageTextLayoutCa
         preparationTable(ready.preparedSegments, font, "normal"),
         text,
     );
-    if (prepared === undefined) {
-        glyphMetricsCharge(PREPARED_RUN_BYTES + text.length * PREPARED_CHAR_BYTES);
-        prepared = prepareWithSegments(text, font, { whiteSpace: "normal" });
-    }
+    prepared ??= prepareWithSegments(text, font, { whiteSpace: "normal" });
     const width = measureNaturalWidth(prepared);
     byText[text] = width;
     return width;

@@ -38,6 +38,7 @@ import {
     MessageListDisclosureAnchorProvider,
     type MessageListDisclosureAnchor,
 } from "./messageListDisclosureAnchor";
+import { messageListRowHeightCheckRef } from "./messageListRowHeightCheck";
 import {
     markdownTablesSolve,
     MessageReferenceLink,
@@ -3501,6 +3502,13 @@ export function MessageList(props: MessageListProps) {
                                             : undefined
                                     }
                                     key={virtualItem.key}
+                                    ref={messageListRowHeightCheckRef(
+                                        virtualItem.index === footerIndex
+                                            ? "working-status"
+                                            : virtualItem.key,
+                                        virtualItem.index,
+                                        virtualItem.size,
+                                    )}
                                     style={{
                                         transform: `translateY(${String(virtualItem.start)}px)`,
                                     }}

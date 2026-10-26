@@ -136,6 +136,7 @@ import {
     type DesktopCloudSignInNoticeStore,
 } from "./desktopCloudSignInNoticeStore";
 import { desktopDebugStoreCreate } from "./desktopDebugStore";
+import { desktopRowHeightCheckInstall } from "./desktopRowHeightCheck";
 import { desktopProfilerStoreCreate } from "./desktopProfilerStore";
 import { desktopMetricsStoreCreate } from "./desktopMetricsStore";
 import { desktopDaemonStoreCreate } from "./desktopDaemonStore";
@@ -1033,6 +1034,7 @@ function DesktopRuntimeContent(
 const browserLocal =
     document.querySelector('meta[name="happy-browser-local"]')?.getAttribute("content") === "1";
 const bridge = window.happyDesktop ?? (browserLocal ? browserDevBridgeCreate() : undefined);
+desktopRowHeightCheckInstall();
 const root = createRoot(document.getElementById("root")!);
 // A todo list is laid over a picture; fetching and decoding both of them now
 // means opening a list paints its background with it instead of a frame later.

@@ -325,8 +325,8 @@ importers:
         specifier: ^0.51.4
         version: 0.51.4(@floating-ui/dom@1.8.0)(@lezer/common@1.5.2)(@lezer/highlight@1.2.3)(@types/hast@3.0.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.7(patch_hash=14e2cfa7d72d4064e573a384fedfcdcc7589b6d08ab00ac90e41ef11f9496979)(react@19.2.7))(react@19.2.7)
       '@chenglou/pretext':
-        specifier: ^0.0.8
-        version: 0.0.8
+        specifier: ^1.0.0
+        version: 1.0.0
       '@codemirror/commands':
         specifier: ^6.10.4
         version: 6.10.4
@@ -677,8 +677,8 @@ packages:
     resolution: {integrity: sha512-ctxtJ/eA+t+6q2++vj5j7FYX3nRu311q1wfYH3xjlLOsczhlhxAg2FWNUXhpGvAw3BWo1xBcvOV6/YLc2r5FJw==}
     hasBin: true
 
-  '@chenglou/pretext@0.0.8':
-    resolution: {integrity: sha512-yqm2GMxnPI7VHcHwe84P8ZF0JK/2d2DMKPqMN+s95jQhwDMYYXKVFVJUMEaVWckQStdsjdLav/0Vu+d9YbtGxA==}
+  '@chenglou/pretext@1.0.0':
+    resolution: {integrity: sha512-BxKiDMxWJhyzL8asvcgg3T9YnUU7OUFsKO8oRaR2SYAPX4Sh2wM9gqTBjrBaZ4fnl84cEQ8czC0Q1M83z3chsA==}
 
   '@codemirror/autocomplete@6.20.3':
     resolution: {integrity: sha512-tlosUqb+3BbxCxZdu4tKeRghPFC+QM7q4X5YhKV2eCmPG+1r2F3f4AaSz5sCrFqUtX4Jh20VFTKecl16MgiV9g==}
@@ -6052,7 +6052,7 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
 
-  '@chenglou/pretext@0.0.8': {}
+  '@chenglou/pretext@1.0.0': {}
 
   '@codemirror/autocomplete@6.20.3':
     dependencies:
