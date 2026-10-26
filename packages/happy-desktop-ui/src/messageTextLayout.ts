@@ -633,6 +633,8 @@ function markdownInlineLeadingTokenAttach(
     previous.glued = true;
     return text.slice(match[0].length);
 }
+/** The hyphens Pretext prefers to break after inside an overlong segment. */
+const PREFERRED_BREAK = /[-\u058A\u2010\u2012\u2013\u2014]/u;
 /** Split one overlong decorated segment. Pretext chooses the grapheme
  * boundaries; separate atomic items expose the true final fragment for link
  * punctuation and keep code padding on only its first/last fragments. */
@@ -706,6 +708,28 @@ function markdownInlineFragmentItems(
             fragment = graphemes.slice(graphemeIndex, graphemeIndex + count).join("");
             fragmentWidth = naturalTextWidth(fragment, font, cache);
         }
+        /* Without a hyphen to prefer, Pretext slices where the graphemes' own
+           advances stop fitting, and that sum runs wider than the shaped run
+           the browser fits: `…%2Fcod` sums to 385.35px but shapes to 384.95px,
+           so Blink still fits the `e` at 394px. Extend to the last grapheme
+           whose shaped prefix fits, as Blink does, wrapping after a hyphen
+           crossed on the way. */
+        if (!PREFERRED_BREAK.test(fragment)) {
+            let hyphenCount = 0;
+            for (let next = count + 1; graphemeIndex + next <= graphemes.length; next += 1) {
+                const candidate = graphemes.slice(graphemeIndex, graphemeIndex + next).join("");
+                const limit = graphemeIndex + next >= graphemes.length ? finalAvailable : available;
+                if (naturalTextWidth(candidate, font, cache) > limit + INLINE_MEASURE_EPSILON)
+                    break;
+                count = next;
+                fragment = candidate;
+                if (PREFERRED_BREAK.test(graphemes[graphemeIndex + next - 1]!)) hyphenCount = next;
+            }
+            if (hyphenCount > 0 && graphemeIndex + count < graphemes.length) {
+                count = hyphenCount;
+                fragment = graphemes.slice(graphemeIndex, graphemeIndex + count).join("");
+            }
+        }
         const final = graphemeIndex + count >= graphemes.length;
         items.push({
             break: "never",
@@ -764,12 +788,22 @@ function markdownInlineItemsAppend(
             ) {
                 if (match[1]!.length > 0) current().push({ font, text: match[1]! });
                 /* Only a piece with no break opportunity of its own needs an
-                   emergency break. The pieces between such pieces stay one
-                   item, which breaks where it may: separate items would not. */
+                   emergency break. The pieces before the first such piece stay
+                   one item, which breaks where it may: separate items that
+                   touch would not.
+                   After it, a breakable item would meet the last fragment
+                   without whitespace, and Pretext does not wrap there: it
+                   slices the next piece mid-word onto the fragment's line, a
+                   line short of the browser, which wraps at the piece boundary
+                   (after the hyphen in `…PiE-p_Oq…`). An atomic item may
+                   always wrap before itself, so each following piece, which
+                   fits a line, is one. */
                 let breakable = "";
+                let fragmented = false;
                 for (const piece of preparedTextSegments(match[2]!, font, cache).segments) {
                     if (naturalTextWidth(piece, font, cache) <= measure + INLINE_MEASURE_EPSILON) {
-                        breakable += piece;
+                        if (fragmented) current().push({ break: "never", font, text: piece });
+                        else breakable += piece;
                         continue;
                     }
                     if (breakable.length > 0) current().push({ font, text: breakable });
@@ -777,6 +811,7 @@ function markdownInlineItemsAppend(
                     current().push(
                         ...markdownInlineFragmentItems(piece, font, measure, 0, 0, cache),
                     );
+                    fragmented = true;
                 }
                 if (breakable.length > 0) current().push({ font, text: breakable });
                 continue;

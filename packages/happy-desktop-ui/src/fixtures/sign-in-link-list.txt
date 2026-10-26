@@ -1,0 +1,16 @@
+I've started the sign-in for **tools_extra_alias@bra1ndump.com**, and it's waiting for you in the browser. It's set up as its own separate Claude account on this Mac, so your existing accounts aren't affected.
+
+1. A sign-in page may already have opened in your browser. If it didn't, open this link:
+   https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&scope=user%3Ainference&code_challenge=wGSDIXGB2C8U65dIJyskPiE-p_OqQ8Ec_GfRsuT-__M&code_challenge_method=S256&state=wRtf0qPrZfhtixjRF19wrKO7hiGZ6l5UXDBl8bWjrY0
+2. Before you approve, check the page shows **tools_extra_alias@bra1ndump.com**. If it shows another account, sign out on claude.ai first.
+3. Approve. The page will then show an authorization code. Paste that code here.
+
+The code works only once and only for this sign-in, so pasting it in chat is fine.
+
+Once I have the code, I'll:
+
+- save the sign-in privately without showing it here;
+- confirm the account actually works;
+- add it as a model provider named **tools_extra_alias@bra1ndump.com**.
+
+The new account won't appear until Happy Agent restarts. Restarting would stop Kermit's demo programs, so I'll check with the Kermit demo agent before I restart.
