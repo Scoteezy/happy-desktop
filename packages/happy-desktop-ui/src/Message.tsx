@@ -818,6 +818,8 @@ export type MessageListProps = {
      * its own never moves the transcript.
      */
     footerFollowed?: boolean;
+    /** Room below queued rows for the footer that will follow them when accepted. */
+    footerReserveHeight?: number;
     /**
      * The row key of the reader's newest send. When it changes while the
      * reader follows the bottom, that row is lifted to `SEND_LIFT_TOP` down the viewport
@@ -1172,6 +1174,14 @@ export function MessageList(props: MessageListProps) {
             viewportGeometryCommitCurrent.current(geometry.width, height);
             return;
         }
+        const reserve = props.footerReserveHeight ?? 0;
+        if (following.current && virtualized && reserve > 0) {
+            geometryFollowInset.current = 0;
+            geometryExtentRequire(
+                geometrySparseInset.current + estimatedContentHeight() + reserve - height,
+                height,
+            );
+        }
         // Virtual rows already have authoritative geometry. Native scrollHeight
         // can still include overflow from a previous virtual range mid-commit.
         const total = virtualized
@@ -1384,6 +1394,8 @@ export function MessageList(props: MessageListProps) {
         exact: [] as boolean[],
         /* How many rows are still placeholders. */
         pending: 0,
+        /* The previous layout's queued footer room, consumed on acceptance. */
+        footerReserveHeight: 0,
         width: undefined as number | undefined,
         /* Advances whenever any row's size or exactness may have changed. */
         version: 0,
@@ -1410,6 +1422,10 @@ export function MessageList(props: MessageListProps) {
      */
     function rowSizeModelLayout(rowWidth: number, from: number, focus: MessageListLayoutFocus) {
         const element = list.current;
+        const heldBlank = Math.min(
+            rowSizeModel.footerReserveHeight,
+            Math.max(0, geometryExtent.current - estimatedContentHeight()),
+        );
         if (
             wheelScrollPending.current &&
             !following.current &&
@@ -1661,6 +1677,7 @@ export function MessageList(props: MessageListProps) {
             start += sizes[index]!;
         }
         model.pending = pending;
+        model.footerReserveHeight = props.footerReserveHeight ?? 0;
         model.width = rowWidth;
         model.version += 1;
         model.refined = undefined;
@@ -1670,7 +1687,11 @@ export function MessageList(props: MessageListProps) {
             geometryFollowInset.current = Math.max(
                 0,
                 geometryFollowInset.current +
-                    (footerFollowed.current ? Math.min(0, footerDelta) : footerDelta),
+                    (footerFollowed.current
+                        ? Math.min(0, footerDelta)
+                        : footerDelta > 0
+                          ? Math.max(0, footerDelta - heldBlank)
+                          : footerDelta),
             );
         // A content update can also discover cached sizes for cold rows. Only
         // their placeholder correction (or a width reflow) changes coordinates;
@@ -1856,6 +1877,9 @@ export function MessageList(props: MessageListProps) {
      * fits, and its end, the last thing written, when it does not.
      */
     function sentStartKeep(element: HTMLElement, key: string) {
+        // Queued sends follow their reserved status room, including when the
+        // message is taller than the viewport and only its end can be shown.
+        if ((props.footerReserveHeight ?? 0) > 0) return;
         const index = sentRowIndex(key);
         const start = index === undefined ? undefined : rowSizeModel.starts[index];
         const size = index === undefined ? undefined : rowSizeModel.sizes[index];

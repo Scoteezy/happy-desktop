@@ -617,7 +617,7 @@ it.skipIf(server.browser === "firefox").each([false, true])(
     },
 );
 
-it("carries repeated queued sends into view near the bottom without holding reply space", async () => {
+it("carries repeated queued sends into view near the bottom with room for their status", async () => {
     const { view, question, queue } = renderConversation(60);
     await view.ready();
     question(true);
@@ -638,8 +638,8 @@ it("carries repeated queued sends into view near the bottom without holding repl
             viewport.getBoundingClientRect().bottom,
         );
         expect(
-            viewport.querySelector<HTMLElement>(".happy-message-list__virtual")!.style.minHeight,
-        ).toBe("");
+            viewport.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom,
+        ).toBeGreaterThanOrEqual(68);
         const footer = viewport.querySelector<HTMLElement>('[data-item-id="working-status"]')!;
         const nextRow = footer.nextElementSibling as HTMLElement;
         const modeled =

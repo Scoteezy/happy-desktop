@@ -18,9 +18,7 @@ import {
     type HappyAgentTraceViewer,
 } from "happy-desktop-state";
 import { type ActivityMotion, type ActivityTreatment } from "./AgentActivityRow";
-import { HAPPY_AGENT_ACTIVITY_CONTROL_TRANSCRIPT_HEIGHT } from "./HappyAgentActivityControl";
 import {
-    AGENT_WORKING_STATUS_ROW_HEIGHT,
     AgentWorkingStatus,
     type AgentWaitStatus,
     type AgentWorkingPhase,
@@ -62,6 +60,7 @@ import {
     contentWidth,
     conversationReferencesSignature,
     conversationRowHeight,
+    conversationWorkingStatusHeight,
     conversationRowHeightCached,
     conversationRowHeightPrepare,
     conversationRowHeightCacheCreate,
@@ -1035,13 +1034,21 @@ export function ConversationView(props: ConversationViewProps) {
             rowContext(index, width),
             rowHeightCache,
         ] as const;
-    const workingStatusHeight = statusVisible
-        ? workingStatusStartsGroup
-            ? 68
-            : workingStatusClosesMessage
-              ? 32
-              : AGENT_WORKING_STATUS_ROW_HEIGHT
-        : 0;
+    const workingStatusHeight = conversationWorkingStatusHeight({
+        visible: statusVisible,
+        startsGroup: workingStatusStartsGroup,
+        closesMessage: workingStatusClosesMessage,
+        activityControl: Boolean(props.activityControl),
+    });
+    const queuedStatusHeight =
+        queued.length === 0
+            ? 0
+            : conversationWorkingStatusHeight({
+                  visible: true,
+                  startsGroup: props.agentAuthor !== undefined,
+                  closesMessage: false,
+                  activityControl: Boolean(props.activityControl),
+              });
     return (
         <section
             className={["happy-conversation", props.className].filter(Boolean).join(" ")}
@@ -1190,6 +1197,7 @@ export function ConversationView(props: ConversationViewProps) {
                            send; a reader at the bottom sees where the reply
                            will start rather than having it held below. */
                         footerFollowed={sendPending}
+                        footerReserveHeight={queuedStatusHeight}
                         liftKey={sendLift.liftKey}
                         followKey={sendLift.followKey}
                         dockConsumesSpace={dockedQuestions.length > 0}
@@ -1200,12 +1208,7 @@ export function ConversationView(props: ConversationViewProps) {
                                   headerLift: props.leadingHeader.lift,
                               }
                             : {})}
-                        footerHeight={Math.max(
-                            workingStatusHeight,
-                            props.activityControl
-                                ? HAPPY_AGENT_ACTIVITY_CONTROL_TRANSCRIPT_HEIGHT
-                                : 0,
-                        )}
+                        footerHeight={workingStatusHeight}
                         initialScrollPosition={props.scrollPosition}
                         rowFallbackKey={(index) => listEntries[index]?.traceFoldTargetId}
                         rowAnchorKey={(index) => listEntries[index]?.traceFoldAnchorId}
