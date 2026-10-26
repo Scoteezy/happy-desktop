@@ -50,7 +50,12 @@ A good chat with an AI follows a few principles:
   blank space to the 70% below a lifted send, in the same geometry commit;
   zoom preserves its physical size within that limit. Enlarging the viewport
   may add the blank needed to keep a parked row fixed, without applying the
-  shrink cap again or letting the viewport become entirely blank. Space never
+  shrink cap again or letting the viewport become entirely blank. Resizing the
+  window vertically, from its bottom edge or its top edge, behaves like the
+  draft growing: "if there's space to take, the resize should probably take that
+  space", and the transcript moves with the edge at the same rate however fast
+  or slow it is dragged. Blank space a resize added goes once it has fully
+  scrolled off screen. Space never
   decays with time, scrolling, or
   streaming, and never animates or disappears on its own.
 - **Work folds away out of sight.** A finished turn's steps fold behind
