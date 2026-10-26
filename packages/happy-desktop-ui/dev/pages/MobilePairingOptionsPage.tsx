@@ -118,6 +118,18 @@ const states: readonly {
             unavailable: "Happy Agent is reconnecting. Codes refresh when it is back.",
         },
     },
+    {
+        id: "12",
+        label: "Relay chosen",
+        detail: "Relay | Direct at the top, Relay selected: the relay code stands alone, its countdown under it",
+        variant: { direct: direct.waiting, relay: relayWaiting, method: "relay" },
+    },
+    {
+        id: "13",
+        label: "Direct chosen",
+        detail: "Direct selected, tagged Experimental: the direct code in the same place the relay code was",
+        variant: { direct: direct.waiting, relay: relayWaiting, method: "direct" },
+    },
 ];
 
 export function MobilePairingOptionsPage() {

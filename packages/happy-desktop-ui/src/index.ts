@@ -938,6 +938,7 @@ export {
 } from "./MobileDirectConnection";
 export {
     MobilePairingOptions,
+    type MobilePairingMethod,
     type MobilePairingOptionsLayout,
     type MobilePairingOptionsProps,
     type MobileRelayPairingState,

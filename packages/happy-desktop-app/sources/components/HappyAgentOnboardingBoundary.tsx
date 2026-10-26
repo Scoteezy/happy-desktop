@@ -1,7 +1,9 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import {
+    experimentsStoreNoop,
     happyAgentMobileConnectorStoreNoop,
     type AppearanceStore,
+    type ExperimentsStore,
     type HappyAgentClockStore,
     type HappyAgentOnboardingStore,
     type HappyAgentProfileStore,
@@ -23,6 +25,8 @@ export function HappyAgentOnboardingBoundary(props: {
     readonly profile: HappyAgentProfileStore;
     readonly clock: HappyAgentClockStore;
     readonly online: boolean;
+    /** Whether the direct phone connection is offered beside the relay; off by default. */
+    readonly experiments?: ExperimentsStore;
     readonly onRetry: () => void;
     readonly onExternalOpen?: (url: string) => void;
     readonly children: ReactNode;
@@ -48,18 +52,35 @@ export function HappyAgentOnboardingBoundary(props: {
         props.store.mobile.get,
         props.store.mobile.get,
     );
+    const experimentsStore = props.experiments ?? experimentsStoreNoop;
+    const experiments = useSyncExternalStore(
+        experimentsStore.subscribe,
+        experimentsStore.get,
+        experimentsStore.get,
+    );
     const online = props.online;
-    // The relay offer leads to both codes: the direct pairing opens with it,
-    // and the connector is read only while they are on screen.
+    // The relay offer leads to methods: the direct pairing opens with it,
+    // and the connector is read only while Direct is on screen. Direct is an
+    // experiment; off, the page shows Relay.
+    const mobileDirect = experiments.mobileDirect;
     const pairing =
         snapshot.state?.completed === false &&
         (mobile.status === "pairing" || mobile.status === "failed");
     const pairingOptions = useAppMobilePairingOptions({
         layout: "setup",
+        method: mobileDirect ? "direct" : "relay",
+        // Choosing Direct turns its experiment on, and asks for a direct code.
+        onMethodSelect: (method) => {
+            if (method === "direct") props.store.mobile.direct.pairingOpen();
+            experimentsStore.featureUpdate("mobileDirect", method === "direct", "onboarding");
+        },
         relay: appMobileRelayFromOnboarding(mobile),
         relayStarting: mobile.status === "failed" && mobile.pending,
         onRelayRetry: props.store.mobile.happyMobileConnect,
-        direct: pairing ? props.store.mobile.direct : happyAgentMobileConnectorStoreNoop,
+        direct:
+            pairing && mobileDirect
+                ? props.store.mobile.direct
+                : happyAgentMobileConnectorStoreNoop,
         clock: props.clock,
         online: () => online,
         ...(online ? {} : { unavailable: "Happy can't reach this Happy Agent right now." }),

@@ -9,6 +9,7 @@ import { hiddenWindowRun } from "./hiddenWindow.js";
 import { sidebarDragChaosRun } from "./sidebarDragChaos.js";
 import { nestedRowMenusRun } from "./nestedRowMenus.js";
 import { sectionCreateRun } from "./sectionCreate.js";
+import { mobileDirectExperimentRun } from "./mobileDirectExperiment.js";
 import {
     stopShimmerRun,
     stopShimmerSpacesSubtaskStart,
@@ -943,6 +944,8 @@ async function workloadRun(
     await mark("route-ready");
     if (workload === "hidden-window")
         return finish(await hiddenWindowRun(page, app, options.paths.artifacts, mark));
+    if (workload === "mobile-direct-experiment")
+        return finish({ ...(await mobileDirectExperimentRun(page, options.paths.artifacts)) });
     if (workload === "section-create") {
         await options.runtime.client.stemCellsEnable();
         await page.reload();

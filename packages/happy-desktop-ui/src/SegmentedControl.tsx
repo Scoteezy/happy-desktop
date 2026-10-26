@@ -1,11 +1,14 @@
 import { partitionComponentProps } from "./componentProps";
 import { type CSSProperties } from "react";
+import { Badge } from "./Badge";
 import { Icon, type IconName } from "./Icon";
 export type SegmentedControlSize = "compact" | "small" | "medium" | "large";
 export type SegmentedControlSegment = {
     value: string;
     label: string;
     icon?: IconName;
+    /** A short tag after the label, such as "Experimental". */
+    badge?: string;
     disabled?: boolean;
     title?: string;
 };
@@ -97,6 +100,13 @@ export function SegmentedControl(props: SegmentedControlProps) {
                         >
                             {segment.label}
                         </span>
+                        {segment.badge ? (
+                            <Badge
+                                className="happy-segmented-control__badge"
+                                label={segment.badge}
+                                variant="outline"
+                            />
+                        ) : null}
                     </button>
                 );
             })}

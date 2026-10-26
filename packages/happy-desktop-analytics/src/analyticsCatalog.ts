@@ -127,6 +127,12 @@ export interface AnalyticsSetupDownloadFailure {
     readonly transfer_percent_bucket: AnalyticsTransferPercentBucket;
 }
 
+/** How a phone pairs: through the Happy relay, or directly over Tailcat (an experiment). */
+export type AnalyticsMobilePairingMethod = "relay" | "direct";
+
+/** Which pairing page: first-run onboarding, or Settings → Mobile Access. */
+export type AnalyticsMobilePairingSurface = "onboarding" | "mobile_access";
+
 /** Event-specific properties, by event name. */
 export interface AnalyticsEvents {
     readonly app_opened: { readonly launch_count: number };
@@ -180,6 +186,29 @@ export interface AnalyticsEvents {
     };
     readonly onboarding_mobile: { readonly action: "paired" | "skipped" };
     readonly onboarding_completed: Readonly<Record<never, never>>;
+    /** A phone pairing page showed its Relay | Direct choice. */
+    readonly mobile_pairing_options_shown: {
+        readonly options: "relay_direct";
+        /** The method selected as it showed: Direct while its experiment is on. */
+        readonly default_method: AnalyticsMobilePairingMethod;
+        readonly surface: AnalyticsMobilePairingSurface;
+    };
+    readonly mobile_pairing_option_selected: {
+        readonly from: AnalyticsMobilePairingMethod;
+        readonly to: AnalyticsMobilePairingMethod;
+        readonly surface: AnalyticsMobilePairingSurface;
+    };
+    /** A pairing this window showed linked a phone. */
+    readonly mobile_pairing_completed: { readonly method: AnalyticsMobilePairingMethod };
+    /** A pairing this window showed ended unlinked: no code, an error, or emoji that did not match. */
+    readonly mobile_pairing_failed: { readonly method: AnalyticsMobilePairingMethod };
+    /** A pairing in progress was left: its page closed or skipped, or the other method chosen. */
+    readonly mobile_pairing_cancelled: { readonly method: AnalyticsMobilePairingMethod };
+    readonly direct_phone_experiment_toggled: {
+        readonly enabled: boolean;
+        /** Settings → Experiments, or a pairing page's Relay | Direct choice. */
+        readonly where: "experiments" | AnalyticsMobilePairingSurface;
+    };
     readonly conversation_created: AnalyticsModelProperties & {
         readonly source: "workspace" | "command_palette" | "shortcut" | "voice";
     };
@@ -246,6 +275,14 @@ export const ANALYTICS_PROPERTY_NAMES: ReadonlySet<string> = new Set([
     "effort",
     "bot_system_key",
     "task_depth",
+    "options",
+    "default_method",
+    "surface",
+    "from",
+    "to",
+    "method",
+    "enabled",
+    "where",
 ] satisfies readonly (
     | keyof AnalyticsCommonProperties
     | { [E in AnalyticsEventName]: keyof AnalyticsEvents[E] }[AnalyticsEventName]

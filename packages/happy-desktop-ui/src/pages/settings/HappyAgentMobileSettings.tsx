@@ -90,12 +90,15 @@ export interface HappyAgentMobileSettingsProps {
     onManagementCancel?(): void;
     onManagementConfirm?(): void;
     onTerminalRegistrationRemovalChange?(remove: boolean): void;
-    /** Opens pairing with both methods side by side, whatever the relay's state. */
+    /** Opens pairing: the relay, or the direct connection while its experiment is on. */
     onPairingOptionsOpen(): void;
     /** The open pairing UI (MobilePairingOptions), shown in place of Connect a phone. */
     readonly pairingOptions?: ReactNode;
-    /** The direct connection's section body (MobileDirectConnectionSection). */
-    readonly direct: ReactNode;
+    /**
+     * The direct connection's section body (MobileDirectConnectionSection);
+     * absent while that experiment is off, which leaves the section out.
+     */
+    readonly direct?: ReactNode;
 }
 
 interface MobileState {
@@ -135,7 +138,7 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                                 Connect phone
                             </Button>
                         }
-                        description="Shows the relay and direct codes side by side"
+                        description="Shows the relay code, or the direct one as an experiment"
                         label="Connect a phone"
                     />
                 )}

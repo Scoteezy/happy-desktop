@@ -24,6 +24,7 @@ import type {
     TerminalColorScheme,
 } from "happy-desktop-state";
 import type { HappyDesktopBridge } from "../shared/desktopContract";
+import type { HappyAgentMobilePairingObserve } from "./desktopMobilePairingAnalytics";
 import {
     happyAgentConnectionOpen,
     type HappyAgentConnectionHandle,
@@ -144,6 +145,8 @@ export interface HappyAgentDirectoryDeps {
     ) => void;
     /** A reader-initiated act one Happy Agent's workspace finished. */
     readonly activity?: (happyAgentId: string, activity: HappyAgentActivity) => void;
+    /** Observes one Happy Agent's phone pairings while a pairing page shows them. */
+    readonly mobilePairingObserve?: (happyAgentId: string) => HappyAgentMobilePairingObserve;
     /** A top-level session on one Happy Agent finished a turn. */
     readonly sessionFinished?: (happyAgentId: string, sessionId: string) => void;
     /** Desktop-wide model memory for this window's Happy Agent connection. */
@@ -417,6 +420,9 @@ export function happyAgentDirectoryStoreCreate(
                 subtasksForget: (removed, open) =>
                     deps.subtasksForget(happyAgent.entry.id, removed, open),
                 activity: (activity) => deps.activity?.(happyAgent.entry.id, activity),
+                ...(deps.mobilePairingObserve
+                    ? { mobilePairingObserve: deps.mobilePairingObserve(happyAgent.entry.id) }
+                    : {}),
                 sessionFinished: (sessionId) =>
                     deps.sessionFinished?.(happyAgent.entry.id, sessionId),
                 compatibility: (mismatch) => {

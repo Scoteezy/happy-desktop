@@ -15,6 +15,7 @@ import {
     PairingNote,
     PairingResult,
 } from "./MobilePairingParts";
+import { SegmentedControl, type SegmentedControlSegment } from "./SegmentedControl";
 
 /** The Happy relay attempt, as its own slot shows it. */
 export type MobileRelayPairingState =
@@ -29,9 +30,19 @@ export type MobileRelayPairingState =
 
 export type MobilePairingOptionsLayout = "settings" | "setup";
 
+/** The Happy relay, or the direct connection over Tailcat, which is an experiment. */
+export type MobilePairingMethod = "relay" | "direct";
+
 export interface MobilePairingOptionsProps {
     /** A card with its own heading and close in Settings; bare columns in setup. */
     readonly layout: MobilePairingOptionsLayout;
+    /**
+     * Shows one method at a time, chosen with a Relay | Direct control at the
+     * top: its code stands alone, without a method heading, and its countdown
+     * sits under it. Absent shows both side by side.
+     */
+    readonly method?: MobilePairingMethod;
+    onMethodSelect?(method: MobilePairingMethod): void;
     readonly now: number;
     /** Why actions cannot currently reach this Happy Agent. */
     readonly unavailable?: string;
@@ -57,29 +68,40 @@ const RELAY_DETAIL = "Through the Happy server, end-to-end encrypted. Works with
 const DIRECT_TITLE = "Direct connection";
 const DIRECT_DETAIL = "Straight to this computer over Tailcat. Needs a newer app; you check emoji.";
 
+const METHOD_SEGMENTS: SegmentedControlSegment[] = [
+    { value: "relay", label: "Relay", title: RELAY_DETAIL },
+    { value: "direct", label: "Direct", badge: "Experimental", title: DIRECT_DETAIL },
+];
+
 /**
- * C-299 MobilePairingOptions — both ways to pair a phone, side by side: the
- * Happy relay code and the direct Tailcat code. Each slot shows its own state,
- * so one method being unavailable never blocks the other. Once a phone has
- * connected directly, its emoji step takes the whole surface.
+ * C-299 MobilePairingOptions — the ways to pair a phone: the Happy relay code
+ * and the direct Tailcat code. Each slot shows its own state, so one method
+ * being unavailable never blocks the other. Once a phone has connected
+ * directly, its emoji step takes the whole surface. With `method` one slot
+ * shows at a time, in the same place, under a Relay | Direct control.
  */
 export function MobilePairingOptions(props: MobilePairingOptionsProps) {
-    const engaged = mobileDirectPairingEngaged(props.direct);
+    const method = props.method;
+    const single = method !== undefined;
+    const engaged = method !== "relay" && mobileDirectPairingEngaged(props.direct);
     // Setup sets each heading beside its code, with the countdown under the
-    // heading, so two codes take no more height than one.
+    // heading, so two codes take no more height than one. A code alone keeps
+    // its countdown under it.
     const setup = props.layout === "setup";
+    const headed = setup && !single;
     const directPairing = props.direct.kind === "ready" ? props.direct.connector.pairing : null;
     const directExpiry =
-        setup && directPairing?.status === "waiting" && directPairing.qr !== null
+        headed && directPairing?.status === "waiting" && directPairing.qr !== null
             ? directPairing.expiresAt
             : undefined;
-    const relayExpiry = setup && props.relay.kind === "waiting" ? props.relay.expiresAt : undefined;
+    const relayExpiry =
+        headed && props.relay.kind === "waiting" ? props.relay.expiresAt : undefined;
     const codeSize = props.layout === "settings" ? 184 : 136;
     const direct = (
         <MobileDirectPairingPanel
             {...(props.directActionError ? { actionError: props.directActionError } : {})}
             cancelling={props.directCancelling}
-            codeCountdown={!setup}
+            codeCountdown={!headed}
             codeSize={codeSize}
             density={props.layout === "setup" ? "compact" : "regular"}
             confirming={props.directConfirming}
@@ -94,13 +116,16 @@ export function MobilePairingOptions(props: MobilePairingOptionsProps) {
         />
     );
     const completed =
-        props.direct.kind === "ready" && props.direct.connector.pairing?.status === "completed";
+        method !== "relay" &&
+        props.direct.kind === "ready" &&
+        props.direct.connector.pairing?.status === "completed";
     return (
         <Box
             className="happy-mobile-pairing-options"
             data-engaged={engaged ? "" : undefined}
             data-happy-desktop-ui="mobile-pairing-options"
             data-layout={props.layout}
+            data-method={method}
             data-testid={props["data-testid"]}
         >
             {props.layout === "settings" ? (
@@ -122,30 +147,46 @@ export function MobilePairingOptions(props: MobilePairingOptionsProps) {
                     {props.unavailable}
                 </Banner>
             ) : null}
+            {method === undefined ? null : (
+                <SegmentedControl
+                    aria-label="Pairing method"
+                    className="happy-mobile-pairing-options__method"
+                    data-testid="mobile-pairing-method"
+                    onChange={(value) => {
+                        const next = value === "direct" ? "direct" : "relay";
+                        if (next !== method) props.onMethodSelect?.(next);
+                    }}
+                    segments={METHOD_SEGMENTS}
+                    size="small"
+                    value={method}
+                />
+            )}
             <Box className="happy-mobile-pairing-options__slots">
-                {engaged ? null : (
+                {engaged || method === "direct" ? null : (
                     <PairingSlot
                         detail={RELAY_DETAIL}
                         expiresAt={relayExpiry}
-                        heading
+                        heading={!single}
                         method="relay"
                         now={props.now}
                         title={RELAY_TITLE}
                     >
-                        <RelaySlot {...props} codeSize={codeSize} countdown={!setup} />
+                        <RelaySlot {...props} codeSize={codeSize} countdown={!headed} />
                     </PairingSlot>
                 )}
-                <PairingSlot
-                    detail={DIRECT_DETAIL}
-                    expiresAt={directExpiry}
-                    now={props.now}
-                    // Setup has no height to spare once the emoji step leads; its question names it.
-                    heading={!(engaged && props.layout === "setup")}
-                    method="direct"
-                    title={DIRECT_TITLE}
-                >
-                    {direct}
-                </PairingSlot>
+                {method === "relay" ? null : (
+                    <PairingSlot
+                        detail={DIRECT_DETAIL}
+                        expiresAt={directExpiry}
+                        now={props.now}
+                        // Setup has no height to spare once the emoji step leads; its question names it.
+                        heading={!single && !(engaged && setup)}
+                        method="direct"
+                        title={DIRECT_TITLE}
+                    >
+                        {direct}
+                    </PairingSlot>
+                )}
             </Box>
         </Box>
     );

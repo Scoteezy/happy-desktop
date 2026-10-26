@@ -24,6 +24,7 @@ export type GymWorkloadName =
     | "stop-shimmer"
     | "nested-row-menus"
     | "section-create"
+    | "mobile-direct-experiment"
     | "window-zoom"
     | "all";
 

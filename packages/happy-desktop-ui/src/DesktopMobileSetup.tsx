@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Button } from "./Button";
+import type { MobilePairingMethod } from "./MobilePairingOptions";
 import {
     OnboardingSteps,
     type MobileOnboardingStage,
@@ -29,14 +30,17 @@ export interface DesktopMobilePairingOptions {
     readonly verifying: boolean;
     /** The direct pairing finished: the page offers Continue instead of Skip. */
     readonly completed: boolean;
+    /** The method shown, one at a time; absent while both show side by side. */
+    readonly method?: MobilePairingMethod;
 }
 
-/** The subtitle over both codes, or over the emoji step once a phone connects directly. */
+/** The subtitle over the codes, or over the emoji step once a phone connects directly. */
 export function desktopMobilePairingOptionsCopy(options: DesktopMobilePairingOptions): string {
     if (options.completed) return "Your phone can now reach this computer directly.";
-    return options.verifying
-        ? "Check the emoji on this computer and on your phone."
-        : "Open Happy on your phone and scan either code.";
+    if (options.verifying) return "Check the emoji on this computer and on your phone.";
+    return options.method === undefined
+        ? "Open Happy on your phone and scan either code."
+        : "Open Happy on your phone and scan the code.";
 }
 
 export interface DesktopMobileSetupProps {

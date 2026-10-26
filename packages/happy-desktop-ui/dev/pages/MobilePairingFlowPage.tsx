@@ -42,6 +42,8 @@ const minimumWindow = { width: 720, height: 640 } as const;
 
 function settings(props: {
     readonly direct: MobileDirectConnectorState;
+    /** The direct connection's experiment is off: no direct section. */
+    readonly experimentOff?: boolean;
     readonly pairing?: PairingVariant;
     readonly relay?: Partial<HappyAgentMobileSettingsProps>;
     readonly removal?: MobileDirectRemoval;
@@ -58,10 +60,14 @@ function settings(props: {
         >
             <HappyAgentMobileSettings
                 configured={false}
-                direct={directSectionSpecimen(props.direct, {
-                    ...(props.removal ? { removal: props.removal } : {}),
-                    ...(props.unavailable ? { unavailable: props.unavailable } : {}),
-                })}
+                {...(props.experimentOff
+                    ? {}
+                    : {
+                          direct: directSectionSpecimen(props.direct, {
+                              ...(props.removal ? { removal: props.removal } : {}),
+                              ...(props.unavailable ? { unavailable: props.unavailable } : {}),
+                          }),
+                      })}
                 onDisconnect={noop}
                 onPairingOptionsOpen={noop}
                 {...(props.pairing
@@ -134,6 +140,25 @@ const settingsScreens: readonly {
         id: "idle",
         label: "Connect a phone, relay and direct sections",
         render: () => settings({ direct: direct.closed }),
+    },
+    {
+        id: "method-relay",
+        label: "Relay | Direct · Relay, the experiment off",
+        render: () =>
+            settings({
+                direct: direct.closed,
+                experimentOff: true,
+                pairing: { direct: direct.closed, relay: relayWaiting, method: "relay" },
+            }),
+    },
+    {
+        id: "method-direct",
+        label: "Relay | Direct · Direct, the experiment on",
+        render: () =>
+            settings({
+                direct: direct.closed,
+                pairing: { direct: direct.waiting, relay: relayWaiting, method: "direct" },
+            }),
     },
     {
         id: "codes",
@@ -328,6 +353,16 @@ const setupScreens: readonly {
         render: () => setup({ direct: direct.waiting, relay: relayWaiting }),
     },
     {
+        id: "setup-method-relay",
+        label: "Onboarding · Relay | Direct, Relay",
+        render: () => setup({ direct: direct.closed, relay: relayWaiting, method: "relay" }),
+    },
+    {
+        id: "setup-method-direct",
+        label: "Onboarding · Relay | Direct, Direct",
+        render: () => setup({ direct: direct.waiting, relay: relayWaiting, method: "direct" }),
+    },
+    {
         id: "setup-verifying",
         label: "Onboarding · emoji step",
         render: () => setup({ direct: direct.phoneConfirmed, relay: relayWaiting }),
@@ -359,7 +394,14 @@ const setupScreens: readonly {
 ];
 
 /** Settings screens also shown at the smallest window, where the codes stack. */
-const narrowSettingsScreens = new Set(["codes", "verifying", "older-agent", "paired-devices"]);
+const narrowSettingsScreens = new Set([
+    "method-relay",
+    "method-direct",
+    "codes",
+    "verifying",
+    "older-agent",
+    "paired-devices",
+]);
 
 export function MobilePairingFlowPage() {
     return (

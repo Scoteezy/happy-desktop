@@ -20,7 +20,7 @@ it.each([false, true])(
             expect(store.get()[feature.id]).toBe(
                 enabled && (feature.id === "inbox" || feature.id === "voice"),
             );
-        store.featureUpdate("inbox", true);
+        store.featureUpdate("inbox", true, "experiments");
         expect(store.get().inbox).toBe(true);
         expect(store.get().batchNotes).toBe(false);
         expect(experimentsStoreCreate(persistence).get()).toEqual(store.get());

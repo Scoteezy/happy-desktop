@@ -143,11 +143,17 @@ export function happyAgentMobileConnectorStoreCreate(
     const adoptResponse = (response: MobileConnectorResponse): void =>
         adopt(response.mobileConnector);
 
-    /** Keeps a code on an open surface: the first one, and a new one when it expires unused. */
+    /**
+     * Keeps a code on an open surface: the first one, and a new one when it
+     * expires unused. Only while something shows the connector: a pairing
+     * opened with nothing on screen (the direct connection's experiment off)
+     * makes no code until a surface follows it.
+     */
     function refresh(): void {
         const current = store.getState();
         const connector = connectorOf();
-        if (disposed || !current.pairingOpen || current.starting || !connector) return;
+        if (disposed || listeners.size === 0) return;
+        if (!current.pairingOpen || current.starting || !connector) return;
         if (connector.status === "disabled") {
             startOwed = false;
             return;
@@ -240,6 +246,9 @@ export function happyAgentMobileConnectorStoreCreate(
             return;
         }
         adoptResponse(response);
+        // A surface that just began following may be owed a code, even when
+        // this read is the snapshot already held.
+        refresh();
     };
 
     const follow = async (active: AbortController): Promise<void> => {
@@ -294,7 +303,12 @@ export function happyAgentMobileConnectorStoreCreate(
             if (disposed) return () => undefined;
             listeners.add(listener);
             const unsubscribe = store.subscribe(listener);
-            if (listeners.size === 1) followEnsure();
+            if (listeners.size === 1) {
+                followEnsure();
+                // A snapshot already read lets a pairing opened before this
+                // surface start its code now, not after the read comes back.
+                refresh();
+            }
             let released = false;
             return () => {
                 if (released) return;
@@ -317,7 +331,14 @@ export function happyAgentMobileConnectorStoreCreate(
             openGeneration += 1;
             startOwed = true;
             const { actionError: _cleared, ...rest } = store.getState();
-            store.setState({ ...rest, pairingOpen: true }, true);
+            // A pairing that already settled belongs to an earlier surface: this one
+            // starts afresh, and nothing reads the old one as this one's result.
+            const read = rest.connector;
+            const connector =
+                read.kind === "ready" && read.connector.pairing && !pairingActive(read.connector)
+                    ? { ...read, connector: { ...read.connector, pairing: null } }
+                    : read;
+            store.setState({ ...rest, connector, pairingOpen: true }, true);
             refresh();
         },
         pairingClose() {

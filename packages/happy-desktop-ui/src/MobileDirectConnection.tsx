@@ -184,8 +184,11 @@ export function MobileDirectPairingPanel(props: MobileDirectPairingPanelProps) {
 
 function DirectPairingBody(props: MobileDirectPairingPanelProps & { readonly blocked: boolean }) {
     const { connector } = props;
+    // The code's own space while the connection is read, so nothing moves when it arrives.
     if (connector.kind === "loading")
-        return <PairingNote busy title="Checking direct connection…" />;
+        return (
+            <PairingCodePlaceholder countdown={props.codeCountdown} size={props.codeSize ?? 200} />
+        );
     if (connector.kind === "unsupported")
         return (
             <PairingNote

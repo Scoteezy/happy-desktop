@@ -18,6 +18,7 @@ import {
     happyAgentBotSubtasks,
     happyAgentTaskDepths,
     usageAnalyticsStoreCreate,
+    type ExperimentsOutput,
     type HappyAgentActionResult,
     type HappyAgentActivity,
     type HappyAgentActivityModel,
@@ -39,6 +40,10 @@ import {
     type LocalOnboardingViewSnapshot,
 } from "./localOnboardingStore";
 import { LOCAL_HAPPY_AGENT_ID, type HappyAgentDirectoryStore } from "./happyAgentDirectoryStore";
+import {
+    mobilePairingExperimentReport,
+    type MobilePairingReport,
+} from "./desktopMobilePairingAnalytics";
 import type { DesktopSystem } from "../shared/desktopContract";
 import { localWebBuild } from "./localWebBuild";
 
@@ -67,6 +72,10 @@ export interface DesktopAnalytics {
      * store, and subscribing it is what starts setup's machine work.
      */
     onboardingObserve(store: LocalOnboardingStore, welcome: WelcomeStore): LocalOnboardingStore;
+    /** Phone pairing events, reported on the Happy Agent the pairing is with. */
+    mobilePairingReport(happyAgentId: string): MobilePairingReport;
+    /** What the experiments store reports turning on or off. */
+    experimentUpdated(output: ExperimentsOutput): void;
     /** Stops following the directory and the window's closing. */
     dispose(): void;
 }
@@ -388,8 +397,20 @@ export function desktopAnalyticsCreate(options: {
             ?.protocolMismatch !== undefined;
     subtasksFollow();
 
+    const pairingReport =
+        (happyAgentId: string): MobilePairingReport =>
+        (event, properties) =>
+            track(happyAgentId, event, properties);
+
     return {
         preference,
+        mobilePairingReport: pairingReport,
+        experimentUpdated: (output) =>
+            mobilePairingExperimentReport(
+                output,
+                // A device-wide choice, reported on the Happy Agent the window is using.
+                pairingReport(options.happyAgents.get().activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID),
+            ),
         appOpened() {
             const count = Number(storageRead(LAUNCH_COUNT_KEY) ?? "0");
             const launchCount = (Number.isSafeInteger(count) && count > 0 ? count : 0) + 1;

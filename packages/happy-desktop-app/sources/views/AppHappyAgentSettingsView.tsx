@@ -528,9 +528,20 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
     );
     // Phones paired directly, and the direct half of every pairing this
     // category opens. Its pairing code is secret, so Dev Tools never prints it.
+    // It is an experiment: until the person turns it on, Mobile Access shows
+    // Relay and does not follow the direct connector at all.
+    const mobileDirect = experiments.mobileDirect;
+    const mobileConnectorOwned =
+        section === "mobile-access" ? host?.session?.mobileConnector?.() : undefined;
     const mobileConnectorStore =
-        (section === "mobile-access" ? host?.session?.mobileConnector?.() : undefined) ??
-        happyAgentMobileConnectorStoreNoop;
+        (mobileDirect ? mobileConnectorOwned : undefined) ?? happyAgentMobileConnectorStoreNoop;
+    const pairingMethod = mobileDirect ? "direct" : "relay";
+    // Choosing Direct is turning its experiment on, and Relay turning it off.
+    // A page that opened on Relay asks for a direct code as Direct shows.
+    const pairingMethodSelect = (method: "relay" | "direct") => {
+        if (method === "direct") mobileConnectorOwned?.pairingOpen();
+        experimentsStore.featureUpdate("mobileDirect", method === "direct", "mobile_access");
+    };
     const mobileConnector = useSyncExternalStore(
         mobileConnectorStore.subscribe,
         mobileConnectorStore.get,
@@ -664,6 +675,8 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     onPlatformSelect={mobileSetup.platformSelect}
                     pairingOptions={appMobilePairingOptions({
                         layout: "setup",
+                        method: pairingMethod,
+                        onMethodSelect: pairingMethodSelect,
                         relay:
                             step.kind === "link"
                                 ? appMobileRelayFromLink(step.phase)
@@ -719,7 +732,8 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                             const feature = EXPERIMENTAL_FEATURES.find(
                                 (feature) => feature.id === id,
                             );
-                            if (feature) experimentsStore.featureUpdate(feature.id, enabled);
+                            if (feature)
+                                experimentsStore.featureUpdate(feature.id, enabled, "experiments");
                         }}
                     />
                     {directory.happyAgents.map((entry) => (
@@ -897,6 +911,8 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         ? {
                               pairingOptions: appMobilePairingOptions({
                                   layout: "settings",
+                                  method: pairingMethod,
+                                  onMethodSelect: pairingMethodSelect,
                                   relay: appMobileRelayFromIntegration(happyIntegration),
                                   relayStarting: happyIntegration.pairingStarting,
                                   onRelayRetry: happyIntegrationStore.happyIntegrationPair,
@@ -909,17 +925,20 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                               }).view,
                           }
                         : {})}
-                    direct={
-                        sessionClock ? (
-                            <AppMobileDirectSection
-                                direct={mobileConnectorStore}
-                                snapshot={mobileConnector}
-                                clock={sessionClock}
-                                online={happyAgentOnline}
-                                {...(unavailable === undefined ? {} : { unavailable })}
-                            />
-                        ) : null
-                    }
+                    // The direct connection is an experiment: off, its section is left out.
+                    {...(mobileDirect
+                        ? {
+                              direct: sessionClock ? (
+                                  <AppMobileDirectSection
+                                      direct={mobileConnectorStore}
+                                      snapshot={mobileConnector}
+                                      clock={sessionClock}
+                                      online={happyAgentOnline}
+                                      {...(unavailable === undefined ? {} : { unavailable })}
+                                  />
+                              ) : null,
+                          }
+                        : {})}
                     pairingStarting={happyIntegration.pairingStarting}
                     status={happyIntegration.status}
                     {...(happyIntegration.error ? { error: happyIntegration.error.message } : {})}

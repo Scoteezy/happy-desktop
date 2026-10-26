@@ -12,6 +12,7 @@ import {
     MobilePairingOptions,
     mobileDirectPairingEngaged,
     type DesktopMobilePairingOptions,
+    type MobilePairingMethod,
     type MobilePairingOptionsLayout,
     type MobileRelayPairingState,
 } from "happy-desktop-ui";
@@ -90,6 +91,14 @@ export function appMobileRelayFromIntegration(
 
 export interface AppMobilePairingProps {
     readonly layout: MobilePairingOptionsLayout;
+    /**
+     * The method shown under the Relay | Direct control. Direct is the direct
+     * phone connection's experiment; while it is off, the page shows Relay and
+     * the direct connector is not followed. Phones already paired directly
+     * keep working either way.
+     */
+    readonly method: MobilePairingMethod;
+    onMethodSelect(method: MobilePairingMethod): void;
     readonly relay: MobileRelayPairingState;
     readonly relayStarting?: boolean;
     onRelayRetry?(): void;
@@ -103,16 +112,25 @@ export interface AppMobilePairingProps {
 }
 
 /**
- * Both pairing methods for one Happy Agent, with what the page around them
+ * The pairing methods for one Happy Agent, with what the page around them
  * needs to know: whether the emoji step leads and whether a phone paired.
+ * With Relay shown the direct connection is not followed.
  * `snapshot` is the caller's one subscription to the direct connector.
  */
 export function appMobilePairingOptions(
     props: AppMobilePairingProps & { readonly snapshot: HappyAgentMobileConnectorSnapshot },
 ): DesktopMobilePairingOptions {
     const { connector } = props.snapshot;
+    if (props.method === "relay")
+        return {
+            view: <AppMobilePairingOptions {...props} />,
+            verifying: false,
+            completed: false,
+            method: "relay",
+        };
     return {
         view: <AppMobilePairingOptions {...props} />,
+        method: "direct",
         verifying: mobileDirectPairingEngaged(connector),
         completed:
             connector.kind === "ready" && connector.connector.pairing?.status === "completed",
@@ -169,6 +187,8 @@ function AppMobilePairingOptions(
         <MobilePairingOptions
             layout={props.layout}
             now={now}
+            method={props.method}
+            onMethodSelect={props.onMethodSelect}
             relay={props.relay}
             {...(props.relayStarting === undefined ? {} : { relayStarting: props.relayStarting })}
             {...(props.onRelayRetry ? { onRelayRetry: guarded(props.onRelayRetry) } : {})}

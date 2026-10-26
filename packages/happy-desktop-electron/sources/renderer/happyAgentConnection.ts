@@ -66,6 +66,7 @@ import { happyAgentHostServicesCreate } from "./happyAgentHostServices";
 import { happyAgentProfileSourceCreate } from "./happyAgentProfileSource";
 import { happyAgentTranscriptConnectCreate } from "./happyAgentTranscriptSource";
 import { happyAgentUsageSourceCreate } from "./happyAgentUsageSource";
+import type { HappyAgentMobilePairingObserve } from "./desktopMobilePairingAnalytics";
 
 export interface HappyAgentProtocolMismatch {
     readonly message: string;
@@ -215,6 +216,8 @@ export interface HappyAgentSessionDeps {
     ) => void;
     /** A reader-initiated act this connection's workspace finished. */
     readonly activity?: (activity: HappyAgentActivity) => void;
+    /** Observes this connection's phone pairings while a pairing page shows them. */
+    readonly mobilePairingObserve?: HappyAgentMobilePairingObserve;
     /**
      * A top-level session on this connection finished a turn. Delegated
      * subagent runs never arrive here; whether the window says anything about
@@ -481,17 +484,24 @@ export function happyAgentConnectionOpen(input: {
     // One clock and one mobile connector per Happy Agent: onboarding and
     // Settings show the same pairing, and both count its codes down.
     const clock = happyAgentClockStoreCreate();
-    const mobileConnector = happyAgentMobileConnectorStoreCreate({
+    const pairingObserve = input.deps.mobilePairingObserve;
+    const connectorStore = happyAgentMobileConnectorStoreCreate({
         client: directClient,
         sync: agentConnection.sync,
     });
-    const onboarding = happyAgentOnboardingStoreCreate(directClient, agentConnection.sync, {
+    const mobileConnector = pairingObserve?.connector(connectorStore) ?? connectorStore;
+    /** Settings' Happy Mobile store, observed once for the connection. */
+    let happyIntegration: HappyAgentIntegrationStore | undefined;
+    const onboardingStore = happyAgentOnboardingStoreCreate(directClient, agentConnection.sync, {
         setupActive: input.happyAgentId !== "local" && welcome.get().welcomeAcknowledged,
         mobileSkipped: desktopHappyMobileOnboardingSkipped(input.happyAgentId),
         onMobileSkip: () => desktopHappyMobileOnboardingSkip(input.happyAgentId),
         guidedMobileSetup: input.guidedMobileSetup,
         mobileConnector,
     });
+    const onboarding = pairingObserve
+        ? { ...onboardingStore, mobile: pairingObserve.onboarding(onboardingStore.mobile) }
+        : onboardingStore;
     const client: HappyAgentWorkspaceClient = happyAgentWorkspaceClientCreate({
         client: directClient,
         guidedMobileSetup: input.guidedMobileSetup,
@@ -633,7 +643,10 @@ export function happyAgentConnectionOpen(input: {
                     connection: sessionConnection.store,
                     debugLog,
                     host: input.host,
-                    happyIntegration: () => client.happyIntegration(),
+                    happyIntegration: () =>
+                        (happyIntegration ??= pairingObserve
+                            ? pairingObserve.integration(client.happyIntegration())
+                            : client.happyIntegration()),
                     mobileConnector: () => client.mobileConnector(),
                     models: client.models,
                     profile: () => profileStore,

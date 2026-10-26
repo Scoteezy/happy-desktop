@@ -40,8 +40,16 @@ export function pairingOptionsSpecimen(
 export function setupPairingOptions(
     variant: PairingVariant = { direct: direct.waiting, relay: relayWaiting },
 ): DesktopMobilePairingOptions {
+    if (variant.method === "relay")
+        return {
+            view: pairingOptionsSpecimen("setup", variant),
+            verifying: false,
+            completed: false,
+            method: "relay",
+        };
     return {
         view: pairingOptionsSpecimen("setup", variant),
+        ...(variant.method ? { method: variant.method } : {}),
         verifying: mobileDirectPairingEngaged(variant.direct),
         completed:
             variant.direct.kind === "ready" &&

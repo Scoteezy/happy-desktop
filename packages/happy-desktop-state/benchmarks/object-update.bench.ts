@@ -119,8 +119,8 @@ const cases: readonly BenchmarkCase[] = [
             const store = experimentsStoreCreate();
             return {
                 snapshot: store.get,
-                change: () => store.featureUpdate("voice", true),
-                noChange: () => store.featureUpdate("voice", false),
+                change: () => store.featureUpdate("voice", true, "experiments"),
+                noChange: () => store.featureUpdate("voice", false, "experiments"),
             };
         },
     },

@@ -406,6 +406,11 @@
     width: 100%;
 }
 
+/* Relay | Direct: the one method shown sits under it, in the same place for either. */
+.happy-mobile-pairing-options__method {
+    align-self: center;
+}
+
 .happy-mobile-pairing-options__slot {
     display: flex;
     flex: 1 1 0;
@@ -500,10 +505,13 @@
     max-width: 100%;
 }
 
-/* The emoji step, alone, takes the row. */
+/* The emoji step, alone, takes the row; so does one method shown on its own. */
 .happy-mobile-pairing-options[data-layout="setup"][data-engaged]
     .happy-mobile-pairing-options__slot,
 .happy-mobile-pairing-options[data-layout="setup"][data-engaged]
+    .happy-mobile-pairing-options__slot-body,
+.happy-mobile-pairing-options[data-layout="setup"][data-method] .happy-mobile-pairing-options__slot,
+.happy-mobile-pairing-options[data-layout="setup"][data-method]
     .happy-mobile-pairing-options__slot-body {
     flex: 1 1 auto;
     width: auto;

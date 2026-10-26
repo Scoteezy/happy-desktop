@@ -7,6 +7,7 @@ export const EXPERIMENTAL_FEATURES = [
     { id: "batchNotes", label: "Sidebar batch notes" },
     { id: "inbox", label: "Inbox" },
     { id: "voice", label: "Voice calls" },
+    { id: "mobileDirect", label: "Direct phone connection" },
 ] as const;
 
 export type ExperimentalFeature = (typeof EXPERIMENTAL_FEATURES)[number]["id"];
@@ -18,16 +19,34 @@ export interface ExperimentsPersistence {
     write(document: ExperimentsDocument): void;
 }
 
+/**
+ * Where a feature was turned on or off: its switch in Settings → Experiments,
+ * or a phone pairing surface choosing the method an experiment offers.
+ */
+export type ExperimentsUpdateSource = "experiments" | "onboarding" | "mobile_access";
+
+export type ExperimentsOutput = {
+    readonly type: "featureUpdated";
+    readonly feature: ExperimentalFeature;
+    readonly enabled: boolean;
+    readonly source: ExperimentsUpdateSource;
+};
+
 export interface ExperimentsStore {
     get(): ExperimentsSnapshot;
     subscribe(listener: () => void): () => void;
-    featureUpdate(feature: ExperimentalFeature, enabled: boolean): void;
+    featureUpdate(
+        feature: ExperimentalFeature,
+        enabled: boolean,
+        source: ExperimentsUpdateSource,
+    ): void;
 }
 
 const DISABLED: ExperimentsSnapshot = {
     batchNotes: false,
     inbox: false,
     voice: false,
+    mobileDirect: false,
 };
 
 /**
@@ -47,10 +66,14 @@ function documentParse(value: unknown): ExperimentsSnapshot {
         batchNotes: enabled("batchNotes"),
         inbox: enabled("inbox"),
         voice: enabled("voice"),
+        mobileDirect: enabled("mobileDirect"),
     };
 }
 
-export function experimentsStoreCreate(persistence?: ExperimentsPersistence): ExperimentsStore {
+export function experimentsStoreCreate(
+    persistence?: ExperimentsPersistence,
+    onOutput: (output: ExperimentsOutput) => void = () => undefined,
+): ExperimentsStore {
     let snapshot: ExperimentsSnapshot;
     try {
         snapshot = documentParse(persistence?.read());
@@ -66,7 +89,7 @@ export function experimentsStoreCreate(persistence?: ExperimentsPersistence): Ex
                 listeners.delete(listener);
             };
         },
-        featureUpdate(feature, enabled) {
+        featureUpdate(feature, enabled, source) {
             if (snapshot[feature] === enabled) return;
             snapshot = { ...snapshot, [feature]: enabled };
             try {
@@ -75,6 +98,7 @@ export function experimentsStoreCreate(persistence?: ExperimentsPersistence): Ex
                 // Denied storage still preserves this window's choice until it closes.
             }
             for (const listener of listeners) listener();
+            onOutput({ type: "featureUpdated", feature, enabled, source });
         },
     };
 }

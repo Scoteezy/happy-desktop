@@ -151,6 +151,7 @@ import { desktopNavigationOrderPersistence } from "./desktopNavigationOrder";
 import { desktopSidebarCollapsePersistence } from "./desktopSidebarCollapse";
 import { DesktopBootGate, desktopBootSkip } from "./DesktopBootGate";
 import { desktopAnalyticsCreate } from "./desktopAnalytics";
+import { mobilePairingObserveCreate } from "./desktopMobilePairingAnalytics";
 import { desktopAgentUpdateStoreCreate } from "./desktopAgentUpdateStore";
 import {
     DesktopAgentBrokenGate,
@@ -469,6 +470,7 @@ function DesktopOnboardingGate(props: {
     bridge: HappyDesktopBridge;
     children: ReactNode;
     clock: HappyAgentClockStore;
+    experiments: ExperimentsStore;
     platform: "desktop" | "web";
     store: LocalOnboardingStore;
 }) {
@@ -478,22 +480,38 @@ function DesktopOnboardingGate(props: {
         props.appearance.get,
         props.appearance.get,
     );
+    const experiments = useSyncExternalStore(
+        props.experiments.subscribe,
+        props.experiments.get,
+        props.experiments.get,
+    );
     const view = snapshot.onboarding ? localOnboardingView(snapshot) : undefined;
     const linkPhase =
         view?.kind === "happy-mobile-desktop" && view.step.kind === "link"
             ? view.step.phase
             : undefined;
-    // Linking offers both codes; the direct connector is read only while it does.
+    // Linking offers both methods; the direct connector is read only while Direct shows.
+    // Direct is an experiment: off, linking shows Relay.
+    const mobileDirect = experiments.mobileDirect;
     const linking = linkPhase !== undefined || view?.kind === "happy-mobile-pairing";
     const pairingOptions = useAppMobilePairingOptions({
         layout: "setup",
+        method: mobileDirect ? "direct" : "relay",
+        // Choosing Direct turns its experiment on, and asks for a direct code.
+        onMethodSelect: (method) => {
+            if (method === "direct") props.store.happyMobileDirect().pairingOpen();
+            props.experiments.featureUpdate("mobileDirect", method === "direct", "onboarding");
+        },
         relay: linkPhase
             ? appMobileRelayFromLink(linkPhase)
             : snapshot.happyMobile
               ? appMobileRelayFromOnboarding(snapshot.happyMobile)
               : { kind: "starting" },
         onRelayRetry: () => props.store.happyMobileConnect(),
-        direct: linking ? props.store.happyMobileDirect() : happyAgentMobileConnectorStoreNoop,
+        direct:
+            linking && mobileDirect
+                ? props.store.happyMobileDirect()
+                : happyAgentMobileConnectorStoreNoop,
         clock: props.clock,
         online: () => true,
     });
@@ -839,6 +857,7 @@ function DesktopLocalScreens(props: DesktopRendererProps) {
                 appearance={props.appearance}
                 bridge={props.bridge}
                 clock={onboardingClock}
+                experiments={props.experiments}
                 platform={props.platform}
                 store={props.onboarding}
             >
@@ -1275,7 +1294,9 @@ if (mediaPreviewBridge) {
         // Whether this window offers the features that are not finished yet. It
         // is kept beside the arrangement above and for the same reason: it says
         // what this installation shows, so no machine has a say in it.
-        const experiments = experimentsStoreCreate(desktopExperimentsPersistence());
+        const experiments = experimentsStoreCreate(desktopExperimentsPersistence(), (output) =>
+            analytics.experimentUpdated(output),
+        );
         // Whether the sidebar leaves the Projects sections out. Like the
         // experiments switch it is this window's own choice, so it covers every
         // connection — team and local — and is never asked of a machine.
@@ -1362,6 +1383,11 @@ if (mediaPreviewBridge) {
                     groupId,
                 ),
             activity: (happyAgentId, activity) => analytics.activity(happyAgentId, activity),
+            // Reported through `analytics`, which is made once the directory exists.
+            mobilePairingObserve: (happyAgentId) =>
+                mobilePairingObserveCreate(experiments, (event, properties) =>
+                    analytics.mobilePairingReport(happyAgentId)(event, properties),
+                ),
             subtasksForget: (happyAgentId, removed, open) =>
                 happyAgentRouterSubtasksForget(
                     connectionUis.get(happyAgentId)?.router ?? happyAgentRouter,
