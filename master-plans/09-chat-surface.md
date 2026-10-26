@@ -46,9 +46,9 @@ A good chat with an AI follows a few principles:
   end of the transcript. It keeps its size wherever the reader scrolls, moves
   with the end when history above changes, and is only ever taken up by new
   content growing into it; once that content outgrows it, the transcript grows
-  as usual. A window, composer, or dock shrinking the viewport clamps held
-  blank space to the 70% below a lifted send, in the same geometry commit;
-  zoom preserves its physical size within that limit. Enlarging the viewport
+  as usual. A window, composer, or dock shrinking the viewport uses held blank
+  space first, one pixel for one pixel, before the transcript moves; zoom
+  preserves its physical size within 70% of the viewport. Enlarging the viewport
   may add the blank needed to keep a parked row fixed, without applying the
   shrink cap again or letting the viewport become entirely blank. Resizing the
   window vertically, from its bottom edge or its top edge, behaves like the
@@ -81,7 +81,8 @@ A good chat with an AI follows a few principles:
   place. In the user's words: "when sending a very large message, we should not
   send it as a huge block. We should allow expanding it ... show the first 10
   lines ... use the ribbon to expand and then also ... just show full." Opening
-  it follows every other geometry rule: nothing the reader sees moves.
+  it expands below, "not push content up": the message's top and everything
+  above it stay where they are, and everything after it moves down.
 - **One text column.** Prose, tool rows, questions, and every other card share
   the transcript's left edge, width, and type rhythm. Nothing looks pasted in.
 - **Performance is not traded away.** Scrolling and streaming stay at frame rate
