@@ -51,7 +51,7 @@
     --happy-scrollbar-color: var(--happy-scrollbar-interaction-color);
 }
 
-/* The composer is the sole always-visible exception in Automatic mode. */
+/* Explicit surface exceptions keep their overflowing thumb visible in Automatic mode. */
 [data-scrollbar-host][data-scrollbar-always] {
     --happy-scrollbar-color: var(--happy-scrollbar-quiet-color);
 }

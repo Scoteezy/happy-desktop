@@ -626,7 +626,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="13"
                 label="Long catalog"
-                detail="The model list stops at 480 px and scrolls. The scrollbar stands beside the rows, the panel inset away from the selected row, and the benchmarks link stays in view."
+                detail="The model list stops at 480 px and scrolls. Its scrollbar stays visible whenever the list overflows, even in Automatic mode, showing where you are in the catalog. The benchmarks link stays in view."
                 stage="surface"
             >
                 <Open height={560} services={LONG_SERVICES} />

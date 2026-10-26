@@ -1167,6 +1167,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                             <ScrollArea
                                 className="happy-composer-model-control__list"
                                 data-happy-desktop-ui="composer-model-control-list"
+                                data-scrollbar-always=""
                                 viewportClassName="happy-composer-model-control__list-viewport"
                                 viewportProps={{ onScroll: () => setAccounts(null) }}
                             >
