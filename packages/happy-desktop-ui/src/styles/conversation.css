@@ -92,6 +92,13 @@
     padding-bottom: 4px;
 }
 
+/* The reader's own run keeps one rhythm from its first bubble on: the row that
+   opens it gives up a fresh group's trailing 16px for the 4px every grouped
+   row carries, so the first two bubbles sit as close as every later pair. */
+.happy-conversation .happy-message[data-own].happy-conversation__own-continued {
+    padding-bottom: 4px;
+}
+
 /* The live turn and its external work are one stable line. The status takes
    whatever room remains and carries the activity summary to the far end; both
    sides truncate in place instead of turning terminals or subagents into a

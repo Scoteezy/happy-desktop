@@ -14,6 +14,7 @@ import {
     conversationEntryResumesAfterActivity,
     conversationMessageClosedByStatus,
     conversationMessageGrouped,
+    conversationOwnMessageContinued,
     conversationTurnStatusAfterActivity,
     conversationTurnStatusStartsGroup,
 } from "./conversationMessageGrouped";
@@ -339,6 +340,12 @@ const CONVERSATION_AGENT_PADDING_TOP = { leading: 16, grouped: 2 } as const;
 const CONTINUES_PADDING_BOTTOM = 8;
 const CLOSING_PADDING_BOTTOM = 4;
 const CONVERSATION_AGENT_PADDING_BOTTOM = { leading: 16, grouped: 2 } as const;
+/**
+ * `.happy-conversation__own-continued` gives the reader's message that opens a
+ * run of theirs a grouped row's 4px trailing padding instead of a fresh group's
+ * 16px. Only the bottom edge changes.
+ */
+const OWN_PADDING_BOTTOM = { leading: 16, grouped: 4 } as const;
 /** Horizontal chrome: row padding, then the 76% bubble cap, then bubble padding. */
 const AGENT_INSET = 94;
 /** CSS rounds each padding edge separately at native zoom. */
@@ -1352,6 +1359,9 @@ export function conversationRowHeight(
     const closedByStatus =
         context.surface === "conversation" &&
         conversationMessageClosedByStatus(entries, index, context.liveStatus);
+    const ownContinued =
+        context.surface === "conversation" &&
+        conversationOwnMessageContinued(entries, index, context.viewerId);
     const cacheKey = [
         "message",
         String(width),
@@ -1365,7 +1375,13 @@ export function conversationRowHeight(
               : "compact",
         traceCollapsible ? "trace" : "plain",
         resumesAfterActivity ? "resumed" : "continuous",
-        precedesActivity ? "continues" : closedByStatus ? "closing" : "open",
+        precedesActivity
+            ? "continues"
+            : closedByStatus
+              ? "closing"
+              : ownContinued
+                ? "own-continued"
+                : "open",
         // What the body's references read as: a title changing re-sizes the row.
         messageReferencesSignature(conversationEntryReferences(entry), context.references),
         context.messageLayouts?.signature ?? "",
@@ -1387,6 +1403,7 @@ export function conversationRowHeight(
                 (grouped
                     ? CONVERSATION_AGENT_PADDING_BOTTOM.grouped
                     : CONVERSATION_AGENT_PADDING_BOTTOM.leading);
+        if (ownContinued) height -= OWN_PADDING_BOTTOM.leading - OWN_PADDING_BOTTOM.grouped;
         const images: MediaFlowImage[] = [];
         let cards = 0;
         for (const attachment of message.attachments) {

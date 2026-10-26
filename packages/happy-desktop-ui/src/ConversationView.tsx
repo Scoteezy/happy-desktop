@@ -52,6 +52,7 @@ import {
     conversationEntryResumesAfterActivity,
     conversationMessageClosedByStatus,
     conversationMessageGrouped,
+    conversationOwnMessageContinued,
     conversationTurnStatusAfterActivity,
     conversationTurnStatusStartsGroup,
     conversationWorkingStatusStartsGroup,
@@ -447,6 +448,7 @@ function conversationRowClassName(
     entries: readonly ConversationEntry[],
     index: number,
     liveStatus: boolean,
+    viewerId: string | undefined,
 ): string | undefined {
     const classNames: string[] = [];
     if (
@@ -460,6 +462,8 @@ function conversationRowClassName(
         classNames.push("happy-conversation__continues");
     if (conversationMessageClosedByStatus(entries, index, liveStatus))
         classNames.push("happy-conversation__closing");
+    if (conversationOwnMessageContinued(entries, index, viewerId))
+        classNames.push("happy-conversation__own-continued");
     return classNames.length === 0 ? undefined : classNames.join(" ");
 }
 
@@ -1040,13 +1044,17 @@ export function ConversationView(props: ConversationViewProps) {
             width,
         };
     };
+    /*
+     * The rows a row reads its neighbours from. A transcript row ends at the
+     * live status, so queueing never restyles the row above it. Queued steering
+     * reads back across the status as it will once the turn takes it: it
+     * groups with the reader's message before it exactly as it will then, so
+     * taking up the queue changes none of its spacing.
+     */
+    const conversationRowSource = (index: number) =>
+        index < transcript.length ? transcript : listEntries;
     const rowGeometry = (index: number, width: number) =>
-        [
-            index < transcript.length ? transcript : queued,
-            index < transcript.length ? index : index - transcript.length,
-            rowContext(index, width),
-            rowHeightCache,
-        ] as const;
+        [conversationRowSource(index), index, rowContext(index, width), rowHeightCache] as const;
     const workingStatusHeight = conversationWorkingStatusHeight({
         visible: statusVisible,
         startsGroup: workingStatusStartsGroup,
@@ -1256,9 +1264,7 @@ export function ConversationView(props: ConversationViewProps) {
                         virtualize
                     >
                         {listEntries.map((entry, index) => {
-                            const source = index < transcript.length ? transcript : queued;
-                            const rowIndex =
-                                index < transcript.length ? index : index - transcript.length;
+                            const source = conversationRowSource(index);
                             const submission =
                                 entry.kind === "request"
                                     ? props.requestSubmissions?.find(
@@ -1287,8 +1293,8 @@ export function ConversationView(props: ConversationViewProps) {
                                         : {})}
                                     activityAuthor={
                                         props.agentAuthor &&
-                                        (conversationAgentRowStartsGroup(source, rowIndex) ||
-                                            conversationTurnStatusStartsGroup(source, rowIndex))
+                                        (conversationAgentRowStartsGroup(source, index) ||
+                                            conversationTurnStatusStartsGroup(source, index))
                                             ? props.agentAuthor
                                             : undefined
                                     }
@@ -1296,8 +1302,9 @@ export function ConversationView(props: ConversationViewProps) {
                                         [
                                             conversationRowClassName(
                                                 source,
-                                                rowIndex,
+                                                index,
                                                 index < transcript.length && statusVisible,
+                                                props.viewerId,
                                             ),
                                             index >= transcript.length
                                                 ? "happy-conversation__queued"
@@ -1309,7 +1316,7 @@ export function ConversationView(props: ConversationViewProps) {
                                     entry={entry}
                                     grouped={
                                         entry.kind === "message"
-                                            ? conversationMessageGrouped(source, rowIndex)
+                                            ? conversationMessageGrouped(source, index)
                                             : undefined
                                     }
                                     onImageOpen={props.onImageOpen}

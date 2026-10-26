@@ -90,6 +90,30 @@ export function conversationMessageGrouped(
 }
 
 /**
+ * Whether this is the reader's own message opening a run of theirs that the
+ * next row continues. An own bubble carries no header, so padding is the only
+ * thing between two of them: a fresh group's trailing 16px against the next
+ * bubble's 4px would set the first pair of a run — the first two queued
+ * steering messages, most visibly — further apart than every pair after it.
+ * The opening row takes the grouped rows' 4px on that edge instead.
+ */
+export function conversationOwnMessageContinued(
+    entries: readonly ConversationEntry[],
+    index: number,
+    viewerId: string | undefined,
+): boolean {
+    const entry = entries[index];
+    return (
+        entry?.kind === "message" &&
+        viewerId !== undefined &&
+        entry.message.sender?.id === viewerId &&
+        !conversationMessageGrouped(entries, index) &&
+        entries[index + 1]?.kind === "message" &&
+        conversationMessageGrouped(entries, index + 1)
+    );
+}
+
+/**
  * A question the agent asked and the reader answered. It is the agent's turn
  * that asked it, so when nothing came before it the question opens that turn
  * and carries its header.
