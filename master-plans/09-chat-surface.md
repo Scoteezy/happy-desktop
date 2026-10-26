@@ -86,8 +86,10 @@ A good chat with an AI follows a few principles:
 - **One text column.** Prose, tool rows, questions, and every other card share
   the transcript's left edge, width, and type rhythm. Nothing looks pasted in.
   A framed element — a card, a banner, an error, an approval, a tool block —
-  keeps its content on that same left edge, and only its frame stands out a
-  little beyond the column, on the left and on the right. In the user's words:
+  keeps its content on that same left edge, and only its frame stands out
+  beyond the column, on the left and on the right, by the frame's own padding:
+  the content sits as far from the frame's edge on every side (see
+  `11-design.md`). In the user's words:
   "the frame should actually stick out a bit on the left / right - but the
   content inside should remain aligned with content on the rest of the page."
   These special elements also keep consistent spacing: they sit as far from
@@ -143,7 +145,8 @@ up when they get to a reasonable point."
   the same row if they were not, and no visible row moves in the frames after.
 - Question cards and every other row align with assistant prose within half a
   pixel at every width. In a framed element it is the content that aligns, and
-  every frame stands out from the column by the same amount on both sides.
+  every frame stands out from the column by its padding, the same amount on
+  both sides.
 - Every framed or special element sits the same distance from the author line
   above it, and from its neighbours, as the other elements do.
 - Scrolling and streaming a conversation of several hundred turns keep frame

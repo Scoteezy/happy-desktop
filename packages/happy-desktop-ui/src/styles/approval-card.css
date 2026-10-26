@@ -49,6 +49,17 @@
     padding-left: calc(var(--happy-chat-frame-outset) - 1px);
 }
 
+/* The header's chip and the footer's buttons are the card's top and bottom
+   edges of content, so they sit the same outset from the frame. */
+.happy-message-list .happy-desktop-approval-card__body {
+    padding-top: calc(var(--happy-chat-frame-outset) - 1px);
+}
+
+.happy-message-list .happy-desktop-approval-card__footer {
+    padding-top: calc(var(--happy-chat-frame-outset) - 1px);
+    padding-bottom: calc(var(--happy-chat-frame-outset) - 1px);
+}
+
 .happy-desktop-approval-card[data-resolution="pending"] {
     border-color: var(--box-warning-background);
 }

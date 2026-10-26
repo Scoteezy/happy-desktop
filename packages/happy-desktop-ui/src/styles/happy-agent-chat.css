@@ -67,11 +67,11 @@
     overflow-wrap: break-word;
 }
 
-/* Fenced code keeps the Markdown model's 16px inset; the inline-code rule's
+/* Fenced code keeps the Markdown model's frame inset; the inline-code rule's
    :not() specificity must not reduce this block to a single inline line. */
 .happy-agent-input__context.happy-message__body--markdown pre code {
     display: block;
-    padding: 16px;
+    padding: var(--happy-chat-frame-text-inset) var(--happy-chat-frame-outset);
     line-height: 20px;
     background: transparent;
     border-radius: 0;

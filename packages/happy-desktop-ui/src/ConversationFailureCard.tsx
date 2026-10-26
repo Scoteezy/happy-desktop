@@ -54,10 +54,11 @@ export interface ConversationFailureCardProps extends ConversationFailureActions
 
 /**
  * A failed turn, written by the client from the failure's kind: the message
- * with its own action after it, then one left-aligned row with the switch
- * split button and Ask Chief of Staff. Exactly one button is primary: the
- * switch when it is offered, otherwise the message's own action. Once acted
- * on, the card stays in the transcript and records what was done.
+ * with its own action and Ask Chief of Staff after it as quiet text buttons,
+ * then the switch split button on a row of its own that starts on the warning
+ * icon. Exactly one button is primary: the switch when it is offered,
+ * otherwise the message's own action. Once acted on, the card stays in the
+ * transcript and records what was done.
  */
 export function ConversationFailureCard(props: ConversationFailureCardProps) {
     const clock = props.clock ?? NO_CLOCK;
@@ -72,7 +73,6 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
         ...(props.assistance ? { assistance: props.assistance } : {}),
     });
     const lineAction = conversationFailureLineAction(props.failure);
-    const actionsRow = layout.switchTargets !== undefined || layout.assistance !== undefined;
     return (
         <div
             className={[
@@ -90,7 +90,9 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
         >
             <div
                 className="happy-conversation-failure-card__frame"
+                data-ends={layout.switchTargets ? "control" : "text"}
                 data-happy-desktop-ui="conversation-failure-frame"
+                data-resolved={layout.resolution !== undefined ? "" : undefined}
             >
                 <div
                     className="happy-conversation-error-card__bubble"
@@ -137,59 +139,44 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
                                         ),
                                 )}
                             </span>
-                            {layout.lineAction ? (
-                                <Button
-                                    className="happy-conversation-failure-card__line-action"
-                                    onClick={
-                                        lineAction === "retry" ? props.onRetry : props.onNewChat
-                                    }
-                                    size="small"
-                                    variant={layout.lineAction.primary ? "primary" : "secondary"}
+                            {layout.lineAction || layout.assistance ? (
+                                <span
+                                    className="happy-conversation-failure-card__line-actions"
+                                    data-happy-desktop-ui="conversation-failure-line-actions"
                                 >
-                                    {layout.lineAction.label}
-                                </Button>
+                                    {layout.lineAction ? (
+                                        <Button
+                                            className="happy-conversation-failure-card__line-action"
+                                            onClick={
+                                                lineAction === "retry"
+                                                    ? props.onRetry
+                                                    : props.onNewChat
+                                            }
+                                            size="small"
+                                            variant={
+                                                layout.lineAction.primary ? "primary" : "ghost"
+                                            }
+                                        >
+                                            {layout.lineAction.label}
+                                        </Button>
+                                    ) : null}
+                                    {layout.assistance ? (
+                                        <Button
+                                            className="happy-conversation-failure-card__ask"
+                                            disabled={
+                                                layout.assistance.disabled ||
+                                                !props.onAssistanceRequest
+                                            }
+                                            onClick={props.onAssistanceRequest}
+                                            size="small"
+                                            variant="ghost"
+                                        >
+                                            {layout.assistance.label}
+                                        </Button>
+                                    ) : null}
+                                </span>
                             ) : null}
                         </div>
-                        {actionsRow ? (
-                            <div
-                                className="happy-conversation-failure-card__actions"
-                                data-happy-desktop-ui="conversation-failure-actions"
-                            >
-                                {layout.switchTargets ? (
-                                    <ConversationSwitchButton
-                                        {...(props.previewMenu
-                                            ? {
-                                                  defaultOpen: true,
-                                                  ...(props.previewMenu.active === undefined
-                                                      ? {}
-                                                      : {
-                                                            previewActive: props.previewMenu.active,
-                                                        }),
-                                              }
-                                            : {})}
-                                        onOpen={props.onSwitchOpen}
-                                        onSwitch={props.onSwitch}
-                                        onTargetChange={props.onTargetChange}
-                                        target={props.target}
-                                        targets={layout.switchTargets}
-                                        usageNow={props.usageNow}
-                                    />
-                                ) : null}
-                                {layout.assistance ? (
-                                    <Button
-                                        className="happy-conversation-failure-card__ask"
-                                        disabled={
-                                            layout.assistance.disabled || !props.onAssistanceRequest
-                                        }
-                                        onClick={props.onAssistanceRequest}
-                                        size="small"
-                                        variant="secondary"
-                                    >
-                                        {layout.assistance.label}
-                                    </Button>
-                                ) : null}
-                            </div>
-                        ) : null}
                         {layout.assistance?.detail ? (
                             <span className="happy-conversation-failure-card__detail">
                                 {layout.assistance.detail}
@@ -197,6 +184,29 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
                         ) : null}
                     </div>
                 </div>
+                {layout.switchTargets ? (
+                    <div
+                        className="happy-conversation-failure-card__actions"
+                        data-happy-desktop-ui="conversation-failure-actions"
+                    >
+                        <ConversationSwitchButton
+                            {...(props.previewMenu
+                                ? {
+                                      defaultOpen: true,
+                                      ...(props.previewMenu.active === undefined
+                                          ? {}
+                                          : { previewActive: props.previewMenu.active }),
+                                  }
+                                : {})}
+                            onOpen={props.onSwitchOpen}
+                            onSwitch={props.onSwitch}
+                            onTargetChange={props.onTargetChange}
+                            target={props.target}
+                            targets={layout.switchTargets}
+                            usageNow={props.usageNow}
+                        />
+                    </div>
+                ) : null}
                 {layout.resolution !== undefined ? (
                     <span
                         className="happy-conversation-failure-card__resolution"

@@ -853,8 +853,9 @@
 }
 
 /* Fenced code: a neutral raised card. The <pre> is the edge-to-edge scrollport
-   and its inner <code> carries the 16px inset so the right pad survives
-   horizontal scroll instead of being clipped by the overflow boundary. */
+   and its inner <code> carries the frame's inset, equal on every side, so the
+   right pad survives horizontal scroll instead of being clipped by the
+   overflow boundary. */
 .happy-message__code-block {
     margin: 12px 0;
     max-width: 100%;
@@ -889,7 +890,7 @@
     font-family: var(--happy-font-mono);
     background: transparent;
     border-radius: 0;
-    padding: 16px;
+    padding: var(--happy-chat-frame-text-inset) var(--happy-chat-frame-outset);
     color: var(--text);
     font-size: 14px;
     line-height: 20px;
@@ -902,7 +903,7 @@
  * What a frame holds starts on the transcript's text column, like the prose
  * around it, and the frame itself — its border or its background — stands out
  * from that column by `--happy-chat-frame-outset` on the left and the right. Its
- * inset is that same outset less its border. A reply's own frames take it here;
+ * inset is that same outset less its border, on every side. A reply's own frames take it here;
  * the transcript's cards (`ConversationFailureCard`, `ApprovalCard`) take the
  * same outset in their stylesheets. A frame nested deeper in the reply, in a
  * list or a quote, keeps that block's indent.
@@ -916,11 +917,6 @@
 
 .happy-message[data-agent] .happy-message__body--markdown > .happy-message__code-block {
     max-width: calc(100% + 2 * var(--happy-chat-frame-outset));
-}
-
-/* The inset lives on the code, not the scrollport, so it survives a scroll. */
-.happy-message[data-agent] .happy-message__body--markdown > .happy-message__code-block pre code {
-    padding-inline: var(--happy-chat-frame-outset);
 }
 
 .happy-message[data-agent]

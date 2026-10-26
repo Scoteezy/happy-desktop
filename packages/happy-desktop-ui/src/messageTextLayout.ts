@@ -60,9 +60,12 @@ const MONO_FAMILY = '"happy Mono", ui-monospace, monospace';
 const PARAGRAPH_SIZE = 16;
 export const MESSAGE_PLAIN_LINE_HEIGHT = 24;
 const PARAGRAPH_LINE = MESSAGE_PLAIN_LINE_HEIGHT;
-/** `.happy-message__body pre code`, which never wraps (`white-space: pre`). */
+/**
+ * `.happy-message__body pre code`, which never wraps (`white-space: pre`), and
+ * its `--happy-chat-frame-text-inset` above and below.
+ */
 const CODE_LINE = 20;
-const CODE_PADDING = 16;
+const CODE_PADDING = 9;
 /** `.happy-message__body--markdown code`: 14px mono with 5px of inline padding each side. */
 const INLINE_CODE_FONT = `14px ${MONO_FAMILY}`;
 /** `.happy-message__body > * + *` stacking, and the wider margin around `pre`. */

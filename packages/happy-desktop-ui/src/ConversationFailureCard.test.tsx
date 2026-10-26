@@ -346,24 +346,29 @@ it.each([360, 720])(
         const card = view.$('[data-happy-desktop-ui="conversation-error-card"]')
             .element as HTMLElement;
         expect(buttons(card)).toEqual([
-            { text: "Retry", variant: "secondary", height: 28 },
+            { text: "Retry", variant: "ghost", height: 28 },
+            { text: "Ask Chief of Staff", variant: "ghost", height: 28 },
             {
                 text: "Switch to claude_work · Opus 5.5 and continue",
                 variant: "primary",
                 height: 28,
             },
             { text: "Choose another account", variant: "primary", height: 28 },
-            { text: "Ask Chief of Staff", variant: "secondary", height: 28 },
         ]);
         /* Retry follows the message 8px after it, centred on its first 20px line
-           and hanging 4px over it, so the line keeps the icon's height. */
+           and hanging 4px over it, so the line keeps the icon's height; Ask
+           Chief of Staff follows Retry 4px after it. */
         const message = view.$('[data-happy-desktop-ui="conversation-error-reason"]').bounds();
         const retry = view.$(".happy-conversation-failure-card__line-action").bounds();
+        const ask = view.$(".happy-conversation-failure-card__ask").bounds();
         expect(retry.x - (message.x + message.width)).toBeCloseTo(8, 1);
         expect(retry.y + retry.height / 2).toBeCloseTo(message.y + 10, 1);
-        // The row below starts on the message's left edge.
+        expect(ask.x - (retry.x + retry.width)).toBeCloseTo(4, 1);
+        expect(ask.y).toBe(retry.y);
+        // The switch row starts on the warning icon's left edge.
+        const icon = view.$('[data-happy-desktop-ui="conversation-error-icon"]').bounds();
         const actions = view.$('[data-happy-desktop-ui="conversation-failure-actions"]').bounds();
-        expect(actions.x).toBe(message.x);
+        expect(actions.x).toBe(icon.x);
         // The command copies itself.
         const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
         card.querySelector<HTMLButtonElement>('[aria-label="Copy claude auth login"]')!.click();
@@ -393,7 +398,7 @@ it("makes the message line's own action primary when nothing can be switched to"
     const card = view.$('[data-happy-desktop-ui="conversation-error-card"]').element as HTMLElement;
     expect(buttons(card)).toEqual([
         { text: "New chat", variant: "primary", height: 28 },
-        { text: "Ask Chief of Staff", variant: "secondary", height: 28 },
+        { text: "Ask Chief of Staff", variant: "ghost", height: 28 },
     ]);
     card.querySelector<HTMLButtonElement>(".happy-conversation-failure-card__line-action")!.click();
     expect(onNewChat).toHaveBeenCalledOnce();

@@ -122,8 +122,12 @@ export function assertParallelRoundedCorners(root: ParentNode) {
                     innerGeometry.bounds.bottom <=
                         outerGeometry.bounds.bottom + PARALLEL_CORNER_TOLERANCE;
                 const outerRadius = outerGeometry.radii[corner];
+                /* An inset equal to the radius, within layout rounding, sits
+                   beside the curve rather than in it. */
                 const occupiesCornerField =
-                    contained && inset.x < outerRadius.x && inset.y < outerRadius.y;
+                    contained &&
+                    inset.x < outerRadius.x - PARALLEL_CORNER_TOLERANCE &&
+                    inset.y < outerRadius.y - PARALLEL_CORNER_TOLERANCE;
                 if (!occupiesCornerField) {
                     ancestor = ancestor.parentElement;
                     continue;
