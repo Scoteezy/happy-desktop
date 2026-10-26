@@ -1106,7 +1106,12 @@ function attachDepthOf(attach: SidebarAttach, to: number, deltaX: number): numbe
     return Math.max(0, Math.min(1, attach.fromDepth + Math.round(deltaX / SIDEBAR_ROW_INDENT)));
 }
 
-/** Where the dragged block lands: each neighbour it has passed by half that neighbour's height. */
+/**
+ * Where the dragged block lands: each neighbour it has passed by half that
+ * neighbour's height, in the one direction it is carried. Passing the middle
+ * of a tall neighbour leaves the rest of it still ahead, which never counts as
+ * coming back past the rows behind.
+ */
 function dragTargetIndex(drag: SidebarDrag, deltaY: number): number {
     let index = drag.from;
     let travel = deltaY;
@@ -1116,6 +1121,7 @@ function dragTargetIndex(drag: SidebarDrag, deltaY: number): number {
         travel -= next;
         index += 1;
     }
+    if (deltaY > 0) return index;
     while (travel < 0 && index > 0) {
         const previous = drag.heights[index - 1]!;
         if (-travel <= previous / 2) break;
