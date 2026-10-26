@@ -477,27 +477,19 @@ function AgentUpdateSidebar(props: {
 /**
  * What the sidebar has to say about the agent, if anything.
  *
- * Only two things are worth a row: a version being fetched, and one already
- * fetched and waiting to be installed. A check finding nothing, or an agent
- * managed outside Happy, is not news and takes no space.
+ * Only a downloaded version waiting to be installed gets a footer action.
+ * Download status stays in Settings, and an agent managed outside Happy takes
+ * no space here.
  */
 function agentUpdateOffer(daemon: AppHappyAgentDaemonSnapshot):
     | {
-          readonly detail?: string;
-          readonly status: "downloading" | "downloaded";
+          readonly status: "downloaded";
           readonly version: string;
       }
     | undefined {
     if (!daemon.managed || daemon.install.phase !== "idle") return undefined;
     if (daemon.readyVersion !== undefined)
         return { status: "downloaded", version: daemon.readyVersion };
-    if (daemon.operation === "downloading" && daemon.availableVersion !== undefined) {
-        return {
-            ...(daemon.message ? { detail: daemon.message } : {}),
-            status: "downloading",
-            version: daemon.availableVersion,
-        };
-    }
     return undefined;
 }
 
@@ -3540,7 +3532,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // Happy's own update wins the row. Restarting the app is the larger event of
     // the two, and it carries the agent with it, so the agent states its case
     // once there is nothing bigger waiting.
-    const agentUpdate = props.update ? undefined : agentUpdateOffer(daemon);
+    const applicationUpdate = props.update?.status === "downloaded" ? props.update : undefined;
+    const agentUpdate = applicationUpdate ? undefined : agentUpdateOffer(daemon);
     const updateStore = props.agentUpdate ?? agentUpdateStoreNoop;
     const updateProgress = useSyncExternalStore(
         updateStore.subscribe,
@@ -3562,20 +3555,19 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             snapshot={updateProgress}
             store={updateStore}
         />
-    ) : props.update ? (
+    ) : applicationUpdate ? (
         <SidebarUpdateAction
-            action={props.update.action}
-            detail={props.update.detail}
-            onAction={props.update.status === "downloaded" ? props.onUpdateApply : undefined}
-            status={props.update.status}
+            action={applicationUpdate.action}
+            detail={applicationUpdate.detail}
+            onAction={props.onUpdateApply}
+            status={applicationUpdate.status}
             subject="application"
-            version={props.update.version}
+            version={applicationUpdate.version}
         />
     ) : agentUpdate ? (
         <SidebarUpdateAction
             action="install"
-            detail={agentUpdate.detail}
-            onAction={agentUpdate.status === "downloaded" ? daemonStore.daemonInstall : undefined}
+            onAction={daemonStore.daemonInstall}
             status={agentUpdate.status}
             subject="happyAgent"
             version={agentUpdate.version}

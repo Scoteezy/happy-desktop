@@ -74,6 +74,14 @@ export type HappyAgentGeneralSettingsProps = {
     /** Absent where the host does not manage updates. */
     previewUpdatesEnabled?: boolean;
     onPreviewUpdatesChange?: (enabled: boolean) => void;
+    /** Application updates download automatically; only a completed download can be applied. */
+    desktopUpdate?: {
+        action: "refresh" | "restart";
+        detail?: string;
+        status: "available" | "downloading" | "downloaded";
+        version?: string;
+    };
+    onDesktopUpdateApply?: () => void;
     /** The managed Happy Agent installation, absent outside the native desktop shell. */
     agent?: {
         availableVersion?: string;
@@ -364,7 +372,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                     label="Default access mode"
                 />
             </HappyAgentSettingsSection>
-            {props.agent || props.onPreviewUpdatesChange ? (
+            {props.agent || props.onPreviewUpdatesChange || props.desktopUpdate ? (
                 <HappyAgentSettingsSection title="Happy Agent">
                     {props.agent ? (
                         <FormRow
@@ -466,6 +474,39 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                             )}. ${agentDescription(props.agent)} Switching or restarting lets running work finish first.`}
                             label="Version"
                             layout="stacked"
+                        />
+                    ) : null}
+                    {props.desktopUpdate ? (
+                        <FormRow
+                            control={
+                                <Box className="happy-agent-settings__agent-control">
+                                    <span aria-live="polite" role="status">
+                                        {props.desktopUpdate.status === "downloaded"
+                                            ? `Ready to ${props.desktopUpdate.action}`
+                                            : props.desktopUpdate.status === "downloading"
+                                              ? `Downloading${props.desktopUpdate.detail ? ` · ${props.desktopUpdate.detail}` : "…"}`
+                                              : "Ready to download"}
+                                    </span>
+                                    {props.desktopUpdate.status === "downloaded" &&
+                                    props.onDesktopUpdateApply ? (
+                                        <Button
+                                            onClick={props.onDesktopUpdateApply}
+                                            size="small"
+                                            variant="secondary"
+                                        >
+                                            {props.desktopUpdate.action === "refresh"
+                                                ? "Refresh"
+                                                : "Restart"}
+                                        </Button>
+                                    ) : null}
+                                </Box>
+                            }
+                            description={
+                                props.desktopUpdate.version
+                                    ? `Version ${props.desktopUpdate.version} · Updates download automatically.`
+                                    : "Updates download automatically."
+                            }
+                            label="Desktop update"
                         />
                     ) : null}
                     {props.onPreviewUpdatesChange ? (

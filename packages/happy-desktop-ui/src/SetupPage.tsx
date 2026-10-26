@@ -118,6 +118,8 @@ export interface SetupPageProps {
     /** One short line under the title; may carry an inline link. Reserved when absent. */
     readonly copy?: ReactNode;
     readonly status?: SetupPageStatus;
+    /** Keep the main content anchored while status/errors appear, wrap, or clear. */
+    readonly statusReserved?: boolean;
     /**
      * A command the reader is meant to run themselves, shown selectable in the
      * monospace face. Present only when there is genuinely something to type: a
@@ -173,6 +175,7 @@ export function SetupPage(props: SetupPageProps) {
         "title",
         "copy",
         "status",
+        "statusReserved",
         "command",
         "children",
         "action",
@@ -242,7 +245,23 @@ export function SetupPage(props: SetupPageProps) {
                             >
                                 {local.copy}
                             </p>
-                            {local.status ? (
+                            {local.statusReserved ? (
+                                <div
+                                    aria-label="Status"
+                                    className="happy-setup-page__status-slot"
+                                    data-happy-desktop-ui="setup-page-status-slot"
+                                    role="region"
+                                    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- long recovery messages scroll in this bounded region, which keyboard users must be able to focus
+                                    tabIndex={local.status ? 0 : -1}
+                                >
+                                    {local.status ? (
+                                        <SetupStatus
+                                            status={local.status}
+                                            tone={local.backdrop ? "inverse" : "default"}
+                                        />
+                                    ) : null}
+                                </div>
+                            ) : local.status ? (
                                 <SetupStatus
                                     status={local.status}
                                     tone={local.backdrop ? "inverse" : "default"}

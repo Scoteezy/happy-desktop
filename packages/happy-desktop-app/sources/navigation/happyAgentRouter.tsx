@@ -817,6 +817,8 @@ function HappyAgentSettingsRoute() {
     return (
         <AppHappyAgentSettingsView
             appearance={context.appearance}
+            update={context.update}
+            onUpdateApply={context.onUpdateApply}
             {...(context.daemon ? { daemon: context.daemon } : {})}
             {...(context.debug ? { debug: context.debug } : {})}
             {...(context.profiler ? { profiler: context.profiler } : {})}

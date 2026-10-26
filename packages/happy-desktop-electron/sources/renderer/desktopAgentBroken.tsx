@@ -12,12 +12,11 @@ import type { DesktopRuntimeStore } from "./runtimeStore";
 const BROKEN_HOLD_MS = 3_000;
 
 /**
- * How long a restart asked for here keeps waiting for this window to reach the
- * agent again once the host says the agent is back up. The host gives up on the
- * same reconnect after as long; past it the button is offered again rather than
- * spinning on an agent that is not coming back.
+ * A planned update or restart can finish on the host before this window has
+ * reconnected. Keep the current surface for two minutes after that transition;
+ * ordinary disconnects still use the short hold above.
  */
-const RECONNECT_WAIT_MS = 60_000;
+const RECONNECT_WAIT_MS = 120_000;
 
 const HAPPY_URL = "https://happy.engineering";
 const HAPPY_AGENT_REPOSITORY_URL = "https://github.com/slopus/happy-agent";
@@ -84,6 +83,8 @@ export function desktopAgentBrokenStoreCreate(input: {
     let brokenSince: number | undefined;
     let holdTimer: ReturnType<typeof setTimeout> | undefined;
     let requested = false;
+    let returnExpected = false;
+    let recoveryVisible = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let unsubscribes: (() => void)[] = [];
 
@@ -102,15 +103,28 @@ export function desktopAgentBrokenStoreCreate(input: {
         const local = directory.happyAgents.find((entry) => entry.id === LOCAL_HAPPY_AGENT_ID);
         const daemon = input.daemon.get();
         const runtime = input.runtime.get();
-        if (local?.status === "connected" || daemon.install.phase === "error") {
+        const install = daemon.install;
+        const restarting = install.phase !== "idle" && install.phase !== "error";
+        // Draining can leave the old agent connected for a long time. Only a
+        // connection after the host has finished counts as a successful return.
+        if (restarting) {
+            returnExpected = true;
+            reconnectClear();
+        } else if (local?.status === "connected" || install.phase === "error") {
             requested = false;
+            returnExpected = false;
             reconnectClear();
         }
-        const reconnecting = requested && daemon.install.phase === "idle";
+        if ((!restarting && local?.status === "connected") || local?.protocolMismatch !== undefined)
+            recoveryVisible = false;
+        const reconnecting = (requested || returnExpected) && install.phase === "idle";
+        // This timer starts once on entering the post-restart reconnect gap.
+        // Directory notifications cannot extend the deadline indefinitely.
         if (reconnecting && reconnectTimer === undefined)
             reconnectTimer = setTimeout(() => {
                 reconnectTimer = undefined;
                 requested = false;
+                returnExpected = false;
                 reconcile();
             }, RECONNECT_WAIT_MS);
         const mounted =
@@ -121,7 +135,7 @@ export function desktopAgentBrokenStoreCreate(input: {
             local !== undefined &&
             local.protocolMismatch === undefined &&
             (local.status === "error" || local.status === "disconnected");
-        if (!broken) {
+        if (!broken || restarting || reconnecting) {
             brokenSince = undefined;
             holdClear();
         } else if (brokenSince === undefined) {
@@ -132,10 +146,15 @@ export function desktopAgentBrokenStoreCreate(input: {
             }, BROKEN_HOLD_MS);
         }
         const held = brokenSince !== undefined && Date.now() - brokenSince >= BROKEN_HOLD_MS;
-        const settled = daemon.install.phase === "idle" || daemon.install.phase === "error";
+        const settled = install.phase === "idle" || install.phase === "error";
         const visible =
-            (held && settled) || (requested && local !== undefined && local.status !== "connected");
+            local !== undefined &&
+            local.protocolMismatch === undefined &&
+            (recoveryVisible || (held && settled) || (requested && local.status !== "connected"));
         if (!visible) return hidden;
+        // Retrying from recovery never swaps back to the workspace between
+        // timeout and failure, or while the host is stopping/starting the agent.
+        recoveryVisible = true;
         const version = local?.version ?? daemon.installedVersion;
         return {
             visible,
@@ -176,6 +195,9 @@ export function desktopAgentBrokenStoreCreate(input: {
                 holdClear();
                 reconnectClear();
                 brokenSince = undefined;
+                requested = false;
+                returnExpected = false;
+                recoveryVisible = false;
             };
         },
         restart() {
@@ -263,12 +285,15 @@ export function DesktopAgentBrokenGate(props: {
                 : {})}
             copy={
                 snapshot.restartable
-                    ? (snapshot.message ?? "The local Happy Agent is not responding.")
-                    : `${snapshot.message ?? "The local Happy Agent is not responding."} This Happy Agent is managed outside Happy; restart it there.`
+                    ? "Happy will reconnect when the local agent returns."
+                    : "Restart your external Happy Agent to reconnect."
             }
             data-testid="desktop-agent-broken-screen"
             scene="owl"
-            {...(status ? { status } : {})}
+            status={
+                status ?? { label: snapshot.message ?? "The local Happy Agent is not responding." }
+            }
+            statusReserved
             title="Happy is in a broken state"
         >
             <SetupPrompt label="prompt" prompt={desktopAgentBrokenPrompt(snapshot)} />

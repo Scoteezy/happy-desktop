@@ -102,6 +102,7 @@ import {
     hostHappyAgent,
     type AppHappyAgentDirectoryStore,
     type AppHappyAgentEntry,
+    type AppHappyAgentUpdate,
 } from "../AppHappyAgentView";
 
 /** The categories the local settings window offers, in the order they are listed. */
@@ -355,6 +356,9 @@ const usageAnalyticsAbsent: UsageAnalyticsStore = {
 
 export interface AppHappyAgentSettingsViewProps {
     appearance: AppearanceStore;
+    /** Application update status remains visible here while the footer waits for a download. */
+    update?: AppHappyAgentUpdate;
+    onUpdateApply?: () => void;
     /** Managed Happy Agent controls, present only in the native desktop shell. */
     daemon?: AppHappyAgentDaemonStore;
     /**
@@ -1212,6 +1216,8 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             ) : (
                 <HappyAgentGeneralSettings
                     appearanceModes={props.appearance.supportedModes}
+                    desktopUpdate={props.update}
+                    onDesktopUpdateApply={props.onUpdateApply}
                     {...(props.daemon
                         ? {
                               agent: daemonView,

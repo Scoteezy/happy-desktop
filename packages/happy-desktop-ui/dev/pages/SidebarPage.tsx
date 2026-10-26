@@ -1402,7 +1402,7 @@ export function SidebarPage() {
             </Specimen>
 
             <Specimen
-                detail="An update shows as one 28px orange arrow-up-circle beside the neutral footer glyphs — the only colour on the row, and only while a newer version waits."
+                detail="The 28px orange arrow-up-circle appears only once an update is downloaded. Available and downloading updates leave the footer quiet; their status stays in Settings."
                 label="Desktop update footer"
                 number="01c"
                 stage="app"
@@ -1434,7 +1434,7 @@ export function SidebarPage() {
             </Specimen>
 
             <Specimen
-                detail="The mark opens a 236px panel on the footer's gutters: version, state, and one line promising work in flight survives. A native package applies with Restart; a hosted renderer deploy with Refresh; the agent binary with Install. Nothing to apply yet means no button."
+                detail="A downloaded update opens a 236px panel on the footer's gutters: version, readiness, and one line promising work in flight survives. A native package applies with Restart; a hosted renderer deploy with Refresh; the agent binary with Install. Pending downloads show no mark or panel."
                 label="Update panel"
                 number="01d"
                 stage="app"

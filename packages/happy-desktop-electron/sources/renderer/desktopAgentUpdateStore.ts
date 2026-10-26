@@ -308,7 +308,10 @@ export function desktopAgentUpdateStoreCreate(input: {
  * or a failure the window explains on its own.
  */
 function settled(entry: HappyAgentDirectoryEntry): boolean {
-    if (entry.status === "error") return true;
+    // Transient reconnect failures after a planned restart still belong to the
+    // update. The recovery gate owns the bounded wait for a genuine failure;
+    // a protocol mismatch has its own immediate explanation.
+    if (entry.protocolMismatch !== undefined) return true;
     return entry.status === "connected" && entry.projectsStatus !== "loading";
 }
 

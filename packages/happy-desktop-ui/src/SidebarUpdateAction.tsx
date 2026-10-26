@@ -42,11 +42,11 @@ function assurance(subject: SidebarUpdateActionProps["subject"]): string {
 }
 
 /**
- * SidebarUpdateAction — the standing sign that a newer version exists. The
+ * SidebarUpdateAction — the standing sign that an update is ready to apply. The
  * footer keeps one 28px slot for it: a filled orange arrow-up-circle, the only
  * colour in a row of neutral ghost controls, so news is legible at a glance
  * without being read. The version, its state, and the action that applies it
- * live in the panel it opens above itself.
+ * live in the panel it opens above itself. Downloads stay in Settings until ready.
  *
  * A sentence in the footer was the wrong size for this: "Install · Happy Agent
  * v0.3.10" is either truncated or wider than the navigation it sits under, and
@@ -77,7 +77,7 @@ export function SidebarUpdateAction(props: SidebarUpdateActionProps) {
 
     // eslint-disable-next-line happy-react/no-layout-effect -- an open popover owns document-level outside-pointer and Escape listeners that are attached after commit and completely removed when it closes
     useLayoutEffect(() => {
-        if (!open) return;
+        if (!open || props.status !== "downloaded") return;
         const closeOnOutsidePointer = (event: PointerEvent) => {
             if (event.target instanceof Node && !root.current?.contains(event.target)) {
                 setOpen(false);
@@ -92,7 +92,9 @@ export function SidebarUpdateAction(props: SidebarUpdateActionProps) {
             document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
             document.removeEventListener("keydown", closeOnEscape, true);
         };
-    }, [open]);
+    }, [open, props.status]);
+
+    if (props.status !== "downloaded") return null;
 
     return (
         <div
