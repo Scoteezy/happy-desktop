@@ -1200,7 +1200,6 @@ export function ConversationView(props: ConversationViewProps) {
                         footerReserveHeight={queuedStatusHeight}
                         liftKey={sendLift.liftKey}
                         followKey={sendLift.followKey}
-                        dockConsumesSpace={dockedQuestions.length > 0}
                         {...(props.leadingHeader
                             ? {
                                   header: props.leadingHeader.content,

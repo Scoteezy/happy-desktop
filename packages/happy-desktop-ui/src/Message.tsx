@@ -832,8 +832,6 @@ export type MessageListProps = {
     liftKey?: string;
     /** A send queued during a run: carry it into view from near the bottom, without reserving reply space. */
     followKey?: string;
-    /** A docked question takes existing blank reply space before moving visible rows. */
-    dockConsumesSpace?: boolean;
     /**
      * Told the first and last of the caller's rows on screen, partly or wholly,
      * each time that range or the number of rows changes. Read from the range
@@ -1107,8 +1105,10 @@ export function MessageList(props: MessageListProps) {
     const virtualContent = useRef<HTMLDivElement | null>(null);
     // Space held below the transcript: by a send's lift, or a viewport that
     // grows keeping its previous content extent. It moves with the
-    // transcript's end, and only content added there grows into it and ends it.
+    // transcript's end. A shrinking viewport or new content takes it up.
     const geometryExtent = useRef(0);
+    // A viewport resize makes held tail space reclaimable once wholly unseen.
+    const geometryExtentResized = useRef(false);
     const geometrySparseInset = useRef(0);
     const geometryFollowInset = useRef(0);
     const footerFollowed = useRef(false);
@@ -1845,10 +1845,12 @@ export function MessageList(props: MessageListProps) {
         if (!element || !content) return;
         const naturalHeight = estimatedContentHeight();
         const intendedTop = pendingFollowerTop.current ?? element.scrollTop;
-        // Held space is never taken back: only content growing into it ends it.
+        // Content takes up held space as it grows; resized space can also be
+        // released once wholly outside the viewport.
         if (geometryExtent.current > 0 && naturalHeight >= geometryExtent.current) {
             const removed = Math.max(0, geometryExtent.current - naturalHeight);
             geometryExtent.current = 0;
+            geometryExtentResized.current = false;
             content.style.removeProperty("min-height");
             geometryFollowInset.current = Math.max(0, geometryFollowInset.current - removed);
         }
@@ -1862,6 +1864,19 @@ export function MessageList(props: MessageListProps) {
             spacerHoldRelease();
             scrollTopWrite(element, top - inset);
         }
+    }
+    function geometryExtentOffscreenRelease(top: number, height: number) {
+        if (!geometryExtentResized.current || geometryExtent.current === 0) return;
+        if (top + height > leadingGap(height) + estimatedContentHeight()) return;
+        // The next native scroll must compare against the released height,
+        // otherwise returning to the bottom looks like a content mutation.
+        scrollHeightBaseline.current -= Math.max(
+            0,
+            geometryExtent.current - estimatedContentHeight(),
+        );
+        geometryExtent.current = 0;
+        geometryExtentResized.current = false;
+        virtualContent.current?.style.removeProperty("min-height");
     }
     /** The newest row a caller's key names, else the footer. */
     function sentRowIndex(key: string): number | undefined {
@@ -2509,6 +2524,10 @@ export function MessageList(props: MessageListProps) {
             return;
         }
         const previousHeight = previous.height || nextHeight;
+        if (nextHeight !== previousHeight && !zoomChanged) {
+            geometryExtentResized.current = geometryExtent.current > estimatedContentHeight();
+            geometryExtentOffscreenRelease(readerScrollTop.current, previousHeight);
+        }
         const widthChanged = nextRowWidth !== rowSizeModel.width;
         let floorShrank = false;
         if (
@@ -2523,15 +2542,9 @@ export function MessageList(props: MessageListProps) {
             const naturalHeight = estimatedContentHeight();
             const wasFloored = previouslyFloored;
             floorShrank = wasFloored && nextHeight < previousHeight;
-            if (
-                props.dockConsumesSpace &&
-                (following.current || wasFloored) &&
-                nextHeight < previousHeight &&
-                geometryExtent.current > naturalHeight
-            ) {
-                // The dock occupies blank space already under the transcript
-                // before it carries any visible rows upward. Growing it back
-                // below restores that same space when the dock clears.
+            if (nextHeight < previousHeight && geometryExtent.current > naturalHeight) {
+                // Any shrinking viewport takes existing tail space first.
+                // Once it is exhausted, following carries rows one-for-one.
                 geometryExtent.current -= Math.min(
                     previousHeight - nextHeight,
                     geometryExtent.current - naturalHeight,
@@ -2559,14 +2572,6 @@ export function MessageList(props: MessageListProps) {
                             point - (nextHeight - Math.min(VIRTUAL_ANCHOR_INSET, nextHeight));
                         const gap = Math.min(inset, correction);
                         inset -= gap;
-                        const blank = Math.min(
-                            Math.max(0, geometryExtent.current - naturalHeight),
-                            correction - gap,
-                        );
-                        if (blank > 0) {
-                            geometryExtent.current -= blank;
-                            virtualContent.current.style.minHeight = `${String(geometryExtent.current)}px`;
-                        }
                     }
                 }
             }
@@ -2603,17 +2608,10 @@ export function MessageList(props: MessageListProps) {
                     ),
                 );
         }
-        // External geometry can leave an old hold larger than the scrollport.
-        // Bound it now, while the row anchor still owns this resize; scrolling
-        // and content updates never decay held space.
-        const naturalHeight = estimatedContentHeight();
-        const maximumExtent = naturalHeight + nextHeight * (1 - SEND_LIFT_TOP);
-        if (nextHeight < previousHeight && geometryExtent.current > maximumExtent) {
-            geometryExtent.current = maximumExtent;
-            if (virtualContent.current)
-                virtualContent.current.style.minHeight = `${String(maximumExtent)}px`;
-            geometryPlacementPending.current = following.current;
-        }
+        // A proportional cap changes the carry rate as the window crosses it.
+        // The shrink above consumes one pixel of blank per pixel of drag.
+        if (nextHeight !== previousHeight && !zoomChanged)
+            geometryExtentResized.current = geometryExtent.current > estimatedContentHeight();
         const pending = pendingAnchor.current;
         const heldAnchor =
             pending?.anchor ?? readerAnchor.current ?? modelAnchorCapture(previousHeight);
@@ -3356,6 +3354,7 @@ export function MessageList(props: MessageListProps) {
             previousScrollTop = element.scrollTop;
             readerScrollTop.current = element.scrollTop;
             scrollHeightBaseline.current = currentScrollHeight;
+            geometryExtentOffscreenRelease(readerScrollTop.current, viewportHeight);
             if (scrollDelta < 0) escapedFromFollow.current = true;
             else if (
                 scrollDelta > 0 &&

@@ -102,15 +102,17 @@ it.each(["queued", "queued-wheel", "insert-only", "trim"] as const)(
             commit();
             await frame();
             await frame();
+            // A shrinking viewport consumes the 88px held by grow(). Without
+            // a queued row below it, the question keeps only its natural tail.
             expect(
                 Math.abs(
                     viewport.getBoundingClientRect().bottom -
                         row.getBoundingClientRect().bottom -
-                        112,
+                        (queued ? 112 : 24),
                 ),
             ).toBeLessThanOrEqual(1);
-            expect(Math.abs(viewport.scrollTop - 114)).toBeLessThanOrEqual(1);
-            expect(Math.abs(viewport.scrollHeight - (queued ? 803 : 779))).toBeLessThanOrEqual(1);
+            expect(Math.abs(viewport.scrollTop - (queued ? 114 : 26))).toBeLessThanOrEqual(1);
+            expect(Math.abs(viewport.scrollHeight - (queued ? 803 : 691))).toBeLessThanOrEqual(1);
             if (queued) {
                 expect(position).toMatchObject({
                     type: "row",
