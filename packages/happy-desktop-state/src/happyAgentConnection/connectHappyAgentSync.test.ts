@@ -717,6 +717,142 @@ it("does not read health again when the same daemon's feed only reconnects", asy
     expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
 });
 
+it("rechecks blocked admission when a ready daemon reconnects without a replacement signal", async () => {
+    const { connection, daemon, groups, chat, sessionId } = await liveHarness();
+    daemon.failOnce(
+        "sendMessage",
+        new HappyAgentApiError(503, "Happy Agent is draining.", "draining", null),
+    );
+    const refused = connection.sendMessage(sessionId, "Before reconnecting");
+    await expect(connection.sendAcceptanceWait(refused)).rejects.toBeInstanceOf(
+        MessageRefusedError,
+    );
+    expect(groups.state.admitting).toBe(false);
+
+    // A healthy hello by itself carries no admission field in HappyAgentUpdate.
+    // Without another daemon_started/state_lost, the old refusal used to stick.
+    daemon.streamDropAll();
+    await vi.waitFor(() => expect(daemon.streamOpens).toHaveLength(2));
+    await vi.waitFor(() => {
+        expect(groups.state.connection).toBe("live");
+        expect(groups.state.admitting).toBeUndefined();
+    });
+    expect(daemon.callCount("getHealth")).toBe(1);
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+
+    const accepted = connection.sendMessage(sessionId, "After reconnecting");
+    await connection.sendAcceptanceWait(accepted);
+    await vi.waitFor(() => expect(userMessages(chat.elements)).toHaveLength(1));
+    expect(userMessages(chat.elements)[0]?.text).toBe("After reconnecting");
+    expect(daemon.callCount("sendMessage")).toBe(2);
+});
+
+it("keeps admission blocked when a reconnected daemon still reports draining", async () => {
+    const { connection, daemon, groups, sessionId } = await liveHarness();
+    const getHealth = daemon.client.getHealth.bind(daemon.client);
+    vi.spyOn(daemon.client, "getHealth").mockImplementation(async (options) => ({
+        ...(await getHealth(options)),
+        draining: true,
+    }));
+    daemon.failOnce(
+        "sendMessage",
+        new HappyAgentApiError(503, "Happy Agent is draining.", "draining", null),
+    );
+    const refused = connection.sendMessage(sessionId, "While draining");
+    await expect(connection.sendAcceptanceWait(refused)).rejects.toBeInstanceOf(
+        MessageRefusedError,
+    );
+
+    daemon.streamDropAll();
+    await vi.waitFor(() => expect(daemon.callCount("getHealth")).toBe(1));
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(groups.state.admitting).toBe(false);
+    expect(daemon.streamOpens).toHaveLength(2);
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    expect(daemon.callCount("sendMessage")).toBe(1);
+});
+
+it("saves a held draft once after the forwarding connection returns to a ready daemon", async () => {
+    const { connection, daemon, groups, chat, sessionId } = await liveHarness();
+    daemon.failOnce(
+        "saveAgentDraft",
+        new HappyAgentApiError(503, "Happy Agent is draining.", "draining", null),
+    );
+    const mutationId = connection.setDraft(sessionId, "Keep this draft");
+    await vi.waitFor(() => expect(groups.state.admitting).toBe(false));
+    expect(daemon.callCount("saveAgentDraft")).toBe(1);
+    expect(chat.session?.draft).toBe("Keep this draft");
+
+    daemon.streamDropAll();
+    await vi.waitFor(() => expect(daemon.callCount("saveAgentDraft")).toBe(2));
+    await vi.waitFor(() => expect(chat.session?.draft).toBe("Keep this draft"));
+    expect(groups.state.admitting).toBeUndefined();
+    expect(daemon.callCount("getHealth")).toBe(1);
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    const saves = daemon.calls.filter((call) => call.method === "saveAgentDraft");
+    expect(saves.map((call) => call.args[1])).toEqual([
+        expect.objectContaining({ mutationId }),
+        expect.objectContaining({ mutationId }),
+    ]);
+    expect(daemon.callCount("sendMessage")).toBe(0);
+});
+
+it("still adopts a same-process refusal after a newer health check", async () => {
+    const { connection, daemon, groups, sessionId } = await liveHarness();
+    const releaseSend = daemon.pause("sendMessage");
+    daemon.failOnce(
+        "sendMessage",
+        new HappyAgentApiError(503, "Happy Agent is draining.", "draining", null),
+    );
+    const refused = connection.sendMessage(sessionId, "Before the health check");
+    await vi.waitFor(() => expect(daemon.callCount("sendMessage")).toBe(1));
+
+    // A journal gap verifies health without changing the answering process.
+    daemon.gapOnNextStream();
+    daemon.streamDropAll();
+    await vi.waitFor(() => expect(daemon.callCount("getHealth")).toBe(1));
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    releaseSend();
+    await expect(connection.sendAcceptanceWait(refused)).rejects.toBeInstanceOf(
+        MessageRefusedError,
+    );
+    expect(groups.state.admitting).toBe(false);
+});
+
+it("does not adopt reconnect health that finishes after the connection closes", async () => {
+    const { connection, daemon, groups, sessionId } = await liveHarness();
+    daemon.failOnce(
+        "sendMessage",
+        new HappyAgentApiError(503, "Happy Agent is draining.", "draining", null),
+    );
+    const refused = connection.sendMessage(sessionId, "Before closing");
+    await expect(connection.sendAcceptanceWait(refused)).rejects.toBeInstanceOf(
+        MessageRefusedError,
+    );
+    const releaseHealth = daemon.pause("getHealth");
+    const getHealth = daemon.client.getHealth.bind(daemon.client);
+    let healthFinished!: () => void;
+    const finished = new Promise<void>((resolve) => {
+        healthFinished = resolve;
+    });
+    vi.spyOn(daemon.client, "getHealth").mockImplementation(async (options) => {
+        const health = await getHealth(options);
+        healthFinished();
+        return health;
+    });
+    daemon.streamDropAll();
+    await vi.waitFor(() => expect(daemon.callCount("getHealth")).toBe(1));
+    connection.close();
+    const closedState = groups.state;
+
+    releaseHealth();
+    await finished;
+    await vi.waitFor(() => expect(daemon.streamLiveCount()).toBe(0));
+    expect(groups.state).toBe(closedState);
+    expect(groups.state.connection).toBe("closed");
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+});
+
 it("retries an unreachable daemon with exponential backoff and surfaces the error", async () => {
     const daemon = fakeHappyAgentDaemonCreate();
     daemon.projectSeed({ id: "project-a" });

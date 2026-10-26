@@ -3428,6 +3428,24 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     if (rootController.signal.aborted) return;
                     sync.writer.updateReceived(update);
                     if (update.kind === "connected") {
+                        // A forwarding hop can refuse work while it drains even
+                        // though the remote daemon never drained. Its feed then
+                        // reconnects with the same daemon ID, so verify admission
+                        // without waiting for a replacement-process signal.
+                        if (!admitting) {
+                            const health = await client.getHealth({
+                                signal: AbortSignal.any([
+                                    attemptSignal,
+                                    AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+                                ]),
+                            });
+                            if (attemptSignal.aborted) break;
+                            if (!healthAdmit(health)) {
+                                daemonVerify = true;
+                                reopen = true;
+                                break;
+                            }
+                        }
                         reportDebug({
                             detail: debugDetail({ cursor: update.cursor }),
                             level: "info",
