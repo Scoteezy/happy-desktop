@@ -186,6 +186,9 @@ export function browserDevBridgeCreate(): HappyDesktopBridge {
         debugDaemonInspectorStart: async () => nativeDebugUnavailable(),
         debugDaemonInspectorStop: async () => nativeDebugUnavailable(),
         debugSubscribe: () => () => undefined,
+        diagnosticsWrite: async () => {
+            throw new Error("Saving diagnostics is available in the Electron desktop window.");
+        },
         profilerGet: async () => unsupportedProfilerSnapshot,
         profilerStart: async (_request?: DesktopProfilerRequest) => nativeProfilerUnavailable(),
         profilerStop: async () => nativeProfilerUnavailable(),

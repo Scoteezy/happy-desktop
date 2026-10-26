@@ -87,6 +87,7 @@ export function desktopDebugStoreCreate(bridge: HappyDesktopBridge): AppHappyAge
     };
 
     return {
+        diagnosticsWrite: (kind, text) => bridge.diagnosticsWrite(kind, text),
         get: () => snapshot,
         subscribe(listener) {
             listeners.add(listener);

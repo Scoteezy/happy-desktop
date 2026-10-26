@@ -13,6 +13,7 @@ import {
     type DesktopPreviewNavigation,
     type DesktopBuildIdentity,
     type DesktopDebugSnapshot,
+    type DesktopDiagnosticsKind,
     type DesktopConfig,
     type DesktopDaemonSnapshot,
     type DesktopGuestKeyEvent,
@@ -212,6 +213,8 @@ const bridge: HappyDesktopBridge = {
         ipcRenderer.on(desktopIpc.debugChanged, receive);
         return () => ipcRenderer.removeListener(desktopIpc.debugChanged, receive);
     },
+    diagnosticsWrite: (kind: DesktopDiagnosticsKind, text: string) =>
+        ipcRenderer.invoke(desktopIpc.diagnosticsWrite, kind, text),
     profilerGet: () => ipcRenderer.invoke(desktopIpc.profilerGet),
     profilerStart: (request?: DesktopProfilerRequest) =>
         ipcRenderer.invoke(desktopIpc.profilerStart, request),

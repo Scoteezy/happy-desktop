@@ -445,6 +445,9 @@ export interface DesktopDebugSnapshot {
 /** Native renderer profiling is separate from debugger endpoint lifetimes. */
 export type DesktopProfilerStartRequest = DesktopProfilerRequest;
 
+/** What Dev tools saves to a file so its path can be copied: every store snapshot, or the state log. */
+export type DesktopDiagnosticsKind = "raw-state" | "state-log";
+
 /**
  * What a development build calls itself. A packaged Happy reports none: only a
  * build run from a checkout has to be told apart from the other one beside it.
@@ -969,6 +972,11 @@ export interface HappyDesktopBridge {
     debugDaemonInspectorStart(): Promise<DesktopDebugSnapshot>;
     debugDaemonInspectorStop(): Promise<DesktopDebugSnapshot>;
     debugSubscribe(listener: (snapshot: DesktopDebugSnapshot) => void): () => void;
+    /**
+     * Writes a fresh Dev tools snapshot into the app's data folder and resolves
+     * with its absolute path. Each call is a new file.
+     */
+    diagnosticsWrite(kind: DesktopDiagnosticsKind, text: string): Promise<string>;
     profilerGet(): Promise<DesktopProfilerSnapshot>;
     profilerStart(request?: DesktopProfilerStartRequest): Promise<DesktopProfilerSnapshot>;
     profilerStop(): Promise<DesktopProfilerSnapshot>;
@@ -1084,6 +1092,7 @@ export const desktopIpc = {
     debugMainInspectorStop: "happy:debug:main-inspector-stop",
     debugRendererInspectorStart: "happy:debug:renderer-inspector-start",
     debugRendererInspectorStop: "happy:debug:renderer-inspector-stop",
+    diagnosticsWrite: "happy:diagnostics:write",
     profilerGet: "happy:profiler:get",
     profilerStart: "happy:profiler:start",
     profilerStop: "happy:profiler:stop",

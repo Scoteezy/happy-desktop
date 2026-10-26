@@ -19,7 +19,7 @@ import type { AppHappyAgentDirectorySnapshot } from "../../sources/AppHappyAgent
 // by its own browser tests; the real GPT-Live settings tree remains mounted.
 vi.mock("../../../happy-desktop-ui/src/Spinner", () => ({ Spinner: () => null }));
 
-it("shows Voice settings while calls are off and preserves the experimental opt-in", async () => {
+it("shows Voice settings while calls are off and moves the experiment with the one calls switch", async () => {
     let document: GptLiveDocument | undefined = { gptLiveEnabled: true };
     const persistence = {
         read: () => document,
@@ -100,7 +100,7 @@ it("shows Voice settings while calls are off and preserves the experimental opt-
     });
     expect(
         view.getByRole("switch", { name: "Enable GPT-Live voice" }).hasAttribute("disabled"),
-    ).toBe(true);
+    ).toBe(false);
     expect(view.getByRole("combobox", { name: "Voice account" })).toBeTruthy();
     expect(
         view.getByRole("textbox", { name: "Voice prompt" }).getAttribute("value") ??
@@ -111,23 +111,22 @@ it("shows Voice settings while calls are off and preserves the experimental opt-
     );
     expect(view.getByText("Test Model")).toBeTruthy();
     fireEvent.click(view.getByRole("button", { name: "Experimental" }));
-    fireEvent.click(view.getByRole("switch", { name: "Voice calls" }));
+    expect(view.queryByRole("switch", { name: "Voice calls" })).toBeNull();
     fireEvent.click(view.getByRole("button", { name: "Voice" }));
     const control = view.getByRole("switch", { name: "Enable GPT-Live voice" });
     expect(control.getAttribute("aria-checked")).toBe("false");
     expect(view.getByText("Adds a phone beside Settings.")).toBeTruthy();
     fireEvent.click(control);
+    expect(experiments.get().voice).toBe(true);
     expect(gptLive.get().gptLiveEnabled).toBe(true);
     expect(gptLiveStoreCreate(persistence).get().gptLiveEnabled).toBe(true);
     expect(view.getByRole("switch", { name: "Enable GPT-Live voice" })).toBe(control);
+    expect(control.getAttribute("aria-checked")).toBe("true");
     expect(settings.get()).toBe(defaults);
     fireEvent.click(control);
     expect(gptLive.get().gptLiveEnabled).toBe(false);
     expect(gptLiveStoreCreate(persistence).get().gptLiveEnabled).toBe(false);
-    expect(experiments.get().voice).toBe(true);
-    fireEvent.click(view.getByRole("button", { name: "Experimental" }));
-    expect(view.queryByRole("switch", { name: "Enable GPT-Live voice" })).toBeNull();
-    fireEvent.click(view.getByRole("switch", { name: "Voice calls" }));
+    expect(experiments.get().voice).toBe(false);
     expect(view.getByRole("button", { name: "Voice" })).toBeTruthy();
     view.unmount();
     voiceSettings[Symbol.dispose]();

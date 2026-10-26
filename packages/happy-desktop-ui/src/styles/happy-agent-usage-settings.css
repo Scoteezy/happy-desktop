@@ -2,8 +2,9 @@
  * The Usage settings category: one plain row per provider account, closed by a
  * form row's hairline. The readings inside are the model menu's own account
  * usage (number, ring, resets, freshness), so an account reads the same here as
- * it does in the menu bar presentation it is drawn after. Accounts sit under
- * their service's section heading, and each lists the models it spent tokens on.
+ * it does in the menu bar presentation it is drawn after. Each account is named
+ * after its service, such as "Codex · Current CLI", and lists the models it
+ * spent tokens on.
  *
  * Layout is flexbox throughout; colors and type come only from theme roles.
  */

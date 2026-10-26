@@ -9,7 +9,6 @@ import { ComposerModelAccountUsageDetails } from "../../ComposerModelControl";
 import { EmptyState } from "../../EmptyState";
 import { happyAgentComposerModelUsageProject } from "../../happyAgentComposerModelControl";
 import { providerAccountName } from "./providerAccountName";
-import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
 export interface HappyAgentUsageSettingsProps {
     /** Every configured provider account, in the order they should be read. */
@@ -74,94 +73,90 @@ export function HappyAgentUsageSettings(props: HappyAgentUsageSettingsProps) {
                     title={props.loading ? "Loading usage…" : "No provider accounts"}
                 />
             ) : (
-                serviceGroups(providers).map((group) => (
-                    <HappyAgentSettingsSection key={group.service} title={group.service}>
-                        {group.accounts.map((provider) => {
-                            const models = (provider.usage?.models ?? []).filter(modelUsed);
-                            return (
-                                <section
-                                    className="happy-agent-usage-settings__account"
-                                    data-happy-desktop-ui="happy-agent-usage-settings-provider"
-                                    data-provider={provider.providerId}
-                                    key={provider.providerId}
+                serviceOrdered(providers).map((provider) => {
+                    const models = (provider.usage?.models ?? []).filter(modelUsed);
+                    return (
+                        <section
+                            className="happy-agent-usage-settings__account"
+                            data-happy-desktop-ui="happy-agent-usage-settings-provider"
+                            data-provider={provider.providerId}
+                            key={provider.providerId}
+                        >
+                            <header className="happy-agent-usage-settings__account-header">
+                                <span
+                                    className="happy-agent-usage-settings__name"
+                                    data-happy-desktop-ui="happy-agent-usage-settings-provider-name"
                                 >
-                                    <header className="happy-agent-usage-settings__account-header">
-                                        <span
-                                            className="happy-agent-usage-settings__name"
-                                            data-happy-desktop-ui="happy-agent-usage-settings-provider-name"
+                                    {accountTitle(provider)}
+                                </span>
+                                {provider.usage?.planName ? (
+                                    <span className="happy-agent-usage-settings__plan">
+                                        {provider.usage.planName}
+                                    </span>
+                                ) : null}
+                            </header>
+                            {provider.error !== undefined ? (
+                                <p
+                                    className="happy-agent-usage-settings__note"
+                                    data-happy-desktop-ui="happy-agent-usage-settings-provider-error"
+                                    data-note="error"
+                                >
+                                    {provider.error}
+                                </p>
+                            ) : usage.has(provider.providerId) ? (
+                                <ComposerModelAccountUsageDetails
+                                    className="happy-agent-usage-settings__details"
+                                    now={now}
+                                    usage={usage.get(provider.providerId)}
+                                    windowsUniform
+                                />
+                            ) : (
+                                <p className="happy-agent-usage-settings__note">Not read yet</p>
+                            )}
+                            {models.length > 0 ? (
+                                <ul
+                                    aria-label="Tokens by model"
+                                    className="happy-agent-usage-settings__models"
+                                >
+                                    {models.map((model) => (
+                                        <li
+                                            className="happy-agent-usage-settings__model"
+                                            data-happy-desktop-ui="happy-agent-usage-settings-model"
+                                            key={model.modelId}
                                         >
-                                            {providerAccountName(
-                                                provider.providerId,
-                                                provider.name,
-                                            )}
-                                        </span>
-                                        {provider.usage?.planName ? (
-                                            <span className="happy-agent-usage-settings__plan">
-                                                {provider.usage.planName}
+                                            <span className="happy-agent-usage-settings__model-id">
+                                                {model.modelId}
                                             </span>
-                                        ) : null}
-                                    </header>
-                                    {provider.error !== undefined ? (
-                                        <p
-                                            className="happy-agent-usage-settings__note"
-                                            data-happy-desktop-ui="happy-agent-usage-settings-provider-error"
-                                            data-note="error"
-                                        >
-                                            {provider.error}
-                                        </p>
-                                    ) : usage.has(provider.providerId) ? (
-                                        <ComposerModelAccountUsageDetails
-                                            className="happy-agent-usage-settings__details"
-                                            now={now}
-                                            usage={usage.get(provider.providerId)}
-                                            windowsUniform
-                                        />
-                                    ) : (
-                                        <p className="happy-agent-usage-settings__note">
-                                            Not read yet
-                                        </p>
-                                    )}
-                                    {models.length > 0 ? (
-                                        <ul
-                                            aria-label="Tokens by model"
-                                            className="happy-agent-usage-settings__models"
-                                        >
-                                            {models.map((model) => (
-                                                <li
-                                                    className="happy-agent-usage-settings__model"
-                                                    data-happy-desktop-ui="happy-agent-usage-settings-model"
-                                                    key={model.modelId}
-                                                >
-                                                    <span className="happy-agent-usage-settings__model-id">
-                                                        {model.modelId}
-                                                    </span>
-                                                    <span className="happy-agent-usage-settings__model-tokens">
-                                                        {modelTokens(model)}
-                                                    </span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    ) : null}
-                                </section>
-                            );
-                        })}
-                    </HappyAgentSettingsSection>
-                ))
+                                            <span className="happy-agent-usage-settings__model-tokens">
+                                                {modelTokens(model)}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : null}
+                        </section>
+                    );
+                })
             )}
         </>
     );
 }
 
-/** Accounts under their service, services in the order their first account is listed. */
-function serviceGroups(providers: readonly HappyAgentUsageProviderRow[]) {
-    const groups: { service: string; accounts: HappyAgentUsageProviderRow[] }[] = [];
+/** Accounts kept beside their service's others, services in the order their first account is listed. */
+function serviceOrdered(providers: readonly HappyAgentUsageProviderRow[]) {
+    const groups: HappyAgentUsageProviderRow[][] = [];
     for (const provider of providers) {
-        const service = provider.typeName ?? "Other";
-        const group = groups.find((candidate) => candidate.service === service);
-        if (group) group.accounts.push(provider);
-        else groups.push({ service, accounts: [provider] });
+        const group = groups.find((candidate) => candidate[0]!.typeName === provider.typeName);
+        if (group) group.push(provider);
+        else groups.push([provider]);
     }
-    return groups;
+    return groups.flat();
+}
+
+/** The account named after its service, such as "Codex · Current CLI". */
+function accountTitle(provider: HappyAgentUsageProviderRow) {
+    const name = providerAccountName(provider.providerId, provider.name);
+    return provider.typeName ? `${provider.typeName} · ${name}` : name;
 }
 
 function tokensTotal(counts: HappyAgentProviderTokenCounts | undefined): number {

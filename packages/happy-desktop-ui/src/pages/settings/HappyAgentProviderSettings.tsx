@@ -137,7 +137,9 @@ export function HappyAgentProviderSettings(props: HappyAgentProviderSettingsProp
                                         className="happy-agent-provider__name"
                                         data-happy-desktop-ui="happy-agent-provider-name"
                                     >
-                                        {provider.name}
+                                        {provider.typeName
+                                            ? `${provider.typeName} · ${provider.name}`
+                                            : provider.name}
                                     </span>
                                     <span
                                         className="happy-agent-provider__meta"
@@ -229,9 +231,7 @@ export function HappyAgentProviderSettings(props: HappyAgentProviderSettingsProp
 
 function providerMeta(provider: HappyAgentProviderRow): string {
     const models = `${provider.models.length} ${provider.models.length === 1 ? "model" : "models"}`;
-    return [provider.typeName, models, provider.serviceTiers.join(", ")]
-        .filter(Boolean)
-        .join(" · ");
+    return [models, provider.serviceTiers.join(", ")].filter(Boolean).join(" · ");
 }
 
 function modelMeta(model: HappyAgentProviderModelRow): string {

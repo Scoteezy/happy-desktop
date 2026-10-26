@@ -3,6 +3,7 @@ import {
     HappyAgentSurfaceSettings,
     type HappyAgentSurfaceSettingsProps,
 } from "../../src/pages/settings/HappyAgentSurfaceSettings";
+import { HappyAgentConnectionSettingsSection } from "../../src/pages/settings/HappyAgentConnectionSettingsSection";
 import { HappyAgentSettingsShell } from "../../src/pages/settings/HappyAgentSettingsShell";
 import { ComponentPage, FullScreenSpecimen, Specimen } from "../kit";
 
@@ -126,7 +127,11 @@ export function HappyAgentSurfaceSettingsPage() {
                     stage="surface"
                 >
                     <div style={{ display: "flex", flexDirection: "column", width: 640 }}>
-                        <HappyAgentSurfaceSettings {...props} />
+                        <HappyAgentConnectionSettingsSection
+                            connectionLabel={props.connectionLabel}
+                        >
+                            <HappyAgentSurfaceSettings {...props} />
+                        </HappyAgentConnectionSettingsSection>
                     </div>
                 </Specimen>
             ))}

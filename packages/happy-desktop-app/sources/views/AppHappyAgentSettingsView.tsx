@@ -14,7 +14,6 @@ import type {
     HappyAgentSecurityPolicySnapshot,
     HappyAgentSecret,
     HappyAgentModelKey,
-    HappyAgentPermissionMode,
     HappyAgentProviderEntry,
     HappyAgentSettingsSnapshot,
     HappyAgentSettingsStore,
@@ -33,7 +32,6 @@ import {
     HAPPY_AGENT_SECURITY_POLICY_MAX_BYTES,
     happyAgentMenusDerive,
     happyAgentModelKey,
-    happyAgentPermissionLabel,
     happyAgentServiceName,
     happyAgentThinkingLabel,
     experimentsStoreNoop,
@@ -69,6 +67,7 @@ import {
     HappyAgentAccountSettings,
     HappyAgentGeneralSettings,
     HappyAgentExperimentalSettings,
+    HappyAgentConnectionSettingsSection,
     HappyAgentStemCellsSettings,
     HappyAgentStoriesSettings,
     HappyAgentDebugLogPanel,
@@ -108,8 +107,8 @@ import {
 /** The categories the local settings window offers, in the order they are listed. */
 export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
-    { icon: "check-circle", id: "tasks", label: "Tasks" },
-    { icon: "files", id: "surfaces", label: "Shared" },
+    // Joining other people's tasks and their shared docs, lists and calendars.
+    { icon: "files", id: "sharing", label: "Sharing" },
     // Local author identity and the optional WorkOS account share one category.
     { icon: "users", id: "account", label: "Account" },
     // How each project's changes are split into tiers in the Changes listing.
@@ -127,6 +126,12 @@ export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategor
 ];
 
 export const HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY = "general";
+
+/** Categories that were folded into another, by their old address. */
+export const HAPPY_AGENT_SETTINGS_MOVED_CATEGORIES: Readonly<Record<string, string>> = {
+    surfaces: "sharing",
+    tasks: "sharing",
+};
 
 /** True when `section` addresses a category this window actually has. */
 export function happyAgentSettingsCategoryExists(section: string): boolean {
@@ -152,6 +157,11 @@ export interface AppHappyAgentDebugSnapshot {
 
 /** Framework-neutral adapter for the desktop debugger capability. */
 export interface AppHappyAgentDebugStore {
+    /**
+     * Saves a fresh Dev tools snapshot to a file on this machine and resolves
+     * with its absolute path; rejects where the host cannot save one.
+     */
+    diagnosticsWrite(kind: "raw-state" | "state-log", text: string): Promise<string>;
     get(): AppHappyAgentDebugSnapshot;
     subscribe(listener: () => void): () => void;
     debugAllStart(): void;
@@ -319,8 +329,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     voice: "Voice calls, controller and prompt",
     debug: "Live state, debuggers and renderer profiles",
     general: "Appearance, behavior and new-session defaults",
-    tasks: "Joining other people’s tasks",
-    surfaces: "Joining shared docs, lists and calendars",
+    sharing: "Joining other people’s tasks, docs, lists and calendars",
     "mobile-access": "Use Happy on your phone with this computer",
     account: "Your name, photo and Happy account",
     "file-tiers": "Which changed files are listed apart",
@@ -329,13 +338,6 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     providers: "Model providers and the models they offer",
     usage: "What each provider account has spent",
 };
-
-const PERMISSION_MODES: readonly HappyAgentPermissionMode[] = [
-    "auto",
-    "workspace_write",
-    "read_only",
-    "full_access",
-];
 
 /** The row in Experimental that is a window preference rather than an experiment. */
 const STEM_CELL_ANIMATION_SETTING = "stemCellAnimation";
@@ -660,7 +662,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
     // the one last used with it, because a new session ignores that memory.
     const selection = models.type === "ready" ? models.defaultSelection : undefined;
     const defaultMenus =
-        catalog && selection ? happyAgentMenusDerive(catalog, selection) : undefined;
+        catalog && selection
+            ? happyAgentMenusDerive(catalog, {
+                  ...selection,
+                  permissionMode: settings.defaultPermissionMode,
+              })
+            : undefined;
     const sessionClock = host?.session?.clock;
     const mobileSetup = happyIntegrationStore.mobileSetup;
     if (section === "mobile-access" && happyIntegration.setup && mobileSetup && sessionClock) {
@@ -710,7 +717,11 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                 <>
                     <HappyAgentExperimentalSettings
                         features={[
-                            ...EXPERIMENTAL_FEATURES.map((feature) => ({
+                            // Voice calls is switched on the Voice page, the one
+                            // place that names what it turns on.
+                            ...EXPERIMENTAL_FEATURES.filter(
+                                (feature) => feature.id !== "voice",
+                            ).map((feature) => ({
                                 ...feature,
                                 enabled: experiments[feature.id],
                             })),
@@ -737,31 +748,35 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         }}
                     />
                     {directory.happyAgents.map((entry) => (
-                        <AppHappyAgentStemCellsSettings key={entry.id} entry={entry} />
-                    ))}
-                    {directory.happyAgents.map((entry) => (
-                        <AppHappyAgentStoriesSettings key={entry.id} entry={entry} />
+                        <HappyAgentConnectionSettingsSection
+                            connectionLabel={entry.label}
+                            key={entry.id}
+                            {...entryUnavailable(entry)}
+                        >
+                            <AppHappyAgentStemCellsSettings entry={entry} />
+                            <AppHappyAgentStoriesSettings entry={entry} />
+                        </HappyAgentConnectionSettingsSection>
                     ))}
                 </>
             ) : section === "voice" ? (
                 props.gptLive ? (
                     <>
                         <GptLiveSettings
-                            enabled={gptLive.gptLiveEnabled}
+                            enabled={experiments.voice && gptLive.gptLiveEnabled}
                             accounts={gptLive.availability?.accounts}
                             accountId={gptLive.accountId}
                             checking={gptLive.status === "checking"}
                             accountsVisible
-                            callsUnavailable={
-                                experiments.voice
-                                    ? undefined
-                                    : "Enable Voice calls in Experimental to turn on voice calls."
-                            }
                             onAccountSelect={gptLiveStore.accountSelect}
                             onAccountsRead={gptLiveStore.availabilityRead}
+                            // The one Voice calls switch: the experiment that
+                            // allows calls and the window's own choice move together.
                             onEnabledChange={(enabled) => {
-                                if (experimentsStore.get().voice)
-                                    gptLiveStore.gptLiveEnabledUpdate(enabled);
+                                if (enabled)
+                                    experimentsStore.featureUpdate("voice", true, "experiments");
+                                gptLiveStore.gptLiveEnabledUpdate(enabled);
+                                if (!enabled)
+                                    experimentsStore.featureUpdate("voice", false, "experiments");
                             }}
                         />
                         {
@@ -951,6 +966,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             ) : section === "debug" ? (
                 <>
                     <HappyAgentStateSettings
+                        {...(debug.supported
+                            ? {
+                                  onPathWrite: (text: string) =>
+                                      debugStore.diagnosticsWrite("raw-state", text),
+                              }
+                            : {})}
                         documents={stateDocuments({
                             appearance,
                             cloud,
@@ -969,6 +990,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         })}
                     />
                     <HappyAgentDebugLogPanel
+                        {...(debug.supported
+                            ? {
+                                  onPathWrite: (text: string) =>
+                                      debugStore.diagnosticsWrite("state-log", text),
+                              }
+                            : {})}
                         discardedEntries={debugLog.discardedEntries}
                         entries={debugLog.entries}
                     />
@@ -1000,13 +1027,16 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         supported={profiler.status !== "unavailable"}
                     />
                 </>
-            ) : section === "tasks" ? (
+            ) : section === "sharing" ? (
                 directory.happyAgents.map((entry) => (
-                    <AppHappyAgentAutoJoinSettings key={entry.id} entry={entry} entity="task" />
-                ))
-            ) : section === "surfaces" ? (
-                directory.happyAgents.map((entry) => (
-                    <AppHappyAgentAutoJoinSettings key={entry.id} entry={entry} entity="surface" />
+                    <HappyAgentConnectionSettingsSection
+                        connectionLabel={entry.label}
+                        key={entry.id}
+                        {...entryUnavailable(entry)}
+                    >
+                        <AppHappyAgentAutoJoinSettings entry={entry} entity="task" />
+                        <AppHappyAgentAutoJoinSettings entry={entry} entity="surface" />
+                    </HappyAgentConnectionSettingsSection>
                 ))
             ) : section === "account" ? (
                 // The local author identity and optional WorkOS connection.
@@ -1264,17 +1294,10 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                                   projectsVisibilityStore.projectsHiddenUpdate(hidden),
                           }
                         : {})}
+                    {...(defaultMenus ? { defaultAccessMenus: defaultMenus } : {})}
                     onPermissionModeChange={(mode) => {
-                        if (happyAgentOnline())
-                            props.settings.defaultPermissionModeUpdate(
-                                mode as HappyAgentPermissionMode,
-                            );
+                        if (happyAgentOnline()) props.settings.defaultPermissionModeUpdate(mode);
                     }}
-                    permissionMode={settings.defaultPermissionMode}
-                    permissionModeOptions={PERMISSION_MODES.map((mode) => ({
-                        label: happyAgentPermissionLabel(mode),
-                        value: mode,
-                    }))}
                     scrollbarVisibility={appearance.scrollbarVisibility}
                     titleShimmerEnabled={titleShimmer.titleShimmerEnabled}
                     {...(unavailable === undefined ? {} : { unavailable })}
@@ -1422,6 +1445,18 @@ const SECURITY_POLICY_PATH = "~/Happy/Config/SECURITY.md";
 const noSubscribe = () => () => undefined;
 const autoJoinSettingsLoading: HappyAgentTaskSettingsSnapshot = { status: "loading" };
 const autoJoinSettingsUnloaded = () => autoJoinSettingsLoading;
+
+/** Why a connection's choices cannot be reached right now, said once above its rows. */
+function entryUnavailable(entry: AppHappyAgentEntry): { readonly unavailable?: string } {
+    if (!entry.session) return { unavailable: "This connection is unavailable." };
+    const availability = happyAgentAvailabilityProject(entry.session.connection.get(), true, {
+        status: entry.status,
+        ...(entry.message === undefined ? {} : { message: entry.message }),
+    });
+    return availability.online === false
+        ? { unavailable: availability.refusal ?? availability.message }
+        : {};
+}
 
 /** Settings is window-wide, but each connection edits only its authenticated person's choice. */
 function AppHappyAgentStemCellsSettings(props: { readonly entry: AppHappyAgentEntry }) {
@@ -1591,6 +1626,9 @@ const debugUnavailable: AppHappyAgentDebugSnapshot = {
     supported: false,
 };
 const debugStoreNoop: AppHappyAgentDebugStore = {
+    diagnosticsWrite: async () => {
+        throw new Error("Saving diagnostics needs the Electron desktop window.");
+    },
     get: () => debugUnavailable,
     subscribe: noSubscribe,
     debugAllStart: () => undefined,

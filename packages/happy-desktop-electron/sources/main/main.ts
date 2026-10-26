@@ -109,6 +109,7 @@ import { desktopConfigPath, DesktopConfigStore } from "./desktopConfig";
 import { customThemeEmpty } from "happy-desktop-state";
 import { DesktopDebugController } from "./desktopDebugController";
 import { desktopMainInspectorStart } from "./desktopInspector";
+import { desktopDiagnosticsRequestValidate, desktopDiagnosticsWrite } from "./desktopDiagnostics";
 import { DesktopProfilerController } from "./desktopProfilerController";
 import { DesktopWindowStateStore } from "./windowState";
 import { desktopBuildIdentityRead } from "./buildIdentity";
@@ -1930,6 +1931,15 @@ void app
         ipcMain.handle(desktopIpc.debugDaemonInspectorStop, (event) => {
             desktopDebugSenderRequire(event.sender);
             return debugController.stop("daemon");
+        });
+        ipcMain.handle(desktopIpc.diagnosticsWrite, (event, kind: unknown, text: unknown) => {
+            desktopDebugSenderRequire(event.sender);
+            const request = desktopDiagnosticsRequestValidate(kind, text);
+            return desktopDiagnosticsWrite(
+                join(app.getPath("userData"), "desktop"),
+                request.kind,
+                request.text,
+            );
         });
         ipcMain.handle(desktopIpc.profilerGet, (event) => {
             desktopProfilerSenderRequire(event.sender);

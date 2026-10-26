@@ -81,12 +81,11 @@ const initials = (name: string): string =>
  * The fields are ordinary settings rows rather than a bordered card. Every other
  * category in this window is a block of hairline-separated rows, and a card here
  * made the profile look like an object sitting inside settings instead of a part
- * of them. What remains above the rows is the identity itself — the avatar, the
- * name, and the email — which is a summary of who this
- * machine is, not a control.
+ * of them. Nothing above the rows repeats them: the name and Git email are
+ * their own rows, and the avatar sits in the Photo row it belongs to.
  *
  * The photo is a row like the fields: its picker and removal sit where every
- * other setting's control does, and the avatar above shows the result. A
+ * other setting's control does, beside the avatar that shows the result. A
  * picked picture opens in a crop dialog first; nothing is sent until the
  * reader confirms the square. Until the photo's bytes arrive the avatar shows
  * its ThumbHash, so a replaced photo never shows the previous picture in the
@@ -131,24 +130,6 @@ export function HappyAgentProfileSettings(props: HappyAgentProfileSettingsProps)
                         if (!blocked) props.onSave();
                     }}
                 >
-                    <Box className="happy-agent-profile__identity">
-                        <Avatar
-                            data-testid="happy-agent-profile-avatar"
-                            imageUrl={photoUrl}
-                            initials={initials(props.name) || "?"}
-                            size="lg"
-                        />
-                        <Box className="happy-agent-profile__naming">
-                            <Box className="happy-agent-profile__line">
-                                <span className="happy-agent-profile__name">
-                                    {props.name.trim() === "" ? "Unnamed" : props.name}
-                                </span>
-                            </Box>
-                            <span className="happy-agent-profile__status">
-                                {props.email.trim() === "" ? "No Git email yet" : props.email}
-                            </span>
-                        </Box>
-                    </Box>
                     {props.photoError ? (
                         <Banner tone="danger" title="Photo not changed">
                             {props.photoError}
@@ -162,6 +143,12 @@ export function HappyAgentProfileSettings(props: HappyAgentProfileSettingsProps)
                     <FormRow
                         control={
                             <Box className="happy-agent-profile__photo-actions">
+                                <Avatar
+                                    data-testid="happy-agent-profile-avatar"
+                                    imageUrl={photoUrl}
+                                    initials={initials(props.name) || "?"}
+                                    size="lg"
+                                />
                                 {props.photo ? (
                                     <Button
                                         data-testid="happy-agent-profile-photo-remove"

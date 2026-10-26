@@ -89,7 +89,7 @@ it("renders the default-off opt-in and preserves switch identity and focus when 
     expect(subscriptions).toBe(0);
 });
 
-it("keeps the Voice category visible before experimental opt-in and calls disabled until opt-in", async () => {
+it("keeps one Voice calls switch on the Voice page that moves the experiment with it", async () => {
     const experiments = experimentsStoreCreate();
     // A previously enabled voice preference must not expose the gated footer.
     const voice = gptLiveStoreCreate(
@@ -157,44 +157,44 @@ it("keeps the Voice category visible before experimental opt-in and calls disabl
         await expect
             .poll(() => document.querySelector('[aria-label="Enable GPT-Live voice"]') !== null)
             .toBe(true);
-        expect(
-            (view.$('[aria-label="Enable GPT-Live voice"]').element as HTMLButtonElement).disabled,
-        ).toBe(true);
+        const control = view.$('[aria-label="Enable GPT-Live voice"]').element as HTMLButtonElement;
+        // Before opt-in the switch reads off, even over an old enabled preference.
+        expect(control.disabled).toBe(false);
+        expect(control.getAttribute("aria-checked")).toBe("false");
         expect(document.querySelector('[aria-label="Voice account"]')).not.toBeNull();
         await userEvent.click(category("Experimental")!);
-        const control = view.$('[aria-label="Voice calls"]').element;
-        await userEvent.click(control);
-        expect(category("Voice")).toBeDefined();
-        expect(document.querySelector('[aria-label="Enable GPT-Live voice"]')).toBeNull();
+        expect(document.querySelector('[aria-label="Voice calls"]')).toBeNull();
+        await userEvent.click(category("Voice")!);
+        await userEvent.click(view.$('[aria-label="Enable GPT-Live voice"]').element);
+        await expect
+            .poll(() =>
+                view.$('[aria-label="Enable GPT-Live voice"]').element.getAttribute("aria-checked"),
+            )
+            .toBe("true");
+        expect(experiments.get().voice).toBe(true);
+        expect(voice.get().gptLiveEnabled).toBe(true);
         await expect
             .poll(() => {
-                const thumb = control
+                const switchControl = view.$('[aria-label="Enable GPT-Live voice"]').element;
+                const thumb = switchControl
                     .querySelector('[data-happy-desktop-ui="switch-thumb"]')!
                     .getBoundingClientRect();
-                const track = control
+                const track = switchControl
                     .querySelector('[data-happy-desktop-ui="switch-track"]')!
                     .getBoundingClientRect();
                 return thumb.x - track.x;
             })
             .toBe(14);
-        await view.screenshot("GptLiveSettings.experimental-revealed.test");
-        await userEvent.click(category("Voice")!);
-        await expect
-            .poll(() => document.querySelector('[aria-label="Enable GPT-Live voice"]') !== null)
-            .toBe(true);
-        expect(
-            view.$('[data-happy-desktop-ui="happy-agent-settings-heading-title"]').element
-                .textContent,
-        ).toBe("Voice");
-        expect(
-            (view.$('[aria-label="Enable GPT-Live voice"]').element as HTMLButtonElement).disabled,
-        ).toBe(false);
         await view.screenshot("GptLiveSettings.experimental-voice.test");
-        await userEvent.click(category("Experimental")!);
-        await userEvent.click(view.$('[aria-label="Voice calls"]').element);
-        expect(category("Voice")).toBeDefined();
+        await userEvent.click(view.$('[aria-label="Enable GPT-Live voice"]').element);
+        await expect
+            .poll(() =>
+                view.$('[aria-label="Enable GPT-Live voice"]').element.getAttribute("aria-checked"),
+            )
+            .toBe("false");
+        expect(experiments.get().voice).toBe(false);
+        expect(voice.get().gptLiveEnabled).toBe(false);
         expect(document.querySelector(".happy-gpt-live__bar")).toBeNull();
-        expect(document.querySelector('[aria-label="Enable GPT-Live voice"]')).toBeNull();
     } finally {
         view.destroy();
         voice[Symbol.dispose]();

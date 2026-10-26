@@ -58,6 +58,7 @@ import {
     AppHappyAgentSettingsView,
     HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY,
     happyAgentSettingsCategoryExists,
+    HAPPY_AGENT_SETTINGS_MOVED_CATEGORIES,
     type AppHappyAgentDaemonStore,
     type AppHappyAgentDebugStore,
     type AppHappyAgentProfilerStore,
@@ -513,6 +514,9 @@ const settingsSectionRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/settings/$section",
     beforeLoad: ({ params }) => {
+        const moved = HAPPY_AGENT_SETTINGS_MOVED_CATEGORIES[params.section];
+        if (moved !== undefined)
+            throw redirect({ params: { section: moved }, replace: true, to: "/settings/$section" });
         if (!happyAgentSettingsCategoryExists(params.section))
             throw redirect({
                 params: { section: HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY },

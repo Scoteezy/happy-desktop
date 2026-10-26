@@ -1,9 +1,14 @@
-import type { HappyAgentCompletionSound } from "happy-desktop-state";
+import type {
+    HappyAgentCompletionSound,
+    HappyAgentMenusSnapshot,
+    HappyAgentPermissionMode,
+} from "happy-desktop-state";
 import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { Button } from "../../Button";
 import { ComposerModelControl, type ComposerModelControlProps } from "../../ComposerModelControl";
 import { FormRow } from "../../FormRow";
+import { HappyAgentSessionControls } from "../../HappyAgentSessionControls";
 import { SegmentedControl } from "../../SegmentedControl";
 import { Select, type SelectOption } from "../../Select";
 import { Spinner } from "../../Spinner";
@@ -29,8 +34,11 @@ export type HappyAgentGeneralSettingsProps = {
      * last picked in a conversation's model menu. Absent once the catalog failed.
      */
     defaultModel?: ComposerModelControlProps;
-    permissionMode: string;
-    permissionModeOptions: readonly SelectOption[];
+    /**
+     * The default model's menus, whose access list the composer's own access
+     * picker shows; absent until the catalog is read.
+     */
+    defaultAccessMenus?: HappyAgentMenusSnapshot;
     /** Set while the catalog is still being read, so the pickers say so. */
     loading?: boolean;
     error?: string;
@@ -94,7 +102,7 @@ export type HappyAgentGeneralSettingsProps = {
     onScrollbarVisibilityChange: (visibility: HappyAgentScrollbarVisibilityChoice) => void;
     onLinkOpenPlacementChange: (placement: HappyAgentLinkOpenPlacementChoice) => void;
     onTitleShimmerChange: (enabled: boolean) => void;
-    onPermissionModeChange: (mode: string) => void;
+    onPermissionModeChange: (mode: HappyAgentPermissionMode) => void;
     onAgentCheck?: () => void;
     onAgentUpgrade?: () => void;
     onAgentVersionSelect?: (version: string) => void;
@@ -337,165 +345,145 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                 />
                 <FormRow
                     control={
-                        <Box width={280}>
-                            <Select
-                                aria-label="Default access mode"
-                                disabled={props.unavailable !== undefined}
-                                fullWidth
-                                id="happy-agent-settings-permission-mode"
-                                onValueChange={props.onPermissionModeChange}
-                                options={[...props.permissionModeOptions]}
-                                size="small"
-                                value={props.permissionMode}
-                            />
-                        </Box>
+                        <HappyAgentSessionControls
+                            data-testid="happy-agent-settings-default-access"
+                            disabled={
+                                props.defaultAccessMenus === undefined ||
+                                props.unavailable !== undefined
+                            }
+                            fields={["permission"]}
+                            menus={props.defaultAccessMenus}
+                            onEffortChange={() => undefined}
+                            onModelChange={() => undefined}
+                            onPermissionModeChange={props.onPermissionModeChange}
+                            onServiceTierChange={() => undefined}
+                            variant="ghost"
+                        />
                     }
                     description="What a new session may do without asking"
-                    htmlFor="happy-agent-settings-permission-mode"
                     label="Default access mode"
                 />
             </HappyAgentSettingsSection>
-            {props.onPreviewUpdatesChange ? (
-                <HappyAgentSettingsSection title="Updates">
-                    <FormRow
-                        control={
-                            <Switch
-                                aria-label="Preview updates"
-                                checked={props.previewUpdatesEnabled === true}
-                                id="happy-agent-settings-preview-updates"
-                                onChange={props.onPreviewUpdatesChange}
-                                size="small"
-                            />
-                        }
-                        description="Offer preview Desktop and Happy Agent releases. Turning this off never downgrades."
-                        htmlFor="happy-agent-settings-preview-updates"
-                        label="Preview updates"
-                    />
-                </HappyAgentSettingsSection>
-            ) : null}
-            {props.agent ? (
-                <HappyAgentSettingsSection
-                    description="Runs your sessions on this computer. Updates download on their own; you choose when to install, since that restarts it."
-                    title="Happy Agent"
-                >
-                    <FormRow
-                        control={
-                            <Box className="happy-agent-settings__agent-control">
-                                <span className="happy-agent-settings__agent-version">
-                                    {!props.agent.managed
-                                        ? "External"
-                                        : props.agent.installedVersion
-                                          ? `v${props.agent.installedVersion}`
-                                          : "Not installed"}
-                                </span>
-                                {/* Downloading says so right here and nowhere else.
-                                    It interrupts nobody, so it gets a line in the
-                                    row it belongs to rather than the window. */}
-                                {props.agent.managed &&
-                                (props.agent.operation === "checking" ||
-                                    props.agent.operation === "downloading") ? (
-                                    <Box className="happy-agent-settings__pending">
-                                        <Spinner size={16} />
-                                        <span>
-                                            {props.agent.operation === "checking"
-                                                ? "Checking…"
-                                                : "Downloading…"}
-                                        </span>
-                                    </Box>
-                                ) : null}
-                                {props.agent.managed &&
-                                props.agent.updateAvailable &&
-                                props.onAgentUpgrade ? (
-                                    <Button
-                                        loading={props.agent.operation === "upgrading"}
-                                        onClick={props.onAgentUpgrade}
-                                        size="small"
-                                        variant="secondary"
-                                    >
-                                        {/* "Install" once the bytes are already here,
-                                            which is the ordinary case: the fetch
-                                            happened on its own, and what is left to
-                                            agree to is the interruption. */}
-                                        {props.agent.readyVersion
-                                            ? `Install v${props.agent.readyVersion}`
-                                            : props.agent.availableVersion
-                                              ? `Update to ${props.agent.availableVersion}`
-                                              : "Update"}
-                                    </Button>
-                                ) : null}
-                                {props.agent.managed && props.onAgentCheck ? (
-                                    <Button
-                                        disabled={props.agent.operation !== "idle"}
-                                        onClick={props.onAgentCheck}
-                                        size="small"
-                                        variant={
-                                            props.agent.updateAvailable ? "ghost" : "secondary"
-                                        }
-                                    >
-                                        Check for updates
-                                    </Button>
-                                ) : null}
-                            </Box>
-                        }
-                        description={agentDescription(props.agent)}
-                        label="Installed version"
-                    />
-                    {props.agent.managed && props.onAgentVersionSelect ? (
+            {props.agent || props.onPreviewUpdatesChange ? (
+                <HappyAgentSettingsSection title="Happy Agent">
+                    {props.agent ? (
                         <FormRow
                             control={
-                                <Box width={280}>
-                                    <Select
-                                        aria-label="Happy Agent version"
-                                        disabled={
-                                            props.agent.operation !== "idle" ||
-                                            props.agent.versions.length === 0
-                                        }
-                                        fullWidth
-                                        id="happy-agent-settings-agent-version"
-                                        onValueChange={props.onAgentVersionSelect}
-                                        options={agentVersionOptions(
-                                            props.agent.versions,
-                                            props.agent.availableVersion,
-                                        )}
-                                        placeholder={
-                                            props.agent.versions.length === 0
-                                                ? "No versions read yet"
-                                                : "Choose a version"
-                                        }
-                                        size="small"
-                                        value={props.agent.installedVersion}
-                                    />
+                                <Box className="happy-agent-settings__agent-control">
+                                    {/* Downloading says so right here and nowhere else.
+                                        It interrupts nobody, so it gets a line in the
+                                        row it belongs to rather than the window. */}
+                                    {props.agent.managed &&
+                                    (props.agent.operation === "checking" ||
+                                        props.agent.operation === "downloading") ? (
+                                        <Box className="happy-agent-settings__pending">
+                                            <Spinner size={16} />
+                                            <span>
+                                                {props.agent.operation === "checking"
+                                                    ? "Checking…"
+                                                    : "Downloading…"}
+                                            </span>
+                                        </Box>
+                                    ) : null}
+                                    {props.agent.managed && props.onAgentVersionSelect ? (
+                                        <Box width={220}>
+                                            <Select
+                                                aria-label="Happy Agent version"
+                                                disabled={
+                                                    props.agent.operation !== "idle" ||
+                                                    props.agent.versions.length === 0
+                                                }
+                                                fullWidth
+                                                id="happy-agent-settings-agent-version"
+                                                onValueChange={props.onAgentVersionSelect}
+                                                options={agentVersionOptions(
+                                                    props.agent.versions,
+                                                    props.agent.availableVersion,
+                                                )}
+                                                placeholder={
+                                                    props.agent.versions.length === 0
+                                                        ? "No versions read yet"
+                                                        : "Choose a version"
+                                                }
+                                                size="small"
+                                                value={props.agent.installedVersion}
+                                            />
+                                        </Box>
+                                    ) : (
+                                        <span className="happy-agent-settings__agent-version">
+                                            {!props.agent.managed
+                                                ? "External"
+                                                : props.agent.installedVersion
+                                                  ? `v${props.agent.installedVersion}`
+                                                  : "Not installed"}
+                                        </span>
+                                    )}
+                                    {props.agent.managed &&
+                                    props.agent.updateAvailable &&
+                                    props.onAgentUpgrade ? (
+                                        <Button
+                                            loading={props.agent.operation === "upgrading"}
+                                            onClick={props.onAgentUpgrade}
+                                            size="small"
+                                            variant="secondary"
+                                        >
+                                            {/* "Install" once the bytes are already here,
+                                                which is the ordinary case: the fetch
+                                                happened on its own, and what is left to
+                                                agree to is the interruption. */}
+                                            {props.agent.readyVersion
+                                                ? `Install v${props.agent.readyVersion}`
+                                                : props.agent.availableVersion
+                                                  ? `Update to ${props.agent.availableVersion}`
+                                                  : "Update"}
+                                        </Button>
+                                    ) : null}
+                                    {props.agent.managed && props.onAgentCheck ? (
+                                        <Button
+                                            disabled={props.agent.operation !== "idle"}
+                                            onClick={props.onAgentCheck}
+                                            size="small"
+                                            variant="ghost"
+                                        >
+                                            Check for updates
+                                        </Button>
+                                    ) : null}
+                                    {props.agent.managed && props.onAgentRestart ? (
+                                        <Button
+                                            disabled={props.agent.operation !== "idle"}
+                                            onClick={props.onAgentRestart}
+                                            size="small"
+                                            variant="secondary"
+                                        >
+                                            Restart
+                                        </Button>
+                                    ) : null}
                                 </Box>
                             }
-                            description="Switch to any release, newer or older. It restarts once its work finishes."
-                            htmlFor="happy-agent-settings-agent-version"
+                            description={`${agentRuntimeLabel(
+                                props.agent.runtime,
+                                props.agent.runningVersion,
+                            )}. ${agentDescription(props.agent)} Switching or restarting lets running work finish first.`}
                             label="Version"
+                            layout="stacked"
                         />
                     ) : null}
-                    <FormRow
-                        control={
-                            <Box className="happy-agent-settings__agent-control">
-                                <span className="happy-agent-settings__agent-runtime">
-                                    {agentRuntimeLabel(
-                                        props.agent.runtime,
-                                        props.agent.runningVersion,
-                                    )}
-                                </span>
-                                {props.agent.managed && props.onAgentRestart ? (
-                                    <Button
-                                        disabled={props.agent.operation !== "idle"}
-                                        onClick={props.onAgentRestart}
-                                        size="small"
-                                        variant="secondary"
-                                    >
-                                        Restart
-                                    </Button>
-                                ) : null}
-                            </Box>
-                        }
-                        description="Restarting lets running work finish first"
-                        label="Daemon"
-                    />
+                    {props.onPreviewUpdatesChange ? (
+                        <FormRow
+                            control={
+                                <Switch
+                                    aria-label="Preview updates"
+                                    checked={props.previewUpdatesEnabled === true}
+                                    id="happy-agent-settings-preview-updates"
+                                    onChange={props.onPreviewUpdatesChange}
+                                    size="small"
+                                />
+                            }
+                            description="Offer preview Desktop and Happy Agent releases. Turning this off never downgrades."
+                            htmlFor="happy-agent-settings-preview-updates"
+                            label="Preview updates"
+                        />
+                    ) : null}
                 </HappyAgentSettingsSection>
             ) : null}
             {props.usageAnalyticsEnabled !== undefined && props.onUsageAnalyticsChange ? (

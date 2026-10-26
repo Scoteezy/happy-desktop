@@ -4,7 +4,6 @@ import { Box } from "../../Box";
 import { FormRow } from "../../FormRow";
 import { Spinner } from "../../Spinner";
 import { Switch } from "../../Switch";
-import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
 export interface HappyAgentAutoJoinSettingsProps {
     readonly connectionLabel: string;
@@ -30,12 +29,9 @@ export function HappyAgentAutoJoinSettings(
     // What the banners call the preference; the Surface one is autojoin.
     const Noun = props.entity === "task" ? "Task" : "Autojoin";
     return (
-        <HappyAgentSettingsSection title={props.connectionLabel}>
-            {props.unavailable ? (
-                <Banner tone="neutral" title="Connection unavailable">
-                    {props.unavailable}
-                </Banner>
-            ) : null}
+        // Rows only: HappyAgentConnectionSettingsSection names the connection
+        // and says once when it is unreachable; `unavailable` only disables here.
+        <>
             {props.error ? (
                 <Banner tone="danger" title={`${Noun} settings unavailable`}>
                     {props.error}
@@ -86,6 +82,6 @@ export function HappyAgentAutoJoinSettings(
                 htmlFor={id}
                 label={props.label}
             />
-        </HappyAgentSettingsSection>
+        </>
     );
 }

@@ -884,6 +884,10 @@ export {
     type HappyAgentTaskSettingsProps,
 } from "./pages/settings/HappyAgentTaskSettings";
 export {
+    HappyAgentConnectionSettingsSection,
+    type HappyAgentConnectionSettingsSectionProps,
+} from "./pages/settings/HappyAgentConnectionSettingsSection";
+export {
     HappyAgentSurfaceSettings,
     type HappyAgentSurfaceSettingsProps,
 } from "./pages/settings/HappyAgentSurfaceSettings";

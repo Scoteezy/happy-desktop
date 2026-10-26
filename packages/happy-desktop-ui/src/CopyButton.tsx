@@ -15,8 +15,12 @@ export interface CopyButtonProps {
     /** Said instead of the caption for the moment after a copy lands. */
     readonly copiedCaption?: string;
     readonly style?: CSSProperties;
-    /** Exact text handed to the clipboard, read lazily when deriving it is expensive. */
-    readonly text: string | (() => string);
+    /**
+     * Exact text handed to the clipboard, read lazily when deriving it is
+     * expensive, or awaited when it has to be produced first, such as the path
+     * of a file written on the click.
+     */
+    readonly text: string | (() => string | Promise<string>);
     /** Told once the clipboard has taken the text; never told what the text was. */
     readonly onCopy?: () => void;
 }
@@ -37,7 +41,7 @@ export function CopyButton(props: CopyButtonProps) {
     const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const copy = async () => {
         try {
-            const text = typeof props.text === "function" ? props.text() : props.text;
+            const text = typeof props.text === "function" ? await props.text() : props.text;
             await navigator.clipboard.writeText(text);
             setCopied(true);
             props.onCopy?.();

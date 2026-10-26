@@ -448,54 +448,10 @@
     margin: 0;
 }
 
-.happy-agent-profile__identity {
-    display: flex;
-    align-items: center;
-    min-width: 0;
-    gap: 12px;
-    padding-bottom: 16px;
-}
-
 /* Trailing, and never squeezed: the naming column absorbs a narrow window. */
 .happy-agent-profile__keys.happy-button {
     flex: none;
     margin-left: auto;
-}
-
-/* The name and the handle are one identity on one line: the handle sits beside
-   the name rather than under it, and gives way first when the line is short. */
-.happy-agent-profile__line {
-    display: flex;
-    align-items: baseline;
-    min-width: 0;
-    gap: 8px;
-}
-
-.happy-agent-profile__naming {
-    display: flex;
-    flex: 1 1 0%;
-    flex-direction: column;
-    min-width: 0;
-    gap: 2px;
-}
-
-.happy-agent-profile__name {
-    overflow: hidden;
-    color: var(--text);
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 20px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.happy-agent-profile__status {
-    overflow: hidden;
-    color: var(--text-secondary);
-    font-size: 12px;
-    line-height: 16px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 /* Wide enough for an email address, which is the longest thing either field

@@ -3,6 +3,7 @@ import {
     HappyAgentTaskSettings,
     type HappyAgentTaskSettingsProps,
 } from "../../src/pages/settings/HappyAgentTaskSettings";
+import { HappyAgentConnectionSettingsSection } from "../../src/pages/settings/HappyAgentConnectionSettingsSection";
 import { HappyAgentSettingsShell } from "../../src/pages/settings/HappyAgentSettingsShell";
 import { ComponentPage, FullScreenSpecimen, Specimen } from "../kit";
 
@@ -122,7 +123,11 @@ export function HappyAgentTaskSettingsPage() {
                     stage="surface"
                 >
                     <div style={{ display: "flex", flexDirection: "column", width: 640 }}>
-                        <HappyAgentTaskSettings {...props} />
+                        <HappyAgentConnectionSettingsSection
+                            connectionLabel={props.connectionLabel}
+                        >
+                            <HappyAgentTaskSettings {...props} />
+                        </HappyAgentConnectionSettingsSection>
                     </div>
                 </Specimen>
             ))}

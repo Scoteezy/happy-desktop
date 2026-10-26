@@ -334,7 +334,12 @@ export function settingsMenus(
     return {
         modelOptions,
         effortOptions: [],
-        permissionModeOptions: [],
+        permissionModeOptions: [
+            { mode: "auto", label: "Auto", current: true },
+            { mode: "workspace_write", label: "Workspace write", current: false },
+            { mode: "read_only", label: "Read only", current: false },
+            { mode: "full_access", label: "Full access", current: false },
+        ],
         serviceTierOptions: [],
         currentProviderId: providerId,
         currentModelId: modelId,

@@ -3,6 +3,7 @@ import {
     GptLiveSettings,
     GptLiveVoiceSettings,
     HappyAgentAccountSettings,
+    HappyAgentConnectionSettingsSection,
     HappyAgentDebugLogPanel,
     HappyAgentDebugSettings,
     HappyAgentExperimentalSettings,
@@ -30,6 +31,7 @@ import {
     providers,
     secrets,
     settingsDefaultModel,
+    settingsMenus,
     usageAccounts,
     voiceController,
 } from "./happyAgentSettingsFixtures";
@@ -42,8 +44,7 @@ export const componentNumber = "P-012f";
 /** Every category the settings window lists, in the app's order. */
 const categories: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
-    { icon: "check-circle", id: "tasks", label: "Tasks" },
-    { icon: "files", id: "surfaces", label: "Shared" },
+    { icon: "files", id: "sharing", label: "Sharing" },
     { icon: "users", id: "account", label: "Account" },
     { icon: "file-diff", id: "file-tiers", label: "File tiers" },
     { icon: "doc", id: "instructions", label: "Instructions" },
@@ -62,8 +63,7 @@ const descriptions: Record<string, string> = {
     voice: "Voice calls, controller and prompt",
     debug: "Live state, debuggers and renderer profiles",
     general: "Appearance, behavior and new-session defaults",
-    tasks: "Joining other people’s tasks",
-    surfaces: "Joining shared docs, lists and calendars",
+    sharing: "Joining other people’s tasks, docs, lists and calendars",
     "mobile-access": "Use Happy on your phone with this computer",
     account: "Your name, photo and Happy account",
     "file-tiers": "Which changed files are listed apart",
@@ -74,6 +74,8 @@ const descriptions: Record<string, string> = {
 };
 
 const noop = () => undefined;
+const diagnosticsPath = () =>
+    Promise.resolve("~/Library/Application Support/Happy/desktop/diagnostics/raw-state.txt");
 const WINDOW = { width: 1100, height: 760 } as const;
 
 /** One settings category in the settings window, at the review window size. */
@@ -121,6 +123,7 @@ function General(props: { pickerOpen?: boolean }) {
                 ],
             }}
             appearance="system"
+            defaultAccessMenus={settingsMenus("claude", "anthropic/opus-5-5")}
             {...settingsDefaultModel(props.pickerOpen === true)}
             onAppearanceChange={noop}
             statusBar={{
@@ -147,13 +150,6 @@ function General(props: { pickerOpen?: boolean }) {
             linkOpenPlacement="panel"
             onTitleShimmerChange={noop}
             onProjectsHiddenChange={noop}
-            permissionMode="auto"
-            permissionModeOptions={[
-                { label: "Auto", value: "auto" },
-                { label: "Workspace write", value: "workspace_write" },
-                { label: "Read only", value: "read_only" },
-                { label: "Full access", value: "full_access" },
-            ]}
             projectsHidden={false}
             scrollbarVisibility="automatic"
             titleShimmerEnabled
@@ -176,29 +172,37 @@ export function HappyAgentSettingsFlowPage() {
             <Screen id="general" number="02" screen="02-general-model-picker">
                 <General pickerOpen />
             </Screen>
-            <Screen id="tasks" number="03" screen="03-tasks">
-                <HappyAgentTaskSettings
-                    autoJoinEnabled
-                    connectionLabel="This Mac"
-                    onAutoJoinChange={noop}
-                    status="ready"
-                />
-                <HappyAgentTaskSettings
-                    autoJoinEnabled={false}
-                    connectionLabel="Design team"
-                    onAutoJoinChange={noop}
-                    status="ready"
-                />
+            <Screen id="sharing" number="03" screen="03-sharing">
+                <HappyAgentConnectionSettingsSection connectionLabel="This Mac">
+                    <HappyAgentTaskSettings
+                        autoJoinEnabled
+                        connectionLabel="This Mac"
+                        onAutoJoinChange={noop}
+                        status="ready"
+                    />
+                    <HappyAgentSurfaceSettings
+                        autoJoinEnabled
+                        connectionLabel="This Mac"
+                        onAutoJoinChange={noop}
+                        status="ready"
+                    />
+                </HappyAgentConnectionSettingsSection>
+                <HappyAgentConnectionSettingsSection connectionLabel="Design team">
+                    <HappyAgentTaskSettings
+                        autoJoinEnabled={false}
+                        connectionLabel="Design team"
+                        onAutoJoinChange={noop}
+                        status="ready"
+                    />
+                    <HappyAgentSurfaceSettings
+                        autoJoinEnabled={false}
+                        connectionLabel="Design team"
+                        onAutoJoinChange={noop}
+                        status="ready"
+                    />
+                </HappyAgentConnectionSettingsSection>
             </Screen>
-            <Screen id="surfaces" number="04" screen="04-shared">
-                <HappyAgentSurfaceSettings
-                    autoJoinEnabled
-                    connectionLabel="This Mac"
-                    onAutoJoinChange={noop}
-                    status="ready"
-                />
-            </Screen>
-            <Screen id="account" number="05" screen="05-account">
+            <Screen id="account" number="04" screen="04-account">
                 <HappyAgentProfileSettings
                     email="steve@korshakov.com"
                     name="Steve Korshakov"
@@ -218,7 +222,7 @@ export function HappyAgentSettingsFlowPage() {
                     status="connected"
                 />
             </Screen>
-            <Screen id="file-tiers" number="06" screen="06-file-tiers">
+            <Screen id="file-tiers" number="05" screen="05-file-tiers">
                 <HappyAgentFileTierSettings
                     onTierAdd={noop}
                     onTierMove={noop}
@@ -228,7 +232,7 @@ export function HappyAgentSettingsFlowPage() {
                     tiers={fileTierRows}
                 />
             </Screen>
-            <Screen id="instructions" number="07" screen="07-instructions">
+            <Screen id="instructions" number="06" screen="06-instructions">
                 <HappyAgentInstructionsSettings
                     documents={[
                         {
@@ -262,26 +266,26 @@ export function HappyAgentSettingsFlowPage() {
                     ]}
                 />
             </Screen>
-            <Screen id="secrets" number="08" screen="08-secrets">
+            <Screen id="secrets" number="07" screen="07-secrets">
                 <HappyAgentSecretSettings
                     onSecretCreate={() => Promise.resolve()}
                     secrets={secrets}
                 />
             </Screen>
-            <Screen id="providers" number="09" screen="09-providers">
+            <Screen id="providers" number="08" screen="08-providers">
                 <HappyAgentProviderSettings
                     onModelEnabledChange={noop}
                     onProviderEnabledChange={noop}
                     providers={providers}
                 />
             </Screen>
-            <Screen id="usage" number="10" screen="10-usage">
+            <Screen id="usage" number="09" screen="09-usage">
                 <HappyAgentUsageSettings
                     providers={usageAccounts}
                     currentTime={1_700_000_000_000}
                 />
             </Screen>
-            <Screen id="voice" number="11" screen="11-voice">
+            <Screen id="voice" number="10" screen="10-voice">
                 <GptLiveSettings
                     accountId="subscription"
                     accounts={[
@@ -314,7 +318,7 @@ export function HappyAgentSettingsFlowPage() {
                     promptEditing={false}
                 />
             </Screen>
-            <Screen id="mobile-access" number="12" screen="12-mobile-access">
+            <Screen id="mobile-access" number="11" screen="11-mobile-access">
                 <HappyAgentMobileSettings
                     configured
                     direct={directSectionSpecimen(direct.paired)}
@@ -323,7 +327,7 @@ export function HappyAgentSettingsFlowPage() {
                     status="connected"
                 />
             </Screen>
-            <Screen id="mobile-access" number="13" screen="13-mobile-access-unlinked">
+            <Screen id="mobile-access" number="12" screen="12-mobile-access-unlinked">
                 <HappyAgentMobileSettings
                     configured={false}
                     direct={directSectionSpecimen(direct.closed)}
@@ -332,12 +336,11 @@ export function HappyAgentSettingsFlowPage() {
                     status="disconnected"
                 />
             </Screen>
-            <Screen id="experimental" number="14" screen="14-experimental">
+            <Screen id="experimental" number="13" screen="13-experimental">
                 <HappyAgentExperimentalSettings
                     features={[
                         { id: "batchNotes", label: "Sidebar batch notes", enabled: false },
                         { id: "inbox", label: "Inbox", enabled: true },
-                        { id: "voice", label: "Voice calls", enabled: false },
                         {
                             id: "stemCellAnimation",
                             label: "Animate new work’s icon",
@@ -346,21 +349,24 @@ export function HappyAgentSettingsFlowPage() {
                     ]}
                     onFeatureChange={noop}
                 />
-                <HappyAgentStemCellsSettings
-                    connectionLabel="This Mac"
-                    enabled
-                    onEnabledChange={noop}
-                    status="ready"
-                />
-                <HappyAgentStoriesSettings
-                    connectionLabel="This Mac"
-                    enabled={false}
-                    onEnabledChange={noop}
-                    status="ready"
-                />
+                <HappyAgentConnectionSettingsSection connectionLabel="This Mac">
+                    <HappyAgentStemCellsSettings
+                        connectionLabel="This Mac"
+                        enabled
+                        onEnabledChange={noop}
+                        status="ready"
+                    />
+                    <HappyAgentStoriesSettings
+                        connectionLabel="This Mac"
+                        enabled={false}
+                        onEnabledChange={noop}
+                        status="ready"
+                    />
+                </HappyAgentConnectionSettingsSection>
             </Screen>
-            <Screen id="debug" number="15" screen="15-dev-tools">
+            <Screen id="debug" number="14" screen="14-dev-tools">
                 <HappyAgentStateSettings
+                    onPathWrite={diagnosticsPath}
                     documents={[
                         {
                             description: "The model catalog and what a new session starts on",
@@ -377,6 +383,7 @@ export function HappyAgentSettingsFlowPage() {
                     ]}
                 />
                 <HappyAgentDebugLogPanel
+                    onPathWrite={diagnosticsPath}
                     discardedEntries={0}
                     entries={[
                         {

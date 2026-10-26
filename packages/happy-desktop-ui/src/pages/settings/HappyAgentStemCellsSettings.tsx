@@ -4,7 +4,6 @@ import { Box } from "../../Box";
 import { FormRow } from "../../FormRow";
 import { Spinner } from "../../Spinner";
 import { Switch } from "../../Switch";
-import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
 export interface HappyAgentStemCellsSettingsProps {
     readonly connectionLabel: string;
@@ -24,12 +23,9 @@ export interface HappyAgentStemCellsSettingsProps {
 export function HappyAgentStemCellsSettings(props: HappyAgentStemCellsSettingsProps) {
     const id = useId();
     return (
-        <HappyAgentSettingsSection title={props.connectionLabel}>
-            {props.unavailable ? (
-                <Banner tone="neutral" title="Connection unavailable">
-                    {props.unavailable}
-                </Banner>
-            ) : null}
+        // Rows only: HappyAgentConnectionSettingsSection names the connection
+        // and says once when it is unreachable; `unavailable` only disables here.
+        <>
             {props.error ? (
                 <Banner tone="danger" title="Stem Cells settings unavailable">
                     {props.error}
@@ -75,6 +71,6 @@ export function HappyAgentStemCellsSettings(props: HappyAgentStemCellsSettingsPr
                     </Box>
                 }
             />
-        </HappyAgentSettingsSection>
+        </>
     );
 }

@@ -278,6 +278,14 @@ const SETTINGS_JUMPS: readonly {
         keywords: "appearance theme scrollbars new sessions",
     },
     {
+        id: "settings:sharing",
+        title: "Settings › Sharing",
+        section: "sharing",
+        sectionLabel: "Sharing",
+        icon: "files",
+        keywords: "join tasks shared docs todo lists calendars autojoin",
+    },
+    {
         id: "settings:account",
         title: "Settings › Account",
         section: "account",
@@ -363,15 +371,8 @@ const SETTINGS_JUMPS: readonly {
         section: "general",
         sectionLabel: "General",
         icon: "settings",
-        keywords: "chosen from the models the enabled providers offer new sessions",
-    },
-    {
-        id: "settings:effort",
-        title: "Reasoning effort",
-        section: "general",
-        sectionLabel: "General",
-        icon: "settings",
-        keywords: "how much the model is asked to think before it answers thinking",
+        keywords:
+            "chosen from the models the enabled providers offer new sessions reasoning effort thinking",
     },
     {
         id: "settings:permission-mode",

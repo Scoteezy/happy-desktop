@@ -26,7 +26,7 @@ import {
     type HappyAgentUsageProviderRow,
 } from "../../src";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
-import { settingsDefaultModel } from "./happyAgentSettingsFixtures";
+import { settingsDefaultModel, settingsMenus } from "./happyAgentSettingsFixtures";
 import { direct, relayWaiting } from "./mobilePairingFixtures";
 import {
     directSectionSpecimen,
@@ -330,13 +330,6 @@ Ask before touching anything outside the working directory.
 - \`pnpm typecheck\` before you say a thing is done.
 - Never force-push \`main\`.
 `;
-
-const permissionModeOptions = [
-    { label: "Auto", value: "auto" },
-    { label: "Workspace write", value: "workspace_write" },
-    { label: "Read only", value: "read_only" },
-    { label: "Full access", value: "full_access" },
-];
 
 const providers: readonly HappyAgentProviderRow[] = [
     {
@@ -662,8 +655,7 @@ export function HappyAgentSettingsBlueprintPage() {
                         linkOpenPlacement="panel"
                         onTitleShimmerChange={noop}
                         onProjectsHiddenChange={noop}
-                        permissionMode="auto"
-                        permissionModeOptions={permissionModeOptions}
+                        defaultAccessMenus={settingsMenus("claude", "anthropic/opus-5-5")}
                         projectsHidden
                         scrollbarVisibility="automatic"
                         titleShimmerEnabled={false}
@@ -690,7 +682,6 @@ export function HappyAgentSettingsBlueprintPage() {
                         features={[
                             { id: "batchNotes", label: "Sidebar batch notes", enabled: false },
                             { id: "inbox", label: "Inbox", enabled: false },
-                            { id: "voice", label: "Voice calls", enabled: false },
                         ]}
                         onFeatureChange={noop}
                     />
@@ -1231,8 +1222,7 @@ export function HappyAgentSettingsBlueprintPage() {
                         onLinkOpenPlacementChange={noop}
                         linkOpenPlacement="panel"
                         onTitleShimmerChange={noop}
-                        permissionMode="auto"
-                        permissionModeOptions={permissionModeOptions}
+                        defaultAccessMenus={settingsMenus("claude", "anthropic/opus-5-5")}
                         scrollbarVisibility="automatic"
                         titleShimmerEnabled={false}
                         unavailable="Happy Agent is offline. Showing the last synced defaults."

@@ -14,6 +14,11 @@ export interface HappyAgentStateDocument {
 
 export interface HappyAgentStateSettingsProps {
     readonly documents: readonly HappyAgentStateDocument[];
+    /**
+     * Saves the snapshots to a file and resolves with its path, which the button
+     * copies instead of the text. Absent where the host cannot save a file.
+     */
+    readonly onPathWrite?: (text: string) => Promise<string>;
 }
 
 /**
@@ -28,15 +33,22 @@ export function HappyAgentStateSettings(props: HappyAgentStateSettingsProps) {
             <FormRow
                 control={
                     <CopyButton
-                        caption="Copy"
+                        caption={props.onPathWrite ? "Copy path" : "Copy"}
                         copiedCaption="Copied"
                         data-happy-desktop-ui="happy-agent-raw-state-copy"
-                        label="Copy raw state"
-                        text={() => stateText(props.documents)}
+                        label={props.onPathWrite ? "Copy raw state file path" : "Copy raw state"}
+                        text={() => {
+                            const text = stateText(props.documents);
+                            return props.onPathWrite ? props.onPathWrite(text) : text;
+                        }}
                     />
                 }
-                description={`${String(props.documents.length)} store snapshots, held in this window's memory`}
-                label="Copy every snapshot"
+                description={
+                    props.onPathWrite
+                        ? `${String(props.documents.length)} store snapshots, saved to a new file on each copy`
+                        : `${String(props.documents.length)} store snapshots, held in this window's memory`
+                }
+                label="Every snapshot"
             />
         </HappyAgentSettingsSection>
     );

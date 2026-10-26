@@ -17,6 +17,11 @@ export interface HappyAgentDebugLogPanelProps {
     readonly "data-testid"?: string;
     readonly discardedEntries: number;
     readonly entries: readonly HappyAgentDebugLogPanelEntry[];
+    /**
+     * Saves the log to a file and resolves with its path, which the button copies
+     * instead of the text. Absent where the host cannot save a file.
+     */
+    readonly onPathWrite?: (text: string) => Promise<string>;
     readonly style?: CSSProperties;
 }
 
@@ -57,15 +62,21 @@ export function HappyAgentDebugLogPanel(props: HappyAgentDebugLogPanelProps) {
                 <FormRow
                     control={
                         <CopyButton
-                            caption="Copy"
+                            caption={props.onPathWrite ? "Copy path" : "Copy"}
                             copiedCaption="Copied"
                             data-happy-desktop-ui="happy-agent-debug-log-copy"
-                            label="Copy debug log"
-                            text={() => logText(props)}
+                            label={
+                                props.onPathWrite ? "Copy debug log file path" : "Copy debug log"
+                            }
+                            text={() =>
+                                props.onPathWrite
+                                    ? props.onPathWrite(logText(props))
+                                    : logText(props)
+                            }
                         />
                     }
                     description={`${count.toLocaleString("en-US")} ${count === 1 ? "entry" : "entries"} retained: connection changes, reconciliation, raw events and failed mutations`}
-                    label="Copy the log"
+                    label="The log"
                 />
             </div>
         </HappyAgentSettingsSection>
