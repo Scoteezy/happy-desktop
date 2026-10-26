@@ -413,8 +413,14 @@ const NOTICE_INSET = 50;
 const ERROR_TEXT_INSET = 22;
 /** Error card: 6px vertical padding per side, plus 4px between heading and reason. */
 const ERROR_TEXT_CHROME = 16;
-/** Failure card: 6px vertical padding and a 1px warning border per side. */
-const FAILURE_CHROME = 14;
+/**
+ * The shared `--happy-chat-frame-outset`: a frame in a transcript stands out
+ * from the text column by this much on either side, and what it holds sits
+ * this far inside it.
+ */
+const CHAT_FRAME_OUTSET = 12;
+/** Failure card: the row's 6px above and below, then the frame's inset (its border included). */
+const FAILURE_CHROME = 2 * 6 + 2 * CHAT_FRAME_OUTSET;
 /** Failure card: between the message line and the button row, and below that row. */
 const FAILURE_SECTION_GAP = 12;
 /** Failure card: between the message line and the record of what was done. */
@@ -970,7 +976,11 @@ function permissionRequestHeight(
     expanded: boolean,
     cache?: MessageTextLayoutCache,
 ): number {
-    const measure = Math.min(width, APPROVAL_CARD_MAX_WIDTH) - 32;
+    /* The frame stands out from the text column by the chat frame outset and
+       caps at the card's maximum; its text keeps the outset inside it. */
+    const measure =
+        Math.min(width - AGENT_INSET + 2 * CHAT_FRAME_OUTSET, APPROVAL_CARD_MAX_WIDTH) -
+        2 * CHAT_FRAME_OUTSET;
     return (
         APPROVAL_CARD_FIXED_CHROME +
         (expanded ? APPROVAL_CARD_EXPANDED_DETAILS : 0) +
@@ -1163,14 +1173,16 @@ export function conversationRowHeight(
         if (entry.variant === "divider")
             return rowHeightCached(cache, entry, "notice:divider", () => DIVIDER_HEIGHT);
         /* A notice that opens its turn wears the same identity header a
-           tool-first row does, and therefore the same chrome above it. */
+           tool-first row does, and therefore the same chrome above it, with
+           the same 6px a run of tool rows opens under it. */
         const lead =
             context.surface === "conversation" && conversationAgentRowStartsGroup(entries, index)
-                ? ACTIVITY_LEAD_CHROME
+                ? ACTIVITY_LEAD_CHROME + ACTIVITY_LEAD_RUN_SEPARATION
                 : 0;
         if (entry.failure !== undefined) {
             const failure = entry.failure;
-            const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET;
+            /* Led or not, the card's content keeps the agent's text column. */
+            const measure = width - AGENT_INSET - ERROR_TEXT_INSET;
             const options = context.failure ?? FAILURE_ROW_INERT;
             const layout = conversationFailureCardLayout(failure, {
                 current: options.current,

@@ -59,8 +59,15 @@
    own rather than keeping only the run's 6px. It is a label introducing the run
    beneath it, not prose the run interrupts, so it sits slightly tighter than the
    14px between a run and the sentences around it: 6px here plus the row's own
-   6px. */
-.happy-message--activity-lead:has(.happy-agent-activity-row) .happy-message__meta {
+   6px. A turn that opens on a notice — an error, a failure card's frame, a
+   service line — keeps the same 6px inset as a tool row, so it opens at the
+   same 12px. */
+.happy-message--activity-lead:has(
+        .happy-agent-activity-row,
+        .happy-conversation-error-card,
+        .happy-system-notice[data-align="start"]
+    )
+    .happy-message__meta {
     margin-bottom: 6px;
 }
 
@@ -887,6 +894,40 @@
     font-size: 14px;
     line-height: 20px;
     white-space: pre;
+}
+
+/* ---- Frames in the transcript ---------------------------------------- */
+
+/*
+ * What a frame holds starts on the transcript's text column, like the prose
+ * around it, and the frame itself — its border or its background — stands out
+ * from that column by `--happy-chat-frame-outset` on the left and the right. Its
+ * inset is that same outset less its border. A reply's own frames take it here;
+ * the transcript's cards (`ConversationFailureCard`, `ApprovalCard`) take the
+ * same outset in their stylesheets. A frame nested deeper in the reply, in a
+ * list or a quote, keeps that block's indent.
+ */
+.happy-message[data-agent] .happy-message__body--markdown > .happy-message__code-block,
+.happy-message[data-agent]
+    .happy-message__attachments
+    > .happy-file-attachment[data-variant="chat"] {
+    margin-inline: calc(-1 * var(--happy-chat-frame-outset));
+}
+
+.happy-message[data-agent] .happy-message__body--markdown > .happy-message__code-block {
+    max-width: calc(100% + 2 * var(--happy-chat-frame-outset));
+}
+
+/* The inset lives on the code, not the scrollport, so it survives a scroll. */
+.happy-message[data-agent] .happy-message__body--markdown > .happy-message__code-block pre code {
+    padding-inline: var(--happy-chat-frame-outset);
+}
+
+.happy-message[data-agent]
+    .happy-message__attachments
+    > .happy-file-attachment[data-variant="chat"] {
+    width: min(420px, 100% + 2 * var(--happy-chat-frame-outset));
+    padding-inline: calc(var(--happy-chat-frame-outset) - 1px);
 }
 
 .happy-message__body--markdown blockquote {

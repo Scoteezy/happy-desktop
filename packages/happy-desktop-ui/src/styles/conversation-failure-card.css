@@ -7,28 +7,34 @@
  * `conversationRowHeight.ts`, which models this card without mounting it.
  */
 
-/* The resolution is a sibling of the error row, not nested in its text column:
-   both status icons start at the transcript content edge. */
-.happy-conversation-failure-card {
+/* The card's row keeps a tool row's 6px above and below and prose's trailing
+   edge, so the column inside it is the transcript's text column. */
+.happy-conversation-error-card.happy-conversation-failure-card {
+    padding-right: 64px;
+}
+
+/* Opening its turn, the card sits in the Message that carries the agent's
+   identity line, which already supplies the text column. */
+.happy-message--activity-lead .happy-conversation-error-card.happy-conversation-failure-card {
+    padding-right: 0;
+}
+
+/* The frame stands out from that column by the shared chat frame outset on
+   either side, and its inset is the same distance less the border, so the
+   icons and text inside it keep the transcript content edge. The resolution
+   is a sibling of the error row, not nested in its text column: both status
+   icons start on that edge. */
+.happy-conversation-failure-card__frame {
+    display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: 6px;
+    min-width: 0;
+    margin-inline: calc(-1 * var(--happy-chat-frame-outset));
+    padding: calc(var(--happy-chat-frame-outset) - 1px);
     border: 1px solid var(--box-warning-border);
     border-radius: 12px;
     background: var(--box-warning-background);
-}
-
-/* The frame's border sits in the card's inset, so the icons and text inside it
-   keep the transcript content edge and the measure the row model lays out. */
-.happy-conversation-error-card.happy-conversation-failure-card {
-    padding-right: 95px;
-    padding-left: 29px;
-}
-
-.happy-message--activity-lead .happy-conversation-error-card.happy-conversation-failure-card {
-    width: calc(100% + 2px);
-    margin: 0 -1px;
-    padding-right: 0;
-    padding-left: 0;
 }
 
 .happy-conversation-failure-card__content {

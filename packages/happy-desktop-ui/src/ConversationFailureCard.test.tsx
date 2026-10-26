@@ -142,7 +142,9 @@ it.each(["light", "dark"] as const)(
         const message = card.querySelector<HTMLElement>(
             ".happy-conversation-failure-card__message",
         )!;
-        const style = getComputedStyle(card);
+        const style = getComputedStyle(
+            card.querySelector<HTMLElement>(".happy-conversation-failure-card__frame")!,
+        );
         expect(style.borderTopWidth).toBe("1px");
         expect(style.borderTopStyle).toBe("solid");
         expect(style.borderTopColor).toBe(

@@ -28,6 +28,27 @@
     font-synthesis: none;
 }
 
+/* In a transcript the card holds the agent's text column like every other
+   row: its frame stands out from the column by the shared chat frame outset,
+   and its sections are inset by the same distance less the border, so the
+   chip, title, and buttons start where the prose does. */
+.happy-message-list .happy-desktop-approval-card {
+    width: auto;
+    margin-right: calc(64px - var(--happy-chat-frame-outset));
+    margin-left: calc(30px - var(--happy-chat-frame-outset));
+}
+
+.happy-message-list
+    .happy-desktop-approval-card
+    :is(
+        .happy-desktop-approval-card__banner,
+        .happy-desktop-approval-card__body,
+        .happy-desktop-approval-card__footer
+    ) {
+    padding-right: calc(var(--happy-chat-frame-outset) - 1px);
+    padding-left: calc(var(--happy-chat-frame-outset) - 1px);
+}
+
 .happy-desktop-approval-card[data-resolution="pending"] {
     border-color: var(--box-warning-background);
 }

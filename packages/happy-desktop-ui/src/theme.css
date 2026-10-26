@@ -327,6 +327,12 @@
     --happy-hover-radius: var(--happy-radius-sm);
     --happy-hover-fill: var(--surface-ripple);
     --happy-chat-measure: 880px;
+    /* How far a frame in a transcript — a card's border, a code block's
+       background — stands out from the text column on the left and on the
+       right. What the frame holds stays on the column, so its inset inside the
+       frame is this same distance. The 12px an incoming bubble already hangs out
+       by. Mirrored as `CHAT_FRAME_OUTSET` in `conversationRowHeight.ts`. */
+    --happy-chat-frame-outset: 12px;
     /* The gutter a document read on a surface of its own keeps from that
        surface's edges: a Markdown document, and an artifact's page shown beside
        the chat or on its own, so the two line up wherever they are opened. A
