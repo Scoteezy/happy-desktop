@@ -76,6 +76,12 @@ A good chat with an AI follows a few principles:
   after it. Stopping a turn and accepting its queue preserve each message's
   row identity: the stopped status, dequeue, and next stream never remount a
   visible message or move content down. A parked reader keeps the same row.
+- **A long send stays compact.** A sent message taller than 10 lines shows
+  its first 10, with the fold control and "Show full" to open the rest in
+  place. In the user's words: "when sending a very large message, we should not
+  send it as a huge block. We should allow expanding it ... show the first 10
+  lines ... use the ribbon to expand and then also ... just show full." Opening
+  it follows every other geometry rule: nothing the reader sees moves.
 - **One text column.** Prose, tool rows, questions, and every other card share
   the transcript's left edge, width, and type rhythm. Nothing looks pasted in.
 - **Performance is not traded away.** Scrolling and streaming stay at frame rate
