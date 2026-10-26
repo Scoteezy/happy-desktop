@@ -761,6 +761,8 @@ export interface HappyAgentChatStore {
     imageClose(): void;
     reasoningToggle(): void;
     turnTraceToggle(turnId: string): void;
+    /** Begins a new visit with every completed turn folded, including manually opened turns. */
+    turnTracesFold(): void;
     /**
      * Tells which of the turns left open because the reader watched them
      * finish one view of this chat has on screen. Each such turn folds once no
@@ -1309,6 +1311,8 @@ export function happyAgentChatStoreCreate(
 
     const stop = (): void => {
         active = false;
+        // A turn ending before the next read was not watched to completion.
+        runningGroupIds.clear();
         transcriptConnection?.close();
         transcriptConnection = undefined;
         arrivalSettle(new UserError("The conversation closed before this was sent."));
@@ -1737,6 +1741,20 @@ export function happyAgentChatStoreCreate(
         },
         reasoningToggle() {
             showReasoning = !showReasoning;
+            commit();
+        },
+        turnTracesFold() {
+            // The tail-follow cache does not include older turns loaded later.
+            const finished = new Set(
+                (transcriptElements ?? []).flatMap((element) =>
+                    element.kind === "group_end" ? [element.groupId] : [],
+                ),
+            );
+            const opened = new Set([...openedTurnIds].filter((id) => !finished.has(id)));
+            if (opened.size === openedTurnIds.size && settlingTurnIds.size === 0) return;
+            openedTurnIds = opened;
+            settlingTurnIds = new Set();
+            turnsOpenPublish();
             commit();
         },
         turnTraceToggle(turnId) {

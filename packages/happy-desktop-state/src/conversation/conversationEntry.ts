@@ -981,14 +981,20 @@ export interface ConversationSummaryEntry {
  * Everything a desktop conversation can contain, as one closed union. Every
  * session projects its transcript into these render-ready entries.
  */
-export type ConversationEntry =
+export type ConversationEntry = (
     | ConversationMessageEntry
     | ConversationActivityEntry
     | ConversationNoticeEntry
     | ConversationRequestEntry
     | ConversationDelegationEntry
     | ConversationTurnStatusEntry
-    | ConversationSummaryEntry;
+    | ConversationSummaryEntry
+) & {
+    /** Stable turn identity used to find the summary if this row folds away. */
+    readonly traceFoldTargetId?: string;
+    /** Stable turn identity supplied by the row that survives folding. */
+    readonly traceFoldAnchorId?: string;
+};
 
 /** The stable render identity of an entry; the row key React must keep. */
 export function entryKey(entry: ConversationEntry): string {

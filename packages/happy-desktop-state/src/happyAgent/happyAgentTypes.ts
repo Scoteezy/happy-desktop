@@ -922,6 +922,8 @@ export type HappyAgentScrollPosition =
           readonly type: "row";
           /** The transcript row's list key. */
           readonly rowKey: string;
+          /** Summary row used if the saved execution row has folded away. */
+          readonly fallbackRowKey?: string;
           readonly offset: number;
           /** Distance from the viewport's lower edge; absent in older saved positions. */
           readonly viewportInset?: number;

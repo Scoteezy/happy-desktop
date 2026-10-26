@@ -29,7 +29,7 @@ import {
 } from "./happyAgentFileLink.js";
 import type { ConversationSummary } from "../conversation/conversationSummary.js";
 import type { Loadable } from "../conversation/loadable.js";
-import { UserError } from "../types.js";
+import { UserError, type AgentTurnTraceSummary } from "../types.js";
 import {
     composerStoreCreate,
     type ComposerAttachment,
@@ -4717,7 +4717,7 @@ export function happyAgentWorkspaceStoreCreate(
         if (!kept) return undefined;
         retained.delete(conversationId);
         retainedPublish();
-        return kept;
+        return conversationTracesFold(kept);
     };
 
     /** Lets go of kept conversations the list no longer has: archived, or gone. */
@@ -5280,8 +5280,13 @@ export function happyAgentWorkspaceStoreCreate(
                 acquired.store.historyFollowingSet(
                     scrollPositions.get(conversationId)?.type !== "row",
                 );
+                let foldOnArrival = true;
                 const reconcileComposer = (): void => {
                     const state = acquired.store.get();
+                    if (foldOnArrival && state.ready) {
+                        foldOnArrival = false;
+                        acquired.store.turnTracesFold();
+                    }
                     const currentComposer = composer;
                     if (!currentComposer) return;
                     currentComposer.getState().composerInput({
@@ -5306,11 +5311,11 @@ export function happyAgentWorkspaceStoreCreate(
                             .getState()
                             .composerInput({ type: "textReconciled", text: remote });
                 };
-                reconcileComposer();
                 unsubscribeChat = acquired.store.subscribe(() => {
                     reconcileComposer();
                     recompute();
                 });
+                reconcileComposer();
                 recompute();
             },
             (error: unknown) => {
@@ -8716,6 +8721,73 @@ function conversationAcquiring(
     };
 }
 
+/** A cached stand-in must already have the shape of a new visit, even if acquisition is slow. */
+function conversationTracesFold(
+    snapshot: HappyAgentConversationSnapshot,
+): HappyAgentConversationSnapshot {
+    const anchors = new Set(
+        snapshot.entries.flatMap((entry) =>
+            entry.traceFoldAnchorId === undefined ? [] : [entry.traceFoldAnchorId],
+        ),
+    );
+    if (anchors.size === 0 || ![...snapshot.expandedTurnIds].some((id) => anchors.has(id)))
+        return snapshot;
+    const traces = new Map<string, AgentTurnTraceSummary>();
+    for (const entry of snapshot.entries) {
+        const trace =
+            entry.kind === "message"
+                ? entry.message.agentTrace
+                : entry.kind === "agentActivity" ||
+                    entry.kind === "delegation" ||
+                    entry.kind === "turnStatus"
+                  ? entry.agentTrace
+                  : undefined;
+        if (trace) traces.set(trace.turnId, trace);
+    }
+    const entries = snapshot.entries
+        .filter(
+            (entry) =>
+                entry.traceFoldTargetId === undefined || !anchors.has(entry.traceFoldTargetId),
+        )
+        .map((entry): ConversationEntry => {
+            const source =
+                entry.traceFoldAnchorId === undefined
+                    ? undefined
+                    : traces.get(entry.traceFoldAnchorId);
+            if (source) {
+                const trace = { ...source, quiet: undefined, foldsAway: undefined };
+                if (entry.kind === "message")
+                    return { ...entry, message: { ...entry.message, agentTrace: trace } };
+                if (entry.kind === "agentActivity" || entry.kind === "delegation")
+                    return { ...entry, agentTrace: trace };
+            }
+            const trace =
+                entry.kind === "message"
+                    ? entry.message.agentTrace
+                    : entry.kind === "agentActivity" ||
+                        entry.kind === "delegation" ||
+                        entry.kind === "turnStatus"
+                      ? entry.agentTrace
+                      : undefined;
+            if (trace && anchors.has(trace.turnId)) {
+                if (entry.kind === "message")
+                    return { ...entry, message: { ...entry.message, agentTrace: undefined } };
+                if (
+                    entry.kind === "agentActivity" ||
+                    entry.kind === "delegation" ||
+                    entry.kind === "turnStatus"
+                )
+                    return { ...entry, agentTrace: undefined };
+            }
+            return entry;
+        });
+    return {
+        ...snapshot,
+        entries,
+        expandedTurnIds: new Set([...snapshot.expandedTurnIds].filter((id) => !anchors.has(id))),
+    };
+}
+
 function scrollPositionEqual(
     left: HappyAgentScrollPosition | undefined,
     right: HappyAgentScrollPosition,
@@ -8724,6 +8796,7 @@ function scrollPositionEqual(
     if (left.type === "bottom" || right.type === "bottom") return true;
     return (
         left.rowKey === right.rowKey &&
+        left.fallbackRowKey === right.fallbackRowKey &&
         left.offset === right.offset &&
         left.viewportInset === right.viewportInset &&
         left.viewportHeight === right.viewportHeight

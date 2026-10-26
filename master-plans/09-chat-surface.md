@@ -56,8 +56,10 @@ A good chat with an AI follows a few principles:
 - **Work folds away out of sight.** A finished turn's steps fold behind
   "View traces", but never while any row of it is on screen: a turn the reader
   watched finish, or steered, stays open until all of it has scrolled away, and
-  only then folds — nothing visible moves. History and turns finished before
-  the chat was opened arrive folded. A turn left open this way keeps every row
+  only then folds — nothing visible moves. "If you switch from this chat to a
+  different chat and then return, then all of the already completed turns' tools
+  should be collapsed." History and turns finished before the chat was opened
+  arrive folded. A turn left open this way keeps every row
   exactly as it ran — no header appears, nothing regroups — and offers "Hide
   traces" at its first step and on the footer its end brought. A turn the reader
   opens offers it on the answer, where "View traces" was, so opening and closing

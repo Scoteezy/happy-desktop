@@ -1075,7 +1075,13 @@ function happyAgentConnectGroupProject(
     // A standalone manual compaction already has its meaningful activity and
     // completion rows. Generic tool-only collapsing would fabricate an empty
     // agent reply and trace control around them.
-    if (!groupEnd || groupEnd.turnKind === "compaction") return entries;
+    if (!groupEnd) {
+        const groupId = elements[0]?.groupId;
+        return groupId === undefined
+            ? entries
+            : entries.map((entry) => ({ ...entry, traceFoldTargetId: groupId }));
+    }
+    if (groupEnd.turnKind === "compaction") return entries;
     let finalAgentIndex = -1;
     let statusIndex = -1;
     for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -1163,6 +1169,8 @@ function happyAgentConnectGroupProject(
         entry: ConversationEntry,
         trace: AgentTurnTraceSummary = turnTrace,
     ): ConversationEntry | undefined => {
+        if (entry === entries[actualAnchorIndex])
+            entry = { ...entry, traceFoldAnchorId: groupEnd.groupId };
         if (entry.kind === "agentActivity") return { ...entry, agentTrace: trace };
         if (entry.kind === "delegation") return { ...entry, agentTrace: trace };
         if (entry.kind === "message" && entry.message.sender?.kind === "agent")
@@ -1177,6 +1185,13 @@ function happyAgentConnectGroupProject(
      * prose.
      */
     if (input.expandedGroupIds.has(groupEnd.groupId)) {
+        const target = entries[actualAnchorIndex];
+        if (target) {
+            const kept = new Set(visibleCollapsed);
+            for (let index = 0; index < entries.length; index += 1)
+                if (!kept.has(entries[index]!))
+                    entries[index] = { ...entries[index]!, traceFoldTargetId: groupEnd.groupId };
+        }
         const quiet = input.settlingGroupIds?.has(groupEnd.groupId) === true;
         for (let index = 0; index < entries.length; index += 1) {
             const traced = withTrace(entries[index]!, {
@@ -1193,6 +1208,9 @@ function happyAgentConnectGroupProject(
            hide the steps instead. */
         const status = entries[statusIndex];
         if (quiet) {
+            const anchor = entries[actualAnchorIndex];
+            if (anchor)
+                entries[actualAnchorIndex] = { ...anchor, traceFoldAnchorId: groupEnd.groupId };
             if (status?.kind === "turnStatus")
                 entries[statusIndex] = { ...status, agentTrace: { ...turnTrace, quiet: true } };
             return entries;

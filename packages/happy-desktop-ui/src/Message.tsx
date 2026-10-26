@@ -890,6 +890,10 @@ export type MessageListProps = {
     estimateRows?: readonly unknown[];
     /** Restores a previously detached reader position on this list's first layout. */
     initialScrollPosition?: MessageListScrollPosition | MessageListLegacyScrollPosition;
+    /** Persistent row to hold after folding, named by the caller's child key or row alias. */
+    rowFallbackKey?: (index: number) => string | undefined;
+    /** Optional stable alias for a persistent row whose entity key is not known until it arrives. */
+    rowAnchorKey?: (index: number) => string | undefined;
     /** Reports user scrolling and the final position before this list detaches. */
     onScrollPositionChange?: (position: MessageListScrollPosition) => void;
     /**
@@ -926,6 +930,7 @@ export type MessageListScrollPosition =
           readonly type: "row";
           /** The row's React key within this list. */
           readonly rowKey: string;
+          readonly fallbackRowKey?: string;
           readonly offset: number;
           /** Distance from the viewport's lower edge; absent in older saved positions. */
           readonly viewportInset?: number;
@@ -1034,6 +1039,7 @@ type MessageListVirtualAnchor =
           readonly index: number;
           readonly itemOffset: number;
           readonly key: Key;
+          readonly fallbackKey?: Key;
           readonly viewportInset: number;
       }
     | {
@@ -1267,6 +1273,10 @@ export function MessageList(props: MessageListProps) {
     const footerIndex = props.footer === undefined ? undefined : headerOffset + footerChildIndex;
     const entryIndex = (index: number) =>
         index - headerOffset - (footerIndex !== undefined && index > footerIndex ? 1 : 0);
+    const rowFallbackAt = (index: number) =>
+        (headerLeads && index === 0) || index === footerIndex
+            ? undefined
+            : props.rowFallbackKey?.(entryIndex(index));
     const virtualIndex = (index: number) =>
         headerOffset + index + (footerIndex !== undefined && index >= footerChildIndex ? 1 : 0);
     const items =
@@ -1460,6 +1470,19 @@ export function MessageList(props: MessageListProps) {
                 : undefined;
         if (parkedAnchor && parkedAnchor.floored === undefined)
             parkedAnchor = { ...parkedAnchor, floored: modelFloored(parkedViewportHeight) };
+        if (parkedAnchor?.anchor?.type === "item") {
+            const anchor = modelAnchorFallback(parkedAnchor.anchor, parkedAnchor.viewportHeight);
+            if (anchor !== parkedAnchor.anchor) {
+                parkedAnchor = { ...parkedAnchor, anchor };
+                readerAnchor.current = anchor;
+                focus = {
+                    type: "anchor",
+                    index: anchor.index,
+                    itemOffset: anchor.itemOffset,
+                    viewportInset: anchor.viewportInset,
+                };
+            }
+        }
         if (!widthReflow && from < previousCount && parkedAnchor?.anchor?.type === "item") {
             // A width roundtrip retains an offset beyond a temporarily shorter
             // row. Once content changes, hold the point actually on screen so
@@ -1905,7 +1928,7 @@ export function MessageList(props: MessageListProps) {
         }
         const nativeMoved = messageListScrollOffsetMoved(top, readerScrollTop.current);
         const held = nativeMoved ? undefined : readerAnchor.current;
-        const anchor =
+        let anchor =
             held?.type === "item" &&
             held.viewportInset >= 0 &&
             held.viewportInset <= viewportGeometry.current.height &&
@@ -1916,6 +1939,8 @@ export function MessageList(props: MessageListProps) {
                      may already be clamped by an undelivered viewport resize;
                      only an unchanged box can supply a newer native position. */
                   modelAnchorCapture(viewportGeometry.current.height, top);
+        if (anchor?.type === "item")
+            anchor = modelAnchorFallback(anchor, viewportGeometry.current.height);
         readerAnchor.current = anchor;
         if (nativeMoved) {
             // Hide can precede the target scroll listener. Retained views must
@@ -1933,6 +1958,9 @@ export function MessageList(props: MessageListProps) {
             ? {
                   type: "row",
                   rowKey: String(anchor.key),
+                  ...(anchor.fallbackKey === undefined
+                      ? {}
+                      : { fallbackRowKey: String(anchor.fallbackKey) }),
                   offset: anchor.itemOffset,
                   viewportInset: anchor.viewportInset,
                   viewportHeight: viewportGeometry.current.height,
@@ -1982,10 +2010,12 @@ export function MessageList(props: MessageListProps) {
     function readerFocus(viewportHeight: number): MessageListLayoutFocus {
         if (following.current) return { type: "end" };
         const held = readerAnchor.current;
-        const anchor =
+        const captured =
             held?.type === "item"
                 ? held
                 : modelAnchorCapture(viewportHeight, readerScrollTop.current);
+        const anchor =
+            captured?.type === "item" ? modelAnchorFallback(captured, viewportHeight) : captured;
         const index = anchor?.type === "item" ? itemIndexOf(anchor.key, anchor.index) : undefined;
         return anchor?.type === "item" && index !== undefined
             ? {
@@ -2044,15 +2074,57 @@ export function MessageList(props: MessageListProps) {
             }
         }
         if (!item) return { scrollTop, type: "scrollTop" };
+        const fallback = rowFallbackAt(item.index);
+        const [fallbackChild] =
+            fallback === undefined ? [] : Children.toArray([<Fragment key={fallback} />]);
         return {
             index: item.index,
             itemOffset: Math.max(0, Math.min(heldPoint - item.start, item.size)),
             key: item.key,
+            ...(isValidElement(fallbackChild) && fallbackChild.key !== null
+                ? { fallbackKey: fallbackChild.key }
+                : {}),
             type: "item",
             viewportInset: viewportHeight - (heldPoint + gap - scrollTop),
         };
     }
     const modelAnchorCaptureCurrent = useRef(modelAnchorCapture);
+    function modelAnchorFallback(
+        anchor: Extract<MessageListVirtualAnchor, { type: "item" }>,
+        viewportHeight: number,
+    ): Extract<MessageListVirtualAnchor, { type: "item" }> {
+        const current = itemIndexOf(anchor.key, anchor.index);
+        if (current !== undefined) {
+            if (anchor.fallbackKey !== undefined) return anchor;
+            const fallback = rowFallbackAt(current);
+            const [child] =
+                fallback === undefined ? [] : Children.toArray([<Fragment key={fallback} />]);
+            return isValidElement(child) && child.key !== null
+                ? { ...anchor, fallbackKey: child.key }
+                : anchor;
+        }
+        if (anchor.fallbackKey === undefined) return anchor;
+        const index = fallbackIndexOf(anchor.fallbackKey);
+        if (index === undefined) return anchor;
+        return {
+            type: "item",
+            index,
+            key: itemKeyAt(index),
+            itemOffset: 0,
+            viewportInset: Math.min(viewportHeight, anchor.viewportInset + anchor.itemOffset),
+        };
+    }
+    function fallbackIndexOf(key: Key): number | undefined {
+        const direct = itemIndexOf(key, 0);
+        if (direct !== undefined) return direct;
+        for (let index = 0; index < entryItems.length; index += 1) {
+            const alias = props.rowAnchorKey?.(index);
+            if (alias === undefined) continue;
+            const [child] = Children.toArray([<Fragment key={alias} />]);
+            if (isValidElement(child) && child.key === key) return virtualIndex(index);
+        }
+        return undefined;
+    }
     modelAnchorCaptureCurrent.current = modelAnchorCapture;
     /**
      * The anchor that keeps `disclosure` at its place in the viewport: the
@@ -2370,17 +2442,26 @@ export function MessageList(props: MessageListProps) {
                    without moving the reader, so the restore never waits for
                    the history above what the reader was reading. */
                 const rowKey = opening.type === "row" ? opening.rowKey : undefined;
-                const index = items.findIndex(
+                let index = items.findIndex(
                     (_item, candidate) => String(itemKeyAt(candidate)) === rowKey,
                 );
+                let folded = false;
+                if (index < 0 && opening.type === "row" && opening.fallbackRowKey !== undefined) {
+                    index = fallbackIndexOf(opening.fallbackRowKey) ?? -1;
+                    folded = index >= 0;
+                }
                 if (opening.type === "row" && index >= 0) {
                     const anchor: Extract<MessageListVirtualAnchor, { type: "item" }> = {
                         type: "item",
                         index,
-                        itemOffset: opening.offset,
+                        itemOffset: folded ? 0 : opening.offset,
                         key: itemKeyAt(index),
+                        ...(!folded && opening.fallbackRowKey !== undefined
+                            ? { fallbackKey: opening.fallbackRowKey }
+                            : {}),
                         viewportInset: Math.min(
-                            opening.viewportInset ?? VIRTUAL_ANCHOR_INSET,
+                            (opening.viewportInset ?? VIRTUAL_ANCHOR_INSET) +
+                                (folded ? opening.offset : 0),
                             openingHeight,
                         ),
                     };

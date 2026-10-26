@@ -1207,6 +1207,8 @@ export function ConversationView(props: ConversationViewProps) {
                                 : 0,
                         )}
                         initialScrollPosition={props.scrollPosition}
+                        rowFallbackKey={(index) => listEntries[index]?.traceFoldTargetId}
+                        rowAnchorKey={(index) => listEntries[index]?.traceFoldAnchorId}
                         // The conversation is this list's lifetime: switching to
                         // another one mounts its own list, which is what lets each
                         // restore its own position instead of inheriting one.

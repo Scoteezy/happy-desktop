@@ -3,13 +3,17 @@ import { flushSync } from "react-dom";
 import { expect, it, vi } from "vitest";
 import {
     happyAgentChatStoreCreate,
+    happyAgentWorkspaceStoreCreate,
     type ChatElement,
     type ConversationAuthor,
     type HappyAgentSessionId,
     type SessionState,
+    type HappyAgentSessionListSnapshot,
+    type HappyAgentWorkspaceClient,
 } from "happy-desktop-state";
 import "./styles.css";
 import { ConversationView } from "./ConversationView";
+import { RetainedViews } from "./RetainedViews";
 import { createRenderer } from "./testing";
 
 /* A finished turn folds its work away only once none of it is on screen: the
@@ -227,6 +231,305 @@ function visibleContent(viewport: HTMLElement): Map<HTMLElement, string> {
     return new Map([...visibleRows(viewport).keys()].map((row) => [row, rowContent(row)]));
 }
 const label = (row: HTMLElement) => row.textContent?.slice(0, 60);
+
+function inert(): unknown {
+    return new Proxy(() => undefined, {
+        get: (_target, property) => (property === "then" ? undefined : inert()),
+        apply: () => undefined,
+    });
+}
+
+it.each(
+    [false, true].flatMap((cached) =>
+        ["bottom", "surviving", "trace", "hidden-finish", "slow-return"].map((position) => ({
+            cached,
+            position,
+        })),
+    ),
+)("folds every completed turn before returning to a chat: %j", async ({ cached, position }) => {
+    let change!: (elements: readonly ChatElement[], running: boolean) => void;
+    let elements = [
+        ...Array.from({ length: 16 }, (_, index) => turn(`history-${index}`, 1)).flat(),
+        ...turn("manual", 5),
+        prompt("watched", "Watch this turn finish."),
+        ...Array.from({ length: 7 }, (_, index) => step("watched", index)),
+    ];
+    const chat = happyAgentChatStoreCreate("a" as HappyAgentSessionId, {
+        catalog,
+        transcriptConnect: (options) => {
+            change = (next, running) => options.onChange(next, session(running), []);
+            change(elements, elements.at(-1)?.kind !== "group_end");
+            return { close() {}, loadMore() {} };
+        },
+        connectActions: {} as never,
+        connectMutationSubscribe: () => () => undefined,
+    });
+    const other = happyAgentChatStoreCreate("b" as HappyAgentSessionId, {
+        catalog,
+        transcriptConnect: (options) => {
+            options.onChange(turn("other", 0), session(false), []);
+            return { close() {}, loadMore() {} };
+        },
+        connectActions: {} as never,
+        connectMutationSubscribe: () => () => undefined,
+    });
+    const loading = { type: "loading" } as const;
+    const list = {
+        projects: {
+            type: "ready",
+            value: [
+                {
+                    id: "group",
+                    path: "/work",
+                    name: "Work",
+                    kind: "regular",
+                    lifecycle: { phase: "ready" },
+                    worktrees: [],
+                    conversations: ["a", "b"].map((id) => ({
+                        id,
+                        title: id,
+                        activity: "idle",
+                        participants: [],
+                    })),
+                },
+            ],
+        },
+        bots: [],
+        botsCreating: [],
+        archivedSessions: [],
+        catalogRevision: 1,
+        sessionCreateFailures: new Map(),
+        worktreeCreateFailures: new Map(),
+        projectCreateFailures: new Map(),
+        subtaskFailures: new Map(),
+        tasks: [],
+        taskDirectory: [],
+        tasksJoining: new Set(),
+        taskFailures: new Map(),
+    } as unknown as HappyAgentSessionListSnapshot;
+    let acquisitions = 0;
+    const client = new Proxy(
+        {
+            models: {
+                get: () => loading,
+                load: () => new Promise(() => undefined),
+                subscribe: () => () => undefined,
+            },
+            sessionList: () =>
+                new Proxy(
+                    { get: () => list, subscribe: () => () => undefined },
+                    {
+                        get: (target, key) =>
+                            key in target ? target[key as keyof typeof target] : inert(),
+                    },
+                ),
+            chat: async (id: string) => {
+                if (id === "a" && ++acquisitions > 1 && position === "slow-return")
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                return { store: id === "a" ? chat : other, [Symbol.dispose]() {} };
+            },
+            openInTargetsRead: () => new Promise(() => undefined),
+            workspaceFilesSubscribe: () => () => undefined,
+        },
+        { get: (target, key) => (key in target ? target[key as keyof typeof target] : inert()) },
+    ) as unknown as HappyAgentWorkspaceClient;
+    const workspace = happyAgentWorkspaceStoreCreate(client, {
+        conversationRetention: { count: cached ? 2 : 0, size: 100_000 },
+    });
+    const view = createRenderer();
+    const release = workspace.subscribe(() => undefined);
+    const contents = new Map<string, React.ReactNode>();
+    const open = (id: string) =>
+        flushSync(() => workspace.conversationOpen(id as HappyAgentSessionId));
+    function Harness() {
+        const snapshot = useSyncExternalStore(workspace.subscribe, workspace.get);
+        const kept = useSyncExternalStore(
+            workspace.conversationsRetained.subscribe,
+            workspace.conversationsRetained.get,
+        );
+        const current =
+            snapshot.conversation.type === "ready" ? snapshot.conversation.value : undefined;
+        if (current)
+            contents.set(
+                current.conversationId,
+                <ConversationView
+                    agentAuthor={agent}
+                    conversationId={current.conversationId}
+                    leadingHeader={
+                        position === "trace" ||
+                        position === "hidden-finish" ||
+                        position === "slow-return"
+                            ? {
+                                  content: <div style={{ height: 48 }}>Chat header</div>,
+                                  height: () => 48,
+                                  lift: () => 0,
+                              }
+                            : undefined
+                    }
+                    entries={current.entries}
+                    loading={!current.ready}
+                    expandedTurnIds={current.expandedTurnIds}
+                    motion="calm"
+                    scrollPosition={current.scrollPosition}
+                    running={current.running}
+                    onTraceToggle={workspace.turnTraceToggle}
+                    onTracesSeen={workspace.turnTracesSeen}
+                    onScrollPositionChange={(next) => {
+                        workspace.conversationScrollUpdate(current.conversationId, next);
+                    }}
+                />,
+            );
+        const ids = new Set([
+            ...kept.conversationIds,
+            ...(current ? [current.conversationId] : []),
+        ]);
+        return (
+            <div style={{ display: "flex", height: 700, width: 880 }}>
+                <RetainedViews
+                    activeId={current?.conversationId}
+                    views={[...ids].map((id) => ({
+                        id,
+                        content: contents.get(id),
+                        ready: id !== current?.conversationId || current.standIn !== true,
+                    }))}
+                    onViewHide={(id, size) =>
+                        workspace.conversationViewSizeUpdate(id as HappyAgentSessionId, size)
+                    }
+                />
+            </div>
+        );
+    }
+    view.render(Harness, { height: 900, width: 1000 });
+    const viewport = () =>
+        view.container.querySelector<HTMLElement>(
+            '[data-view-id="a"] .happy-message-list__viewport',
+        )!;
+    try {
+        open("a");
+        await view.ready();
+        await frames();
+        flushSync(() => {
+            elements = [
+                ...elements,
+                answer("watched", "The watched turn is finished."),
+                end("watched"),
+            ];
+            change(elements, false);
+        });
+        await frames();
+        expect(chat.get().expandedTurnIds.has("watched")).toBe(true);
+        // Older history arrives after the tail's completion cache is warm.
+        flushSync(() => {
+            elements = [...turn("older-loaded", 2), ...elements];
+            change(elements, false);
+            chat.turnTraceToggle("older-loaded");
+        });
+        expect(chat.get().expandedTurnIds.has("older-loaded")).toBe(true);
+        flushSync(() => chat.turnTraceToggle("manual"));
+        await frames();
+        expect(chat.get().expandedTurnIds.has("manual")).toBe(true);
+        // Opening and closing in this visit retains the existing control behavior.
+        flushSync(() => chat.turnTraceToggle("manual"));
+        expect(chat.get().expandedTurnIds.has("manual")).toBe(false);
+        flushSync(() => chat.turnTraceToggle("manual"));
+        flushSync(() => {
+            elements = [...elements, prompt("live", "Still running"), step("live", 0)];
+            change(elements, true);
+        });
+        await frames();
+        const original = viewport();
+        const targetText =
+            position === "hidden-finish"
+                ? "live-step-0"
+                : position === "trace" || position === "slow-return"
+                  ? "manual-step-4"
+                  : "Prompt manual:";
+        let top = 0;
+        if (position !== "bottom") {
+            viewport().dispatchEvent(new WheelEvent("wheel", { deltaY: -1 }));
+            for (let index = 0; index < 12 && !rowWith(viewport(), targetText); index += 1) {
+                viewport().scrollTop -= 300;
+                viewport().dispatchEvent(new Event("scroll"));
+                await frames();
+            }
+            const row = rowWith(viewport(), targetText)!;
+            expect(row).toBeDefined();
+            viewport().scrollTop +=
+                row.getBoundingClientRect().top - (viewport().getBoundingClientRect().bottom - 40);
+            viewport().dispatchEvent(new Event("scroll"));
+            await frames();
+            top = row.getBoundingClientRect().top;
+        }
+        open("b");
+        await frames();
+        if (position === "hidden-finish")
+            elements = [
+                ...elements,
+                answer("live", "Answer live after finishing while hidden."),
+                end("live"),
+            ];
+        const samples: { top: number; bottom: number; folded: boolean }[] = [];
+        let sampling = true;
+        const sample = () => {
+            const element = viewport();
+            if (element && element.getClientRects().length > 0) {
+                const row = rowWith(
+                    element,
+                    position === "hidden-finish"
+                        ? "Answer live"
+                        : position === "trace" || position === "slow-return"
+                          ? "Answer manual."
+                          : targetText,
+                );
+                const current = workspace.get().conversation;
+                const expanded =
+                    current.type === "ready" ? current.value.expandedTurnIds : new Set<string>();
+                samples.push({
+                    top: row?.getBoundingClientRect().top ?? 0,
+                    bottom: element.scrollHeight - element.clientHeight - element.scrollTop,
+                    folded:
+                        !expanded.has("manual") &&
+                        !expanded.has("watched") &&
+                        !expanded.has("older-loaded") &&
+                        !element.textContent?.includes("manual-step-") &&
+                        !element.textContent?.includes("watched-step-"),
+                });
+            }
+            if (sampling) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+        open("a");
+        await vi.waitFor(() => {
+            const current = workspace.get().conversation;
+            expect(
+                current.type === "ready" && current.value.ready && current.value.standIn !== true,
+            ).toBe(true);
+        });
+        await frames();
+        await frames();
+        sampling = false;
+        expect(viewport() === original).toBe(cached);
+        expect(samples.length).toBeGreaterThan(0);
+        for (const sample of samples) {
+            expect(sample.folded).toBe(true);
+            if (position === "bottom") expect(Math.abs(sample.bottom)).toBeLessThanOrEqual(1);
+            else expect(Math.abs(sample.top - top)).toBeLessThanOrEqual(1);
+        }
+        expect(
+            chat
+                .get()
+                .entries.some(
+                    (entry) => entry.kind === "agentActivity" && entry.id.includes("live"),
+                ),
+        ).toBe(position !== "hidden-finish");
+    } finally {
+        view.destroy();
+        release();
+        workspace[Symbol.dispose]();
+        chat[Symbol.dispose]();
+        other[Symbol.dispose]();
+    }
+});
 
 it("keeps every row of a steered turn where it was until all of it scrolls away", async () => {
     const { view, store, push } = renderChat([...turn("a", 6), ...turn("b", 6)]);
