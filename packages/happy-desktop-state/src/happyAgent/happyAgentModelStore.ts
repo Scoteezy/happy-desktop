@@ -9,6 +9,7 @@ import {
 } from "./happyAgentSessionDraftStore.js";
 import type {
     HappyAgentMenusSnapshot,
+    HappyAgentModel,
     HappyAgentModelCatalog,
     HappyAgentSelection,
 } from "./happyAgentTypes.js";
@@ -37,18 +38,23 @@ export interface HappyAgentModelPreferenceIdentity {
     readonly modelId: string;
 }
 
-export interface HappyAgentModelPreferenceDefault extends HappyAgentModelPreferenceIdentity {
-    readonly effort?: HappyAgentThinkingLevel;
-}
-
 /** One person's model choices on this Happy Agent, supplied by its preference authority. */
 export interface HappyAgentModelPreferenceDocument {
-    readonly defaultSelection?: HappyAgentModelPreferenceDefault;
+    /**
+     * The model a new session starts on, chosen in Settings. It names a model
+     * only: which account serves it is `lastPickedProviderId`'s to answer.
+     */
+    readonly defaultModelId?: string;
     /** Reasoning level configured for new sessions before a model-specific fallback. */
     readonly defaultEffort?: HappyAgentThinkingLevel;
     /** Access mode configured for a new session, independent of its model. */
     readonly defaultPermissionMode?: HappyAgentPermissionMode;
-    readonly lastPickedModel?: HappyAgentModelPreferenceIdentity;
+    /**
+     * The provider most recently picked in any model picker. A new session
+     * starts on it whenever it serves the default model; sessions that already
+     * exist keep their own.
+     */
+    readonly lastPickedProviderId?: string;
     readonly preferences: HappyAgentModelPreferences;
 }
 
@@ -65,8 +71,11 @@ export type HappyAgentModelStoreSnapshot =
     | {
           readonly type: "ready";
           readonly catalog: HappyAgentModelCatalog;
+          /**
+           * What a new session starts on: the default model, served by the
+           * provider picked last when that provider offers it.
+           */
           readonly defaultSelection: HappyAgentSelection;
-          readonly lastUsedSelection: HappyAgentSelection;
           readonly menus: HappyAgentMenusSnapshot;
       };
 
@@ -79,8 +88,9 @@ export type HappyAgentModelStoreReadySnapshot = Extract<
  * One daemon connection's model authority. It loads the catalog, keeps it
  * current with the daemon's configuration for the rest of the connection —
  * across `config.updated` and a replacement daemon alike — exposes model
- * capabilities/defaults, and retains the complete selection most recently
- * chosen anywhere in that connection.
+ * capabilities/defaults, and resolves what a new session starts on from the
+ * default model and the provider most recently picked anywhere in that
+ * connection.
  */
 export interface HappyAgentModelStore {
     get(): HappyAgentModelStoreSnapshot;
@@ -96,8 +106,13 @@ export interface HappyAgentModelStore {
      * and re-derives the defaults from it without touching what was last used.
      */
     catalogChanged(catalog: HappyAgentModelCatalog): void;
-    /** Records a user-selected model/effort/access/tier as the next-session default. */
+    /** Remembers the effort and speed a person chose for that selection's model. */
     selectionUsed(selection: HappyAgentSelection): void;
+    /**
+     * Makes a provider picked in a model picker the one new sessions start on.
+     * It changes no session that already exists.
+     */
+    providerPicked(providerId: string): void;
     /** Selects a model with that model's last locally remembered effort and speed. */
     modelSelect(current: HappyAgentSelection, input: HappyAgentModelSelection): HappyAgentSelection;
     /** The effort last chosen for a model on a provider, when this machine remembers one. */
@@ -170,17 +185,31 @@ export function happyAgentModelStoreCreate(
         if (writingPreferences) return;
         document = options.preferencePersistence?.read() ?? { preferences: {} };
         preferences = document.preferences;
+        defaultsPublish();
+    };
+
+    /** Re-derives what a new session starts on after the preference document changed. */
+    const defaultsPublish = (): void => {
         if (snapshot.type !== "ready") return;
-        const selections = selectionsFromDocument(snapshot.catalog, document, snapshot);
+        const defaultSelection = defaultSelectionResolve(snapshot.catalog, document);
         publish({
             ...snapshot,
-            ...selections,
-            menus: happyAgentMenusDerive(
-                snapshot.catalog,
-                selections.lastUsedSelection,
-                effortRemembered,
-            ),
+            defaultSelection,
+            menus: happyAgentMenusDerive(snapshot.catalog, defaultSelection, effortRemembered),
         });
+    };
+
+    const documentWrite = (next: HappyAgentModelPreferenceDocument): void => {
+        document = next;
+        writingPreferences = true;
+        try {
+            options.preferencePersistence?.write(document);
+            document = options.preferencePersistence?.read() ?? document;
+            preferences = document.preferences;
+        } finally {
+            writingPreferences = false;
+        }
+        defaultsPublish();
     };
 
     /**
@@ -190,16 +219,12 @@ export function happyAgentModelStoreCreate(
      */
     const catalogAdopt = (catalog: HappyAgentModelCatalog): HappyAgentModelStoreReadySnapshot => {
         if (snapshot.type === "ready" && deepEqual(snapshot.catalog, catalog)) return snapshot;
-        const selections = selectionsFromDocument(
-            catalog,
-            document,
-            snapshot.type === "ready" ? snapshot : undefined,
-        );
+        const defaultSelection = defaultSelectionResolve(catalog, document);
         const ready: HappyAgentModelStoreReadySnapshot = {
             type: "ready",
             catalog,
-            ...selections,
-            menus: happyAgentMenusDerive(catalog, selections.lastUsedSelection, effortRemembered),
+            defaultSelection,
+            menus: happyAgentMenusDerive(catalog, defaultSelection, effortRemembered),
         };
         publish(ready);
         return ready;
@@ -350,27 +375,11 @@ export function happyAgentModelStoreCreate(
                     },
                 },
             };
-            document = {
-                ...document,
-                lastPickedModel: {
-                    providerId: selection.providerId,
-                    modelId: selection.modelId,
-                },
-                preferences,
-            };
-            writingPreferences = true;
-            try {
-                options.preferencePersistence?.write(document);
-                document = options.preferencePersistence?.read() ?? document;
-                preferences = document.preferences;
-            } finally {
-                writingPreferences = false;
-            }
-            publish({
-                ...snapshot,
-                lastUsedSelection: selection,
-                menus: happyAgentMenusDerive(snapshot.catalog, selection, effortRemembered),
-            });
+            documentWrite({ ...document, preferences });
+        },
+        providerPicked(providerId) {
+            if (snapshot.type !== "ready" || document.lastPickedProviderId === providerId) return;
+            documentWrite({ ...document, lastPickedProviderId: providerId });
         },
         modelSelect(current, input) {
             if (snapshot.type !== "ready")
@@ -422,69 +431,65 @@ export function happyAgentModelStoreCreate(
     };
 }
 
-function selectionsFromDocument(
+/**
+ * What a new session starts on. The model is the one chosen in Settings, or the
+ * catalog's own default until one is chosen; the provider is the one picked
+ * last whenever it serves that model. A provider that does not is passed over
+ * for the catalog's default provider and then the first usable one serving the
+ * same model, so a provider choice never silently changes the model.
+ */
+function defaultSelectionResolve(
     catalog: HappyAgentModelCatalog,
     document: HappyAgentModelPreferenceDocument,
-    current?: HappyAgentModelStoreReadySnapshot,
-): Pick<HappyAgentModelStoreReadySnapshot, "defaultSelection" | "lastUsedSelection"> {
+): HappyAgentSelection {
     const catalogDefault = happyAgentSessionSelectionDefault(catalog);
-    const catalogDefaultModel = catalog.providers
+    const permissionMode = document.defaultPermissionMode ?? catalogDefault.permissionMode;
+    for (const modelId of [document.defaultModelId, catalogDefault.modelId]) {
+        if (modelId === undefined) continue;
+        const serving = catalog.providers.filter(
+            (provider) =>
+                provider.disabledReason === undefined &&
+                !provider.hidden &&
+                provider.models.some((model) => model.id === modelId),
+        );
+        const provider =
+            serving.find((candidate) => candidate.id === document.lastPickedProviderId) ??
+            serving.find((candidate) => candidate.id === catalog.defaultProviderId) ??
+            serving[0];
+        const model = provider?.models.find((candidate) => candidate.id === modelId);
+        if (provider && model)
+            return preferenceSelection(
+                provider.id,
+                model,
+                document.preferences,
+                permissionMode,
+                document.defaultEffort,
+            );
+    }
+    const model = catalog.providers
         .find((provider) => provider.id === catalogDefault.providerId)
-        ?.models.find((model) => model.id === catalogDefault.modelId);
-    const catalogDefaultEffort =
-        document.defaultEffort &&
-        catalogDefaultModel?.thinkingLevels.includes(document.defaultEffort)
+        ?.models.find((candidate) => candidate.id === catalogDefault.modelId);
+    const effort =
+        document.defaultEffort && model?.thinkingLevels.includes(document.defaultEffort)
             ? document.defaultEffort
             : catalogDefault.effort;
-    const defaultPermissionMode = document.defaultPermissionMode ?? catalogDefault.permissionMode;
-    const catalogSelection = {
+    return {
         ...catalogDefault,
-        ...(catalogDefaultEffort !== undefined ? { effort: catalogDefaultEffort } : {}),
-        permissionMode: defaultPermissionMode,
+        ...(effort !== undefined ? { effort } : {}),
+        permissionMode,
     };
-    const defaultSelection =
-        preferenceSelection(
-            catalog,
-            document.defaultSelection,
-            document.preferences,
-            defaultPermissionMode,
-            document.defaultEffort,
-        ) ?? catalogSelection;
-    const lastUsedSelection =
-        preferenceSelection(
-            catalog,
-            document.lastPickedModel,
-            document.preferences,
-            document.defaultPermissionMode ??
-                current?.lastUsedSelection.permissionMode ??
-                defaultSelection.permissionMode,
-        ) ?? defaultSelection;
-    return { defaultSelection, lastUsedSelection };
 }
 
 function preferenceSelection(
-    catalog: HappyAgentModelCatalog,
-    identity: HappyAgentModelPreferenceIdentity | undefined,
+    providerId: string,
+    model: HappyAgentModel,
     preferences: HappyAgentModelPreferences,
     permissionMode: HappyAgentSelection["permissionMode"],
     defaultEffort?: HappyAgentThinkingLevel,
-): HappyAgentSelection | undefined {
-    if (!identity) return undefined;
-    const provider = catalog.providers.find((candidate) => candidate.id === identity.providerId);
-    const model = provider?.models.find((candidate) => candidate.id === identity.modelId);
-    if (!provider || provider.disabledReason !== undefined || provider.hidden || !model)
-        return undefined;
-    const candidateEffort =
-        "effort" in identity ? (identity as HappyAgentModelPreferenceDefault).effort : undefined;
-    const explicitEffort =
-        candidateEffort && model.thinkingLevels.includes(candidateEffort)
-            ? candidateEffort
-            : undefined;
-    const preference = preferences[identity.providerId]?.[identity.modelId];
-    const rememberedEffort =
-        preference?.effort && model.thinkingLevels.includes(preference.effort)
-            ? preference.effort
-            : undefined;
+): HappyAgentSelection {
+    const preference = preferences[providerId]?.[model.id];
+    // A new session starts on the Settings effort, not the one last used with
+    // this model; a model without that level starts on its own default.
     const supportedDefaultEffort =
         defaultEffort && model.thinkingLevels.includes(defaultEffort) ? defaultEffort : undefined;
     const serviceTier =
@@ -493,13 +498,9 @@ function preferenceSelection(
             ? preference.serviceTier
             : undefined;
     return {
-        providerId: identity.providerId,
-        modelId: identity.modelId,
-        effort:
-            explicitEffort ??
-            supportedDefaultEffort ??
-            rememberedEffort ??
-            model.defaultThinkingLevel,
+        providerId,
+        modelId: model.id,
+        effort: supportedDefaultEffort ?? model.defaultThinkingLevel,
         permissionMode,
         ...(serviceTier !== undefined ? { serviceTier } : {}),
     };

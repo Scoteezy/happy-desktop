@@ -166,19 +166,130 @@ it("restores a remembered Ultrafast selection only when the current account stil
         preferencePersistence: persistence,
     });
     disposables.push(reopened);
-    expect((await reopened.load()).lastUsedSelection.serviceTier).toBe("ultrafast");
+    expect((await reopened.load()).defaultSelection.serviceTier).toBe("ultrafast");
     reopened.catalogChanged(happyAgentModelCatalogProject(tierConfig(daemon, false)));
+    // The speed is remembered; the effort is not: a new session starts on the
+    // Settings effort, here unset, so on the model's own default.
     expect(reopened.get()).toMatchObject({
         type: "ready",
-        lastUsedSelection: { modelId: "astra", effort: "high" },
+        defaultSelection: { modelId: "astra", effort: "medium" },
     });
     const snapshot = reopened.get();
     if (snapshot.type !== "ready") throw new Error("Model store not ready");
-    expect(snapshot.lastUsedSelection.serviceTier).toBeUndefined();
+    expect(snapshot.defaultSelection.serviceTier).toBeUndefined();
     expect(
-        reopened.modelSelect(snapshot.lastUsedSelection, { providerId: "codex", modelId: "astra" })
+        reopened.modelSelect(snapshot.defaultSelection, { providerId: "codex", modelId: "astra" })
             .serviceTier,
     ).toBeUndefined();
+});
+
+/** A model store over an in-memory preference document, loaded on the tier catalog. */
+async function stickyStoreOpen(initial: HappyAgentModelPreferenceDocument) {
+    let document = initial;
+    const models = happyAgentModelStoreCreate({
+        catalogRead: async () =>
+            happyAgentModelCatalogProject(tierConfig(fakeHappyAgentDaemonCreate())),
+        preferencePersistence: {
+            read: () => document,
+            write: (next) => {
+                document = next;
+            },
+        },
+    });
+    disposables.push(models);
+    await models.load();
+    const selection = () => {
+        const snapshot = models.get();
+        if (snapshot.type !== "ready") throw new Error("Model store not ready");
+        return snapshot.defaultSelection;
+    };
+    return { models, selection, document: () => document };
+}
+
+it("starts new sessions on the default model, on the provider picked last", async () => {
+    const { models, selection, document } = await stickyStoreOpen({
+        defaultModelId: "astra",
+        preferences: {},
+    });
+    // Nothing picked yet: the catalog's own default provider serves the model.
+    expect(selection()).toMatchObject({ providerId: "codex", modelId: "astra" });
+
+    models.providerPicked("codex_other");
+    expect(selection()).toMatchObject({ providerId: "codex_other", modelId: "astra" });
+    expect(document().lastPickedProviderId).toBe("codex_other");
+
+    // Remembering an effort or speed is not picking a provider.
+    models.selectionUsed({
+        providerId: "codex",
+        modelId: "sol",
+        effort: "high",
+        permissionMode: "auto",
+    });
+    expect(selection()).toMatchObject({ providerId: "codex_other", modelId: "astra" });
+});
+
+it("starts new sessions on the Settings effort, not the one last used with the model", async () => {
+    const { models, selection } = await stickyStoreOpen({
+        defaultModelId: "astra",
+        defaultEffort: "low",
+        preferences: {},
+    });
+    models.selectionUsed({
+        providerId: "codex",
+        modelId: "astra",
+        effort: "high",
+        permissionMode: "auto",
+    });
+    expect(selection()).toMatchObject({ modelId: "astra", effort: "low" });
+});
+
+it("keeps the default model when the provider picked last does not serve it", async () => {
+    const { selection } = await stickyStoreOpen({
+        defaultModelId: "sol",
+        lastPickedProviderId: "codex_other",
+        preferences: {},
+    });
+    expect(selection()).toMatchObject({ providerId: "codex", modelId: "sol" });
+});
+
+it("moves new sessions to a provider picked in an existing conversation without changing it", async () => {
+    const state = await sessionStateRead({
+        providerId: "codex",
+        modelId: "astra",
+        effort: "medium",
+        permissionMode: "auto",
+    });
+    const actions = {
+        switchModel: vi.fn(() => "switch"),
+        setEffort: vi.fn(() => "effort"),
+        setServiceTier: vi.fn(() => "tier"),
+    };
+    const providerPicked = vi.fn();
+    const selectionUsed = vi.fn();
+    const chat = happyAgentChatStoreCreate(state.sessionId as HappyAgentSessionId, {
+        catalog: happyAgentModelCatalogProject(tierConfig(fakeHappyAgentDaemonCreate())),
+        catalogFollow: () => () => undefined,
+        transcriptConnect: ({ onChange }) => {
+            onChange([], state, []);
+            return { close: () => undefined, loadMore: () => undefined };
+        },
+        connectActions: actions as unknown as HappyAgentChatDeps["connectActions"],
+        connectMutationSubscribe: () => () => undefined,
+        providerPicked,
+        selectionUsed,
+    });
+    disposables.push(chat);
+    chat.subscribe(() => undefined);
+
+    chat.effortUpdate("high");
+    expect(providerPicked).not.toHaveBeenCalled();
+
+    chat.modelUpdate({ providerId: "codex_other", modelId: "astra" });
+    expect(providerPicked).toHaveBeenCalledExactlyOnceWith("codex_other");
+    expect(actions.switchModel).toHaveBeenCalledExactlyOnceWith(state.sessionId, {
+        providerId: "codex_other",
+        modelId: "astra",
+    });
 });
 
 const disposables: { [Symbol.dispose](): void }[] = [];

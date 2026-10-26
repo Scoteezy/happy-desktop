@@ -13,13 +13,11 @@ import type {
     HappyAgentDebugLogSnapshot,
     HappyAgentSecurityPolicySnapshot,
     HappyAgentSecret,
-    HappyAgentModelCatalog,
     HappyAgentModelKey,
     HappyAgentPermissionMode,
     HappyAgentProviderEntry,
     HappyAgentSettingsSnapshot,
     HappyAgentSettingsStore,
-    HappyAgentThinkingLevel,
     HappyAgentTaskSettingsSnapshot,
     HappyAgentSidebarVisibilityStore,
     HappyAgentWindowStore,
@@ -33,6 +31,7 @@ import {
     HAPPY_AGENT_CHANGE_TIERS_MAX,
     HAPPY_AGENT_INSTRUCTIONS_MAX_BYTES,
     HAPPY_AGENT_SECURITY_POLICY_MAX_BYTES,
+    happyAgentMenusDerive,
     happyAgentModelKey,
     happyAgentPermissionLabel,
     happyAgentServiceName,
@@ -100,7 +99,6 @@ import {
     appMobileRelayFromIntegration,
     appMobileRelayFromLink,
 } from "../components/AppMobilePairing";
-import type { SelectOption } from "happy-desktop-ui";
 import {
     hostHappyAgent,
     type AppHappyAgentDirectoryStore,
@@ -123,9 +121,9 @@ export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategor
     // way round: which of them exist, then what each has spent.
     { icon: "zap", id: "usage", label: "Usage" },
     { icon: "call", id: "voice", label: "Voice" },
-    { icon: "mobile", id: "mobile-access", label: "Mobile Access" },
+    { icon: "mobile", id: "mobile-access", label: "Mobile access" },
     { icon: "zap", id: "experimental", label: "Experimental" },
-    { icon: "code", id: "debug", label: "Dev Tools" },
+    { icon: "code", id: "debug", label: "Dev tools" },
 ];
 
 export const HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY = "general";
@@ -317,19 +315,19 @@ export interface AppHappyAgentProfilerStore {
 }
 
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
-    experimental: "Work that is still being built. Kept on this machine only.",
-    voice: "Voice calls, controller, and prompt",
-    debug: "Inspect live state, Happy and Happy Agent debugger endpoints, and renderer profiles",
-    general: "How this window looks and what a new session starts with",
-    tasks: "Which tasks you automatically join on each connection",
-    surfaces: "Which shared documents, todo lists and calendars you automatically join",
-    "mobile-access": "This Happy Agent's connection to Happy Mobile",
-    account: "Local author identity and Happy account connection",
-    "file-tiers": "Which changed files every project lists apart, below the rest of a change",
-    instructions: "Machine-wide agent guidance and permission-review policy",
-    secrets: "Write-only environment bundles this Happy Agent can provide to agents",
-    providers: "Every model provider this Happy Agent daemon knows about",
-    usage: "How much of each provider account's plan this machine has spent",
+    experimental: "Features still being built",
+    voice: "Voice calls, controller and prompt",
+    debug: "Live state, debuggers and renderer profiles",
+    general: "Appearance, behavior and new-session defaults",
+    tasks: "Joining other people’s tasks",
+    surfaces: "Joining shared docs, lists and calendars",
+    "mobile-access": "Use Happy on your phone with this computer",
+    account: "Your name, photo and Happy account",
+    "file-tiers": "Which changed files are listed apart",
+    instructions: "Agent guidance and permission review for this machine",
+    secrets: "Environment variables for agents",
+    providers: "Model providers and the models they offer",
+    usage: "What each provider account has spent",
 };
 
 const PERMISSION_MODES: readonly HappyAgentPermissionMode[] = [
@@ -646,17 +644,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                   : "stopped",
     };
     const catalog = models.type === "ready" ? models.catalog : undefined;
-    const selection = defaultSelection(catalog, settings);
-    const model = catalog?.providers
-        .flatMap((provider) => provider.models.map((entry) => ({ provider, model: entry })))
-        .find(
-            (entry) =>
-                entry.provider.id === selection.providerId && entry.model.id === selection.modelId,
-        );
-    const effort =
-        model?.model && !model.model.thinkingLevels.includes(settings.defaultEffort)
-            ? model.model.defaultThinkingLevel
-            : settings.defaultEffort;
+    // What a new session starts on: the default model and effort, on the provider
+    // picked last. The pill lists each model at its own default effort rather than
+    // the one last used with it, because a new session ignores that memory.
+    const selection = models.type === "ready" ? models.defaultSelection : undefined;
+    const defaultMenus =
+        catalog && selection ? happyAgentMenusDerive(catalog, selection) : undefined;
     const sessionClock = host?.session?.clock;
     const mobileSetup = happyIntegrationStore.mobileSetup;
     if (section === "mobile-access" && happyIntegration.setup && mobileSetup && sessionClock) {
@@ -1164,7 +1157,6 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                                 : { typeName: happyAgentServiceName(provider.type) }),
                         };
                     })}
-                    readingTime={usageReadingTime}
                     {...(clockStore ? { currentTime } : {})}
                     {...(usage.error ? { error: usage.error } : {})}
                 />
@@ -1183,16 +1175,29 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                           }
                         : {})}
                     appearance={appearance.mode}
-                    defaultModelKey={
-                        selection.modelId
-                            ? happyAgentModelKey(selection.providerId, selection.modelId)
-                            : undefined
-                    }
-                    effort={effort}
-                    effortOptions={(model?.model.thinkingLevels ?? []).map((level) => ({
-                        label: happyAgentThinkingLabel(level),
-                        value: level,
-                    }))}
+                    {...(defaultMenus
+                        ? {
+                              defaultModel: {
+                                  ...happyAgentComposerModelControlProps(defaultMenus, {
+                                      onModelChange: (next) => {
+                                          const selected = catalog?.providers
+                                              .flatMap((provider) => provider.models)
+                                              .find((candidate) => candidate.id === next.modelId);
+                                          if (!selected || !happyAgentOnline()) return;
+                                          props.settings.defaultModelUpdate(next.modelId);
+                                          props.settings.defaultEffortUpdate(
+                                              next.effort ?? selected.defaultThinkingLevel,
+                                          );
+                                      },
+                                      onEffortChange: (next) => {
+                                          if (next && happyAgentOnline())
+                                              props.settings.defaultEffortUpdate(next);
+                                      },
+                                  }),
+                                  accountsReadOnly: true,
+                              },
+                          }
+                        : {})}
                     error={models.type === "error" ? models.error.message : undefined}
                     {...(props.usageAnalytics
                         ? {
@@ -1201,7 +1206,6 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                           }
                         : {})}
                     loading={models.type !== "ready" && models.type !== "error"}
-                    modelOptions={modelOptions(catalog, settings, selection)}
                     onAppearanceChange={(mode) => props.appearance.appearanceSelect(mode)}
                     {...(props.statusBar
                         ? {
@@ -1241,21 +1245,6 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                                   projectsVisibilityStore.projectsHiddenUpdate(hidden),
                           }
                         : {})}
-                    onDefaultModelChange={(key) => {
-                        const [providerId, ...rest] = key.split(":");
-                        const modelId = rest.join(":");
-                        const selected = catalog?.providers
-                            .find((provider) => provider.id === providerId)
-                            ?.models.find((candidate) => candidate.id === modelId);
-                        if (!providerId || !selected) return;
-                        if (!happyAgentOnline()) return;
-                        props.settings.defaultModelUpdate(providerId, modelId);
-                        props.settings.defaultEffortUpdate(selected.defaultThinkingLevel);
-                    }}
-                    onEffortChange={(effort) => {
-                        if (happyAgentOnline())
-                            props.settings.defaultEffortUpdate(effort as HappyAgentThinkingLevel);
-                    }}
                     onPermissionModeChange={(mode) => {
                         if (happyAgentOnline())
                             props.settings.defaultPermissionModeUpdate(
@@ -1330,7 +1319,7 @@ function stateDocuments(snapshots: {
             value: stateText(snapshots.secrets),
         },
         {
-            description: "The model catalog and last-used selection",
+            description: "The model catalog and what a new session starts on",
             id: "models",
             label: "Models",
             value: stateText(snapshots.models),
@@ -1657,15 +1646,6 @@ function usageOpenSubscribe(
     return subscribe;
 }
 
-/**
- * When a usage reading was taken, as an absolute local time. A reading is only
- * as good as its age — a plan can be spent in the minutes since — so the account
- * says when it was taken rather than implying it is live.
- */
-function usageReadingTime(capturedAt: number): string {
-    return new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(new Date(capturedAt));
-}
-
 const INSTRUCTIONS_UNAVAILABLE: HappyAgentInstructionsSnapshot = {
     stored: { type: "unloaded" },
     draft: "",
@@ -1698,47 +1678,10 @@ function documentLoading(
     );
 }
 
-/** The chosen default, falling back to whatever the catalog itself defaults to. */
-function defaultSelection(
-    catalog: HappyAgentModelCatalog | undefined,
-    settings: HappyAgentSettingsSnapshot,
-): { providerId: string; modelId: string } {
-    return {
-        modelId: settings.defaultModelId ?? catalog?.defaultModelId ?? "",
-        providerId: settings.defaultProviderId ?? catalog?.defaultProviderId ?? "",
-    };
-}
-
-/**
- * Every model a usable provider offers, labelled "Provider · Model" for one flat
- * picker. A hidden account is not offered, as in the composer's picker, except
- * the model already configured as the default, which stays shown as selected.
- */
-function modelOptions(
-    catalog: HappyAgentModelCatalog | undefined,
-    settings: HappyAgentSettingsSnapshot,
-    selection: { readonly providerId: string; readonly modelId: string },
-): readonly SelectOption[] {
-    return (catalog?.providers ?? []).flatMap((provider) =>
-        provider.models
-            .filter(
-                (model) =>
-                    !settings.disabledModels.has(happyAgentModelKey(provider.id, model.id)) &&
-                    (!provider.hidden ||
-                        (provider.id === selection.providerId && model.id === selection.modelId)),
-            )
-            .map((model) => ({
-                disabled: provider.disabledReason !== undefined,
-                label: `${happyAgentServiceName(provider.type)} · ${providerAccountName(provider.id, provider.name)} · ${model.name}`,
-                value: happyAgentModelKey(provider.id, model.id),
-            })),
-    );
-}
-
 function providerRows(
     providers: readonly HappyAgentProviderEntry[],
     settings: HappyAgentSettingsSnapshot,
-    selection: { providerId: string; modelId: string },
+    selection: { readonly providerId: string; readonly modelId: string } | undefined,
 ): readonly HappyAgentProviderRow[] {
     return providers.map((provider) => ({
         enabled: provider.enabled,
@@ -1748,7 +1691,7 @@ function providerRows(
             efforts: model.thinkingLevels.map(happyAgentThinkingLabel),
             enabled: !settings.disabledModels.has(happyAgentModelKey(provider.id, model.id)),
             id: happyAgentModelKey(provider.id, model.id),
-            isDefault: provider.id === selection.providerId && model.id === selection.modelId,
+            isDefault: provider.id === selection?.providerId && model.id === selection.modelId,
             modelId: model.id,
             name: model.name,
         })),

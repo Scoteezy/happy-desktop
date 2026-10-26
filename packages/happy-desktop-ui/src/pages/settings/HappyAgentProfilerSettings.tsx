@@ -4,6 +4,7 @@ import { Button } from "../../Button";
 import { CopyButton } from "../../CopyButton";
 import { FormRow } from "../../FormRow";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
+import { HappyAgentSettingsStatus } from "./HappyAgentSettingsStatus";
 
 export type HappyAgentProfilerStatus =
     | "stopped"
@@ -58,7 +59,7 @@ export function HappyAgentProfilerSettings(props: HappyAgentProfilerSettingsProp
                 </Banner>
             ) : null}
             <HappyAgentSettingsSection
-                description="Capture a bounded renderer trace, React commits, changed hook indices, and native process metrics."
+                description="A bounded renderer trace with React commits, hook changes and process metrics"
                 title="React renderer profile"
             >
                 <FormRow
@@ -89,33 +90,44 @@ export function HappyAgentProfilerSettings(props: HappyAgentProfilerSettingsProp
                 />
                 <FormRow
                     control={
-                        <span>
-                            {props.capabilities.reactAttribution ? "Available" : "Unavailable"}
-                        </span>
+                        <HappyAgentSettingsStatus
+                            label={
+                                props.capabilities.reactAttribution ? "Available" : "Unavailable"
+                            }
+                            variant={props.capabilities.reactAttribution ? "success" : "neutral"}
+                        />
                     }
-                    description="Requires a profile build with the hook installed before React starts. Standard builds remain native-only."
+                    description="Needs a profile build; standard builds capture native data only"
                     label="React attribution"
                 />
                 <FormRow
                     control={
-                        <span>
-                            {props.capabilities.liveDebuggerAttach
-                                ? "Available during capture"
-                                : "Unavailable"}
-                        </span>
+                        <HappyAgentSettingsStatus
+                            label={
+                                props.capabilities.liveDebuggerAttach
+                                    ? "Available during capture"
+                                    : "Unavailable"
+                            }
+                            variant={props.capabilities.liveDebuggerAttach ? "success" : "neutral"}
+                        />
                     }
-                    description="The external renderer debugger stays attached during capture; exclusive trace commands are rejected rather than stealing it."
+                    description="An attached renderer debugger stays attached while capturing"
                     label="Live debugger"
                 />
                 <FormRow
                     control={
-                        <span>
-                            {props.capabilities.reactDevtoolsProfiling
-                                ? "Available"
-                                : "Unavailable"}
-                        </span>
+                        <HappyAgentSettingsStatus
+                            label={
+                                props.capabilities.reactDevtoolsProfiling
+                                    ? "Available"
+                                    : "Unavailable"
+                            }
+                            variant={
+                                props.capabilities.reactDevtoolsProfiling ? "success" : "neutral"
+                            }
+                        />
                     }
-                    description="The profile renderer installed the official React DevTools backend before React started."
+                    description="The React DevTools backend loaded before React started"
                     label="React DevTools profiling"
                 />
                 {props.artifactPath ? (

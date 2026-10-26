@@ -26,6 +26,7 @@ import {
     type HappyAgentUsageProviderRow,
 } from "../../src";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
+import { settingsDefaultModel } from "./happyAgentSettingsFixtures";
 import { direct, relayWaiting } from "./mobilePairingFixtures";
 import {
     directSectionSpecimen,
@@ -44,8 +45,8 @@ const categories: readonly HappyAgentSettingsCategory[] = [
     { icon: "lock", id: "secrets", label: "Secrets" },
     { icon: "globe", id: "providers", label: "Providers" },
     { icon: "zap", id: "usage", label: "Usage" },
-    { icon: "mobile", id: "mobile-access", label: "Mobile Access" },
-    { icon: "code", id: "debug", label: "Dev Tools" },
+    { icon: "mobile", id: "mobile-access", label: "Mobile access" },
+    { icon: "code", id: "debug", label: "Dev tools" },
 ];
 
 const usageDescription = "How much of each provider account's plan this machine has spent";
@@ -321,9 +322,6 @@ const usageFreshness: readonly HappyAgentUsageProviderRow[] = [
     },
 ];
 
-const usageReadingTime = (capturedAt: number) =>
-    capturedAt >= 1_700_000_000_000 ? "just now" : "10 minutes ago";
-
 const instructions = `# House rules
 
 Ask before touching anything outside the working directory.
@@ -332,31 +330,6 @@ Ask before touching anything outside the working directory.
 - \`pnpm typecheck\` before you say a thing is done.
 - Never force-push \`main\`.
 `;
-
-const modelOptions = [
-    {
-        label: "Codex · Current CLI · GPT-5.6 Sol",
-        value: "codex:openai/gpt-5.6-sol",
-    },
-    {
-        label: "Codex · Current CLI · GPT-5.6 Terra",
-        value: "codex:openai/gpt-5.6-terra",
-    },
-    {
-        label: "Claude · Current CLI · Opus 5 1M",
-        value: "claude:anthropic/opus-5",
-    },
-    {
-        label: "Claude · Current CLI · Sonnet 5",
-        value: "claude:anthropic/sonnet-5",
-    },
-];
-
-const effortOptions = [
-    { label: "Low", value: "low" },
-    { label: "Medium", value: "medium" },
-    { label: "High", value: "high" },
-];
 
 const permissionModeOptions = [
     { label: "Auto", value: "auto" },
@@ -663,10 +636,7 @@ export function HappyAgentSettingsBlueprintPage() {
                             ],
                         }}
                         appearance="system"
-                        defaultModelKey="codex:openai/gpt-5.6-sol"
-                        effort="medium"
-                        effortOptions={effortOptions}
-                        modelOptions={modelOptions}
+                        {...settingsDefaultModel(false)}
                         onAppearanceChange={noop}
                         statusBar={{
                             themeShown: true,
@@ -686,8 +656,6 @@ export function HappyAgentSettingsBlueprintPage() {
                         previewUpdatesEnabled
                         onUsageAnalyticsChange={noop}
                         usageAnalyticsEnabled
-                        onDefaultModelChange={noop}
-                        onEffortChange={noop}
                         onPermissionModeChange={noop}
                         onScrollbarVisibilityChange={noop}
                         onLinkOpenPlacementChange={noop}
@@ -749,7 +717,7 @@ export function HappyAgentSettingsBlueprintPage() {
             </FullScreenSpecimen>
             <FullScreenSpecimen
                 detail="Mobile Access category: configured and connected, with the selected owner's disconnect action"
-                label="Happy Agent settings — Mobile Access"
+                label="Happy Agent settings — Mobile access"
                 number="01e"
             >
                 <HappyAgentSettingsShell
@@ -758,7 +726,7 @@ export function HappyAgentSettingsBlueprintPage() {
                     description={mobileDescription}
                     onCategorySelect={noop}
                     onClose={noop}
-                    title="Mobile Access"
+                    title="Mobile access"
                 >
                     <HappyAgentMobileSettings
                         configured
@@ -771,7 +739,7 @@ export function HappyAgentSettingsBlueprintPage() {
             </FullScreenSpecimen>
             <FullScreenSpecimen
                 detail="Happy could not confirm removing this computer: one banner with Try again and Keep linked; the status line does not repeat the reason."
-                label="Happy Agent settings — Mobile Access removal incomplete"
+                label="Happy Agent settings — Mobile access removal incomplete"
                 number="01e-removal"
             >
                 <HappyAgentSettingsShell
@@ -780,7 +748,7 @@ export function HappyAgentSettingsBlueprintPage() {
                     description={mobileDescription}
                     onCategorySelect={noop}
                     onClose={noop}
-                    title="Mobile Access"
+                    title="Mobile access"
                 >
                     <HappyAgentMobileSettings
                         configured
@@ -808,7 +776,7 @@ export function HappyAgentSettingsBlueprintPage() {
                     description={mobileDescription}
                     onCategorySelect={noop}
                     onClose={noop}
-                    title="Mobile Access"
+                    title="Mobile access"
                 >
                     <HappyAgentMobileSettings
                         configured={false}
@@ -836,7 +804,7 @@ export function HappyAgentSettingsBlueprintPage() {
                         description={mobileDescription}
                         onCategorySelect={noop}
                         onClose={noop}
-                        title="Mobile Access"
+                        title="Mobile access"
                     >
                         <HappyAgentMobileSettings
                             configured={configured}
@@ -894,7 +862,7 @@ export function HappyAgentSettingsBlueprintPage() {
             </FullScreenSpecimen>
             <FullScreenSpecimen
                 detail="Live debugger controls and a bounded raw renderer profile with React attribution"
-                label="Happy Agent settings — Dev Tools"
+                label="Happy Agent settings — Dev tools"
                 number="01g"
             >
                 <HappyAgentSettingsShell
@@ -903,7 +871,7 @@ export function HappyAgentSettingsBlueprintPage() {
                     description="Inspect live runtimes or capture raw renderer performance evidence"
                     onCategorySelect={noop}
                     onClose={noop}
-                    title="Dev Tools"
+                    title="Dev tools"
                 >
                     <HappyAgentDebugLogPanel
                         discardedEntries={7}
@@ -1256,13 +1224,8 @@ export function HappyAgentSettingsBlueprintPage() {
                 >
                     <HappyAgentGeneralSettings
                         appearance="system"
-                        defaultModelKey="codex:openai/gpt-5.6-sol"
-                        effort="medium"
-                        effortOptions={effortOptions}
-                        modelOptions={modelOptions}
+                        {...settingsDefaultModel(false)}
                         onAppearanceChange={noop}
-                        onDefaultModelChange={noop}
-                        onEffortChange={noop}
                         onPermissionModeChange={noop}
                         onScrollbarVisibilityChange={noop}
                         onLinkOpenPlacementChange={noop}
@@ -1331,7 +1294,6 @@ export function HappyAgentSettingsBlueprintPage() {
                     <HappyAgentUsageSettings
                         currentTime={1_700_000_000_000}
                         providers={usageAccounts}
-                        readingTime={usageReadingTime}
                     />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
@@ -1351,7 +1313,6 @@ export function HappyAgentSettingsBlueprintPage() {
                     <HappyAgentUsageSettings
                         currentTime={1_700_000_000_000}
                         providers={usageTokensOnly}
-                        readingTime={usageReadingTime}
                     />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
@@ -1407,7 +1368,6 @@ export function HappyAgentSettingsBlueprintPage() {
                             message: "The Happy Agent stopped reporting usage.",
                         }}
                         providers={usageUnread}
-                        readingTime={usageReadingTime}
                     />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
@@ -1427,7 +1387,6 @@ export function HappyAgentSettingsBlueprintPage() {
                     <HappyAgentUsageSettings
                         currentTime={1_700_000_000_000}
                         providers={usageFreshness}
-                        readingTime={usageReadingTime}
                     />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>

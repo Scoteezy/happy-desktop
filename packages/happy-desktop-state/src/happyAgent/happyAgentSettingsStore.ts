@@ -25,8 +25,10 @@ export function happyAgentModelKey(providerId: string, modelId: string): HappyAg
 export type HappyAgentLinkOpenPlacement = "panel" | "browser";
 
 export interface HappyAgentSettingsSnapshot {
-    /** Unset until the reader picks a model; the catalog's own default stands in. */
-    readonly defaultProviderId?: string;
+    /**
+     * Unset until the reader picks a model; the catalog's own default stands in.
+     * A model only: the provider a new session uses is the one picked last.
+     */
     readonly defaultModelId?: string;
     readonly defaultEffort: HappyAgentThinkingLevel;
     /** Access granted to a new session before its composer overrides the choice. */
@@ -49,8 +51,8 @@ export interface HappyAgentSettingsSnapshot {
 export interface HappyAgentSettingsStore {
     get(): HappyAgentSettingsSnapshot;
     subscribe(listener: () => void): () => void;
-    /** Chooses the model a new session starts on, together with its provider. */
-    defaultModelUpdate(providerId: string, modelId: string): void;
+    /** Chooses the model a new session starts on, on whichever provider was picked last. */
+    defaultModelUpdate(modelId: string): void;
     defaultEffortUpdate(effort: HappyAgentThinkingLevel): void;
     defaultPermissionModeUpdate(mode: HappyAgentPermissionMode): void;
     linkOpenPlacementUpdate(placement: HappyAgentLinkOpenPlacement): void;
@@ -62,13 +64,23 @@ export interface HappyAgentSettingsStore {
 const EMPTY_DISABLED: ReadonlySet<HappyAgentModelKey> = new Set<HappyAgentModelKey>();
 
 export interface HappyAgentSettingsInitial {
-    readonly defaultProviderId?: string;
     readonly defaultModelId?: string;
     readonly defaultEffort?: HappyAgentThinkingLevel;
     readonly defaultPermissionMode?: HappyAgentPermissionMode;
     readonly linkOpenPlacement?: HappyAgentLinkOpenPlacement;
     readonly previewUpdatesEnabled?: boolean;
 }
+
+/**
+ * The settings the desktop document owns. The model defaults are deliberately
+ * absent: they belong to the Happy Agent's model preference document and arrive
+ * only through `modelPreferencesChanged`, so a desktop document that never
+ * carried them cannot erase them.
+ */
+export type HappyAgentSettingsDesktop = Pick<
+    HappyAgentSettingsInitial,
+    "linkOpenPlacement" | "previewUpdatesEnabled"
+>;
 
 /** Creates the workspace-lifetime preference store; it opens no transport or timers. */
 export function happyAgentSettingsStoreCreate(
@@ -100,10 +112,9 @@ export function happyAgentSettingsStoreOwnedCreate(initial: HappyAgentSettingsIn
             listeners.add(listener);
             return () => listeners.delete(listener);
         },
-        defaultModelUpdate(providerId, modelId) {
-            if (snapshot.defaultProviderId === providerId && snapshot.defaultModelId === modelId)
-                return;
-            publish({ ...snapshot, defaultProviderId: providerId, defaultModelId: modelId });
+        defaultModelUpdate(modelId) {
+            if (snapshot.defaultModelId === modelId) return;
+            publish({ ...snapshot, defaultModelId: modelId });
         },
         defaultEffortUpdate(effort) {
             if (snapshot.defaultEffort === effort) return;
@@ -131,46 +142,27 @@ export function happyAgentSettingsStoreOwnedCreate(initial: HappyAgentSettingsIn
     };
     return {
         store,
-        settingsReceived(next: HappyAgentSettingsInitial): void {
-            const replacement: HappyAgentSettingsSnapshot = {
-                defaultProviderId: next.defaultProviderId,
-                defaultModelId: next.defaultModelId,
-                defaultEffort: next.defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
-                defaultPermissionMode: next.defaultPermissionMode ?? "auto",
-                linkOpenPlacement: next.linkOpenPlacement ?? "panel",
-                previewUpdatesEnabled: next.previewUpdatesEnabled ?? false,
-                disabledModels: snapshot.disabledModels,
-            };
+        settingsReceived(next: HappyAgentSettingsDesktop): void {
+            const linkOpenPlacement = next.linkOpenPlacement ?? "panel";
+            const previewUpdatesEnabled = next.previewUpdatesEnabled ?? false;
             if (
-                replacement.defaultProviderId === snapshot.defaultProviderId &&
-                replacement.defaultModelId === snapshot.defaultModelId &&
-                replacement.defaultEffort === snapshot.defaultEffort &&
-                replacement.defaultPermissionMode === snapshot.defaultPermissionMode &&
-                replacement.linkOpenPlacement === snapshot.linkOpenPlacement &&
-                replacement.previewUpdatesEnabled === snapshot.previewUpdatesEnabled
+                linkOpenPlacement === snapshot.linkOpenPlacement &&
+                previewUpdatesEnabled === snapshot.previewUpdatesEnabled
             )
                 return;
-            publish(replacement);
+            publish({ ...snapshot, linkOpenPlacement, previewUpdatesEnabled });
         },
         modelPreferencesChanged(document: HappyAgentModelPreferenceDocument): void {
-            const defaultProviderId = document.defaultSelection?.providerId;
-            const defaultModelId = document.defaultSelection?.modelId;
+            const defaultModelId = document.defaultModelId;
             const defaultEffort = document.defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL;
             const defaultPermissionMode = document.defaultPermissionMode ?? "auto";
             if (
-                snapshot.defaultProviderId === defaultProviderId &&
                 snapshot.defaultModelId === defaultModelId &&
                 snapshot.defaultEffort === defaultEffort &&
                 snapshot.defaultPermissionMode === defaultPermissionMode
             )
                 return;
-            publish({
-                ...snapshot,
-                defaultProviderId,
-                defaultModelId,
-                defaultEffort,
-                defaultPermissionMode,
-            });
+            publish({ ...snapshot, defaultModelId, defaultEffort, defaultPermissionMode });
         },
     };
 }

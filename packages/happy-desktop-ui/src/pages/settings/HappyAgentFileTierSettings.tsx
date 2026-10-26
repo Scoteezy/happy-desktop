@@ -63,6 +63,8 @@ export function HappyAgentFileTierSettings<TierId extends string>(
                             disabled={!canAdd}
                             icon="plus"
                             onClick={props.onTierAdd}
+                            size="small"
+                            variant="secondary"
                             {...(canAdd || props.unavailable
                                 ? {}
                                 : { title: "Remove a tier to add another." })}
@@ -70,7 +72,7 @@ export function HappyAgentFileTierSettings<TierId extends string>(
                             Add tier
                         </Button>
                     }
-                    description="Changed files that match a tier are listed in their own section below the rest, in every project. Write one glob per line: a pattern without a slash, like *.test.ts, matches anywhere; fixtures/ matches a directory; ! excludes."
+                    description="Matching changed files get their own section below the rest. One glob per line; ! excludes."
                     label="Tiers"
                 />
             </HappyAgentSettingsSection>
@@ -84,7 +86,6 @@ export function HappyAgentFileTierSettings<TierId extends string>(
             ) : (
                 <HappyAgentSettingsSection
                     description="A changed file goes to the first tier it matches."
-                    rows="cards"
                     title="In match order"
                 >
                     {props.tiers.map((tier, index) => (
@@ -145,17 +146,19 @@ export function HappyAgentFileTierSettings<TierId extends string>(
                                     />
                                 </Box>
                             </header>
-                            <TextField
-                                aria-label={`Tier ${String(index + 1)} patterns`}
-                                fullWidth
-                                multiline
-                                onValueChange={(value) =>
-                                    props.onTierPatternsChange(tier.id, value.split("\n"))
-                                }
-                                placeholder={"*.test.ts\n__snapshots__/"}
-                                rows={3}
-                                value={tier.patterns.join("\n")}
-                            />
+                            <Box className="happy-agent-file-tier__patterns">
+                                <TextField
+                                    aria-label={`Tier ${String(index + 1)} patterns`}
+                                    fullWidth
+                                    multiline
+                                    onValueChange={(value) =>
+                                        props.onTierPatternsChange(tier.id, value.split("\n"))
+                                    }
+                                    placeholder={"*.test.ts\n__snapshots__/"}
+                                    rows={3}
+                                    value={tier.patterns.join("\n")}
+                                />
+                            </Box>
                         </article>
                     ))}
                 </HappyAgentSettingsSection>

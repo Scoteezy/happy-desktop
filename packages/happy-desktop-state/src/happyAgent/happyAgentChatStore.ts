@@ -817,6 +817,8 @@ export interface HappyAgentChatDeps {
         listener: (rejection: MutationRejectedDelta) => void,
     ) => () => void;
     readonly selectionUsed?: (selection: HappyAgentSelection) => void;
+    /** Reports the provider of a model picked here, which new sessions then start on. */
+    readonly providerPicked?: (providerId: string) => void;
     readonly modelSelect?: (
         current: HappyAgentSelection,
         input: HappyAgentModelSelection,
@@ -1485,6 +1487,7 @@ export function happyAgentChatStoreCreate(
             deps.modelSelect?.(current, input) ??
             happyAgentSelectionModelUpdate(catalog, current, input);
         deps.selectionUsed?.(next);
+        deps.providerPicked?.(next.providerId);
         const mutations = [
             deps.connectActions.switchModel(sessionId, {
                 providerId: next.providerId,

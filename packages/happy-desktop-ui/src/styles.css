@@ -158,8 +158,6 @@
 @import "./styles/mobile-pairing.css";
 @import "./styles/happy-agent-secret-settings.css";
 @import "./styles/happy-agent-file-tier-settings.css";
-@import "./styles/happy-agent-debug-log.css";
-@import "./styles/happy-agent-raw-state.css";
 @import "./styles/happy-agent-usage-settings.css";
 @import "./styles/happy-agent-inbox.css";
 @import "./styles/happy-agent-artifacts.css";

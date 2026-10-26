@@ -5649,10 +5649,30 @@ export function happyAgentWorkspaceStoreCreate(
     };
 
     /**
-     * Materializes the pickers' draft from the model catalog, opened on the
-     * connection's most recent selection so a bot starts configured the way
-     * the last conversation was. Every change is remembered as the most recent
-     * selection, exactly as a group's draft remembers it.
+     * Follows a new session's draft: every change remembers that model's
+     * effort and speed, and a model picked in it makes its provider the one
+     * new sessions start on. A catalog the daemon changed is nobody's choice.
+     */
+    const draftSelectionFollow = (draft: HappyAgentSessionDraftStore): (() => void) => {
+        let picked = draft.get().selection;
+        return draft.subscribe(() => {
+            const selection = draft.get().selection;
+            if (!draftsCatalogApplying) {
+                client.models.selectionUsed(selection);
+                if (
+                    selection.providerId !== picked.providerId ||
+                    selection.modelId !== picked.modelId
+                )
+                    client.models.providerPicked(selection.providerId);
+            }
+            picked = selection;
+            recompute();
+        });
+    };
+
+    /**
+     * Materializes the pickers' draft from the model catalog, opened on what a
+     * new session starts on: the default model on the provider picked last.
      */
     const botCreateSessionDraftEnsure = (): void => {
         const current = ++botCreateSessionDraftGeneration;
@@ -5665,18 +5685,14 @@ export function happyAgentWorkspaceStoreCreate(
                 const models = latest.type === "ready" ? latest : loaded;
                 const owned = happyAgentSessionDraftStoreOwnedCreate({
                     catalog: models.catalog,
-                    selection: models.lastUsedSelection,
+                    selection: models.defaultSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
                     effortRemembered: (providerId, modelId) =>
                         client.models.effortRemembered(providerId, modelId),
                 });
                 botCreateSessionDraft = owned.store;
                 botCreateSessionDraftWriter = owned.writer;
-                unsubscribeBotCreateSessionDraft = botCreateSessionDraft.subscribe(() => {
-                    const selection = botCreateSessionDraft?.get().selection;
-                    if (selection && !draftsCatalogApplying) client.models.selectionUsed(selection);
-                    recompute();
-                });
+                unsubscribeBotCreateSessionDraft = draftSelectionFollow(owned.store);
                 recompute();
             },
             () => undefined,
@@ -5956,7 +5972,7 @@ export function happyAgentWorkspaceStoreCreate(
 
     /**
      * Materializes the addressed group's session draft from the global model
-     * store, seeded from the daemon connection's most recent selection.
+     * store, seeded with what a new session starts on.
      */
     const groupDraftEnsure = (groupId: HappyAgentGroupId): void => {
         const current = ++groupDraftGeneration;
@@ -5968,18 +5984,14 @@ export function happyAgentWorkspaceStoreCreate(
                 const models = latest.type === "ready" ? latest : loaded;
                 const owned = happyAgentSessionDraftStoreOwnedCreate({
                     catalog: models.catalog,
-                    selection: models.lastUsedSelection,
+                    selection: models.defaultSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
                     effortRemembered: (providerId, modelId) =>
                         client.models.effortRemembered(providerId, modelId),
                 });
                 groupDraft = owned.store;
                 groupDraftWriter = owned.writer;
-                unsubscribeGroupDraft = groupDraft.subscribe(() => {
-                    const selection = groupDraft?.get().selection;
-                    if (selection && !draftsCatalogApplying) client.models.selectionUsed(selection);
-                    recompute();
-                });
+                unsubscribeGroupDraft = draftSelectionFollow(owned.store);
                 recompute();
             },
             () => undefined,
@@ -5995,7 +6007,7 @@ export function happyAgentWorkspaceStoreCreate(
      * Starts the conversation a newly created workspace comes with, and
      * addresses it.
      *
-     * The configuration is the connection's last selection, exactly as a new tab
+     * The configuration is what a new session starts on, exactly as a new tab
      * in an existing workspace takes it: this is that same act, performed for
      * the reader because asking for a workspace is asking to work in one.
      *
@@ -6009,7 +6021,7 @@ export function happyAgentWorkspaceStoreCreate(
         worktreeId: HappyAgentWorktreeId,
     ): HappyAgentSessionLocation | undefined => {
         const models = client.models.get();
-        const selection = models.type === "ready" ? models.lastUsedSelection : undefined;
+        const selection = models.type === "ready" ? models.defaultSelection : undefined;
         const create: HappyAgentSessionCreateInput = {
             cwd: "",
             worktreeId,
@@ -7245,10 +7257,10 @@ export function happyAgentWorkspaceStoreCreate(
             const latest = client.models.get();
             const models = latest.type === "ready" ? latest : loaded;
             // What the sidebar's New task would open on, with the named model
-            // in place of the last one and that model's own effort and speed.
+            // in place of the default and that model's own effort and speed.
             const selection = input.model
-                ? client.models.modelSelect(models.lastUsedSelection, input.model)
-                : models.lastUsedSelection;
+                ? client.models.modelSelect(models.defaultSelection, input.model)
+                : models.defaultSelection;
             return list.taskCreate({
                 ...(input.name === undefined ? {} : { name: input.name }),
                 selection,
@@ -7284,12 +7296,12 @@ export function happyAgentWorkspaceStoreCreate(
                 );
             }
         },
-        // Anything the caller names wins over the connection's last selection.
+        // Anything the caller names wins over what a new session starts on.
         conversationCreate: (groupId, input, source) => {
             const refusal = groupConversationRefusalFind(groupId);
             if (refusal) return Promise.reject(new Error(refusal));
             const models = client.models.get();
-            const selection = models.type === "ready" ? models.lastUsedSelection : undefined;
+            const selection = models.type === "ready" ? models.defaultSelection : undefined;
             const create = selection ? { ...selectionCreateFields(selection), ...input } : input;
             const created = (location: HappyAgentSessionLocation | undefined): void => {
                 if (!location) return;

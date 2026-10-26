@@ -32,8 +32,8 @@ const categories: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
     { icon: "users", id: "account", label: "Account" },
     { icon: "globe", id: "providers", label: "Providers" },
-    { icon: "mobile", id: "mobile-access", label: "Mobile Access" },
-    { icon: "code", id: "debug", label: "Dev Tools" },
+    { icon: "mobile", id: "mobile-access", label: "Mobile access" },
+    { icon: "code", id: "debug", label: "Dev tools" },
 ];
 
 /** The window Happy opens at, and the smallest one it allows. */
@@ -54,7 +54,7 @@ function settings(props: {
             description="This Happy Agent's connection to Happy Mobile"
             onCategorySelect={noop}
             onClose={noop}
-            title="Mobile Access"
+            title="Mobile access"
         >
             <HappyAgentMobileSettings
                 configured={false}
@@ -365,7 +365,7 @@ export function MobilePairingFlowPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Pairing a phone with both methods side by side, in Settings › Mobile Access and in first-run setup. Each viewport is named for `pnpm blueprint:screens`."
+            summary="Pairing a phone with both methods side by side, in Settings › Mobile access and in first-run setup. Each viewport is named for `pnpm blueprint:screens`."
             title="Mobile pairing flow"
         >
             {[defaultWindow, minimumWindow].flatMap((window) =>

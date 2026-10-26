@@ -1,20 +1,18 @@
 /*
- * File tiers settings — one card per tier, in match order.
+ * File tiers settings — one row per tier, in match order.
  *
- * Each card is its own block on the settings column: its position in the match
- * order, its name and the controls that reorder or remove it on one row, and
- * its patterns beneath. The cards are separated by the section's card gap.
+ * Each tier is a plain row closed by a form row's hairline: its position in the
+ * match order, its name and the controls that reorder or remove it on one line,
+ * and its patterns beneath, under the name.
  */
 
 .happy-agent-file-tier {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px;
-    background: var(--surface-high);
-    border: 1px solid var(--divider);
-    border-radius: 10px;
+    gap: 8px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--divider);
 }
 
 .happy-agent-file-tier__header {
@@ -24,20 +22,15 @@
     min-width: 0;
 }
 
-/* The tier's place in the match order, in the tile the secret cards use for
-   their glyph. The tile sits beyond the card's corner field and is independent
-   of its radius. */
+/* The tier's place in the match order, in the column a secret's glyph takes. */
 .happy-agent-file-tier__order {
     box-sizing: border-box;
     display: flex;
     flex: none;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: var(--surface);
-    border: 1px solid var(--divider);
-    border-radius: 8px;
+    width: 20px;
+    height: 20px;
     color: var(--text-secondary);
     font-family: var(--happy-font-mono);
     font-size: 12px;
@@ -56,4 +49,9 @@
     flex: none;
     align-items: center;
     gap: 4px;
+}
+
+/* Patterns sit under the name, past the order number and its gap. */
+.happy-agent-file-tier__patterns {
+    padding-left: 32px;
 }

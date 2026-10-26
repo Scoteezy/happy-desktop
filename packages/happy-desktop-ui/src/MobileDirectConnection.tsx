@@ -1,6 +1,7 @@
 import { useId } from "react";
-import { Badge, type BadgeVariant } from "./Badge";
+import type { BadgeVariant } from "./Badge";
 import { Banner } from "./Banner";
+import { HappyAgentSettingsStatus } from "./pages/settings/HappyAgentSettingsStatus";
 import { Box } from "./Box";
 import { Button } from "./Button";
 import { FormRow } from "./FormRow";
@@ -581,7 +582,7 @@ const SOCKET_STATES: Record<
     closed: {
         label: "Not in use",
         variant: "neutral",
-        description: "Opens only while a phone is pairing or paired. Nothing is exposed now.",
+        description: "Opens only while a phone pairs or is paired.",
     },
     starting: {
         label: "Opening…",
@@ -591,7 +592,7 @@ const SOCKET_STATES: Record<
     open: {
         label: "Open",
         variant: "success",
-        description: "Paired phones reach this computer over a private Tailcat connection.",
+        description: "Paired phones can reach this computer.",
     },
     failed: {
         label: "Failed",
@@ -613,8 +614,9 @@ export interface MobileDirectConnectionSectionProps {
 }
 
 /**
- * C-298b MobileDirectConnectionSection — the direct connection's status and
- * the phones paired through it, each removable after a confirmation.
+ * C-298b MobileDirectConnectionSection — the phones paired directly, each
+ * removable after a confirmation, and the connection's state only when it
+ * failed or cannot be read.
  */
 export function MobileDirectConnectionSection(props: MobileDirectConnectionSectionProps) {
     const { connector } = props;
@@ -644,30 +646,34 @@ export function MobileDirectConnectionSection(props: MobileDirectConnectionSecti
         props.removal === undefined
             ? undefined
             : devices.find((device) => device.id === props.removal?.deviceId);
+    // The connection itself is only worth a row when something is wrong with it;
+    // otherwise the phones paired through it say everything.
+    const troubled =
+        connector.kind === "read-failed" ||
+        connector.kind === "unsupported" ||
+        (connector.kind === "ready" && connector.connector.status === "failed");
     return (
         <Box className="happy-mobile-direct-section" data-happy-desktop-ui="mobile-direct-section">
-            <FormRow
-                control={
-                    <Box className="happy-mobile-direct-section__status-control">
-                        {failure && props.onErrorAssist ? (
-                            <Button onClick={props.onErrorAssist} size="small" variant="ghost">
-                                Ask Chief of Staff
-                            </Button>
-                        ) : null}
-                        <Badge label={state.label} variant={state.variant} />
-                    </Box>
-                }
-                {...(state.description || failure
-                    ? { description: [state.description, failure].filter(Boolean).join(" ") }
-                    : {})}
-                label="Status"
-            />
+            {troubled ? (
+                <FormRow
+                    control={
+                        <Box className="happy-mobile-direct-section__status-control">
+                            {failure && props.onErrorAssist ? (
+                                <Button onClick={props.onErrorAssist} size="small" variant="ghost">
+                                    Ask Chief of Staff
+                                </Button>
+                            ) : null}
+                            <HappyAgentSettingsStatus label={state.label} variant={state.variant} />
+                        </Box>
+                    }
+                    {...(state.description || failure
+                        ? { description: [state.description, failure].filter(Boolean).join(" ") }
+                        : {})}
+                    label="Direct connection"
+                />
+            ) : null}
             {connector.kind === "ready" ? (
-                devices.length === 0 ? (
-                    <span className="happy-mobile-direct-section__empty">
-                        No phones are paired directly.
-                    </span>
-                ) : (
+                devices.length === 0 ? null : (
                     <ul
                         aria-label="Phones paired directly"
                         className="happy-mobile-direct-section__devices"
@@ -686,7 +692,7 @@ export function MobileDirectConnectionSection(props: MobileDirectConnectionSecti
                                         {device.name}
                                     </span>
                                     <span className="happy-mobile-direct-device__detail">
-                                        {PLATFORM_LABELS[device.platform]} · Paired{" "}
+                                        Direct · {PLATFORM_LABELS[device.platform]} · Paired{" "}
                                         {pairedDate(device.createdAt)} · Last seen{" "}
                                         {relativeTime(device.lastSeenAt, props.now)}
                                     </span>

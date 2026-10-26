@@ -1,4 +1,4 @@
-import { Badge, type BadgeVariant } from "../../Badge";
+import type { BadgeVariant } from "../../Badge";
 import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { EmptyState } from "../../EmptyState";
@@ -6,6 +6,7 @@ import { Icon } from "../../Icon";
 import { Spinner } from "../../Spinner";
 import { Switch } from "../../Switch";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
+import { HappyAgentSettingsStatus } from "./HappyAgentSettingsStatus";
 
 /** Why a provider is or is not usable, straight from the daemon's catalog. */
 export type HappyAgentProviderStatus = "ready" | "not_authenticated" | "not_enabled" | "no_models";
@@ -68,8 +69,8 @@ const STATUS_VARIANTS: Record<HappyAgentProviderStatus, BadgeVariant> = {
 
 /** What has to happen in Happy Agent itself before the provider's models become usable. */
 const STATUS_HINTS: Partial<Record<HappyAgentProviderStatus, string>> = {
-    not_authenticated: "Sign this provider in from Happy Agent to use its models.",
-    not_enabled: "Switched off on this machine, so no agent here may use it.",
+    not_authenticated: "Sign it in from Happy Agent to use its models.",
+    not_enabled: "No agent on this machine may use it.",
 };
 
 /**
@@ -113,8 +114,7 @@ export function HappyAgentProviderSettings(props: HappyAgentProviderSettingsProp
                 </Banner>
             ) : null}
             <HappyAgentSettingsSection
-                description="Switching a provider off stops every agent on this machine from using it. Switching off one model only keeps it out of this window's session pickers."
-                rows="cards"
+                description="Off for a provider stops every agent here using it. Off for a model only hides it from this window’s pickers."
                 title="Model providers"
             >
                 {props.providers.map((provider) => (
@@ -147,7 +147,7 @@ export function HappyAgentProviderSettings(props: HappyAgentProviderSettingsProp
                                     </span>
                                 </Box>
                             </Box>
-                            <Badge
+                            <HappyAgentSettingsStatus
                                 label={STATUS_LABELS[provider.status]}
                                 variant={STATUS_VARIANTS[provider.status]}
                             />
@@ -177,7 +177,9 @@ export function HappyAgentProviderSettings(props: HappyAgentProviderSettingsProp
                                                 {model.name}
                                             </span>
                                             {model.isDefault ? (
-                                                <Badge label="Default" variant="accent" />
+                                                <span className="happy-agent-provider__model-default">
+                                                    Default
+                                                </span>
                                             ) : null}
                                         </Box>
                                         <span

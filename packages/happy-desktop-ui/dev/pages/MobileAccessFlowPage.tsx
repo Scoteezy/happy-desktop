@@ -31,8 +31,8 @@ const categories: readonly HappyAgentSettingsCategory[] = [
     { icon: "lock", id: "secrets", label: "Secrets" },
     { icon: "globe", id: "providers", label: "Providers" },
     { icon: "zap", id: "usage", label: "Usage" },
-    { icon: "mobile", id: "mobile-access", label: "Mobile Access" },
-    { icon: "code", id: "debug", label: "Dev Tools" },
+    { icon: "mobile", id: "mobile-access", label: "Mobile access" },
+    { icon: "code", id: "debug", label: "Dev tools" },
 ];
 
 const accountKeyFingerprint = "4f9a1c07e2b85d36a0c4e7f19b2d58a3c6e0f47b19d2a85c3e6f07b41a9d2c58";
@@ -193,7 +193,7 @@ function shell(children: ReactNode) {
                 description="This Happy Agent's connection to Happy Mobile"
                 onCategorySelect={noop}
                 onClose={noop}
-                title="Mobile Access"
+                title="Mobile access"
             >
                 {children}
             </HappyAgentSettingsShell>
@@ -205,7 +205,7 @@ export function MobileAccessFlowPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Settings › Mobile Access in the order a person meets it, at the window Happy opens at and at its minimum window: pairing, the composed phone status, the terminal CLI, and the two destructive confirmations. Each viewport is named for `pnpm blueprint:screens`."
+            summary="Settings › Mobile access in the order a person meets it, at the window Happy opens at and at its minimum window: pairing, the composed phone status, the terminal CLI, and the two destructive confirmations. Each viewport is named for `pnpm blueprint:screens`."
             title="Mobile Access flow"
         >
             {windows.flatMap((window) =>

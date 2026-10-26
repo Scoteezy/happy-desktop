@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Badge } from "../../Badge";
 import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { Button } from "../../Button";
@@ -13,6 +12,7 @@ import {
     type HappyAgentSecretCreateDraft,
 } from "./HappyAgentSecretCreateDialog";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
+import { HappyAgentSettingsStatus } from "./HappyAgentSettingsStatus";
 
 export interface HappyAgentSecretRow {
     readonly availableToAgents: boolean;
@@ -117,13 +117,15 @@ export function HappyAgentSecretSettings(props: HappyAgentSecretSettingsProps) {
                                 setAttempted(false);
                                 setSubmitError(undefined);
                             }}
+                            size="small"
                             title={props.unavailable}
+                            variant="secondary"
                         >
                             New secret
                         </Button>
                     }
-                    description="Bundle one or more environment variables. Values are write-only; Happy Agent returns metadata, never the stored values."
-                    label="Saved secrets"
+                    description="Environment variables agents can use. Values can’t be read back."
+                    label="Environment bundles"
                 />
             </HappyAgentSettingsSection>
             {props.error ? (
@@ -143,7 +145,7 @@ export function HappyAgentSecretSettings(props: HappyAgentSecretSettingsProps) {
                     title="No secrets yet"
                 />
             ) : (
-                <HappyAgentSettingsSection rows="cards" title="Environment bundles">
+                <HappyAgentSettingsSection>
                     {props.secrets.map((secret) => (
                         <article
                             className="happy-agent-secret"
@@ -172,12 +174,14 @@ export function HappyAgentSecretSettings(props: HappyAgentSecretSettingsProps) {
                                     </span>
                                 </Box>
                                 <Box className="happy-agent-secret__badges">
-                                    {secret.managed ? (
-                                        <Badge label="Managed" variant="neutral" />
-                                    ) : null}
-                                    <Badge
-                                        label={secret.availableToAgents ? "All agents" : "Scoped"}
-                                        variant={secret.availableToAgents ? "success" : "outline"}
+                                    <HappyAgentSettingsStatus
+                                        label={[
+                                            secret.managed ? "Managed" : undefined,
+                                            secret.availableToAgents ? "All agents" : "Scoped",
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" · ")}
+                                        variant={secret.availableToAgents ? "success" : "neutral"}
                                     />
                                 </Box>
                             </header>

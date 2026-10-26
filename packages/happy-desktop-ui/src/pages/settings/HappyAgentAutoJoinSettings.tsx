@@ -27,14 +27,10 @@ export function HappyAgentAutoJoinSettings(
     },
 ) {
     const id = useId();
-    // What the description and banners call the preference; the Surface one is autojoin.
-    const noun = props.entity === "task" ? "task" : "autojoin";
+    // What the banners call the preference; the Surface one is autojoin.
     const Noun = props.entity === "task" ? "Task" : "Autojoin";
     return (
-        <HappyAgentSettingsSection
-            description={`Your ${noun} preference on this connection follows you across devices.`}
-            title={props.connectionLabel}
-        >
+        <HappyAgentSettingsSection title={props.connectionLabel}>
             {props.unavailable ? (
                 <Banner tone="neutral" title="Connection unavailable">
                     {props.unavailable}

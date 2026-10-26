@@ -153,6 +153,12 @@ export type ComposerModelControlProps = {
     /** Shown beside the pill when the selected account is not an ordinary choice. */
     accountNotice?: ComposerModelAccountNotice;
     /**
+     * Each service header names its account but cannot change it. Settings
+     * picks a default model this way: the account is whichever one was picked
+     * last in a conversation's model menu.
+     */
+    accountsReadOnly?: boolean;
+    /**
      * Adds "Manage accounts" to the model list, above the benchmarks link. The
      * menu closes once it settles; a rejection's message is shown under it.
      */
@@ -404,10 +410,15 @@ export function ComposerModelAccountUsageDetails(props: {
     usage: ComposerModelAccountUsage | undefined;
     /** The moment ages are told from; without it no freshness is said. */
     now: number | undefined;
+    className?: string;
 }) {
     const usage = props.usage;
     return (
-        <div className="happy-composer-model-control__usage">
+        <div
+            className={["happy-composer-model-control__usage", props.className]
+                .filter(Boolean)
+                .join(" ")}
+        >
             {usage?.week ? <UsageLine primary window={usage.week} /> : null}
             {usage?.session ? <UsageLine window={usage.session} /> : null}
             {usage?.week || usage?.session ? null : (
@@ -1176,6 +1187,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                                         className="happy-composer-model-control__service-header"
                                                         data-service-header={service.id}
                                                         onWheel={(event) => {
+                                                            if (props.accountsReadOnly) return;
                                                             const direction = scrollStep(
                                                                 event,
                                                                 service.id,
@@ -1205,6 +1217,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                                             data-popup-anchor={
                                                                 accountsOpen ? "" : undefined
                                                             }
+                                                            disabled={props.accountsReadOnly}
                                                             onClick={() => {
                                                                 setAccountHover(null);
                                                                 setAccounts(
@@ -1230,12 +1243,14 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                                                 </span>
                                                                 )
                                                             </span>
-                                                            <span className="happy-composer-model-control__account-chevron">
-                                                                <Icon
-                                                                    name="chevron-right"
-                                                                    size={12}
-                                                                />
-                                                            </span>
+                                                            {props.accountsReadOnly ? null : (
+                                                                <span className="happy-composer-model-control__account-chevron">
+                                                                    <Icon
+                                                                        name="chevron-right"
+                                                                        size={12}
+                                                                    />
+                                                                </span>
+                                                            )}
                                                         </button>
                                                     </div>
                                                     {rows.map(renderRow)}

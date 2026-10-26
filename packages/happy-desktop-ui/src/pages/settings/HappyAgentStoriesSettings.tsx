@@ -24,10 +24,7 @@ export interface HappyAgentStoriesSettingsProps {
 export function HappyAgentStoriesSettings(props: HappyAgentStoriesSettingsProps) {
     const id = useId();
     return (
-        <HappyAgentSettingsSection
-            title={props.connectionLabel}
-            description="Your Stories preference on this connection follows you across devices. Off until you enable it here."
-        >
+        <HappyAgentSettingsSection title={props.connectionLabel}>
             {props.unavailable ? (
                 <Banner tone="neutral" title="Connection unavailable">
                     {props.unavailable}
@@ -50,7 +47,7 @@ export function HappyAgentStoriesSettings(props: HappyAgentStoriesSettingsProps)
             ) : null}
             <FormRow
                 label="Stories"
-                description="Experimental. Shows your team's stories as a row of circles above the sidebar, and lets any agent draft a story for you to post when you say “post it”. Off, nothing changes."
+                description="Your team’s stories above the sidebar; any agent drafts one for you when you say “post it”"
                 htmlFor={id}
                 control={
                     <Box className="happy-agent-settings__pending">

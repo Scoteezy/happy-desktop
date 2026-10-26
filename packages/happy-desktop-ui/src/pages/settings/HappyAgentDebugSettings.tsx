@@ -53,7 +53,7 @@ export function HappyAgentDebugSettings(props: HappyAgentDebugSettingsProps) {
     return (
         <>
             {props.error ? (
-                <Banner tone="danger" title="Dev Tools unavailable">
+                <Banner tone="danger" title="Dev tools unavailable">
                     {props.error}
                 </Banner>
             ) : null}
@@ -64,7 +64,7 @@ export function HappyAgentDebugSettings(props: HappyAgentDebugSettingsProps) {
                 </Box>
             ) : null}
             <HappyAgentSettingsSection
-                description="Starts and stops every debugger live. Happy stays open and the renderer is not reloaded."
+                description="Happy stays open and nothing reloads"
                 title="Control"
             >
                 <FormRow
@@ -94,12 +94,12 @@ export function HappyAgentDebugSettings(props: HappyAgentDebugSettingsProps) {
                             </Button>
                         </Box>
                     }
-                    description="Electron main, the current Happy renderer, and the local Happy Agent daemon"
+                    description="Electron main, this renderer, and the local Happy Agent"
                     label="All debuggers"
                 />
             </HappyAgentSettingsSection>
             <HappyAgentSettingsSection
-                description="Each endpoint listens only on 127.0.0.1. Copy its WebSocket URL into a raw CDP client."
+                description="Local only (127.0.0.1). Copy a WebSocket URL into a CDP client."
                 title="Attachment points"
             >
                 <DebuggerRow

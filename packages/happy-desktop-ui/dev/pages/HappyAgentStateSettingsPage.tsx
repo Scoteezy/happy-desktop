@@ -75,7 +75,7 @@ export function HappyAgentStateSettingsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Every live store snapshot the settings window holds, printed verbatim under Dev Tools. Each document is one store's own value serialized by its owner: nothing is summarized, relabelled, or filtered, so a state question is answered by reading rather than by inferring it from what the ordinary screens happen to render. Each panel is bounded at 320px and copyable whole."
+            summary="Every live store snapshot the settings window holds, copied whole under Dev tools: each store's own serialization, verbatim, under its name, ready to paste into a bug report."
             title="Raw state"
         >
             <Specimen

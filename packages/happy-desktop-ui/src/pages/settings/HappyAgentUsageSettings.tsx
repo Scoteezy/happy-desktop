@@ -1,16 +1,8 @@
-import type {
-    HappyAgentProviderModelTokenUsage,
-    HappyAgentProviderTokenCounts,
-    HappyAgentProviderUsageEntry,
-    HappyAgentProviderUsageWindow,
-    UserError,
-} from "happy-desktop-state";
-import { Badge } from "../../Badge";
+import type { HappyAgentProviderUsageEntry, UserError } from "happy-desktop-state";
 import { Banner } from "../../Banner";
+import { ComposerModelAccountUsageDetails } from "../../ComposerModelControl";
 import { EmptyState } from "../../EmptyState";
-import type { UsageWindowTone } from "../../usageTone";
-import { usagePercentClamp, usageWindowTone } from "../../usageTone";
-import { Ionicon } from "../../vectorIcons/VectorIcon";
+import { happyAgentComposerModelUsageProject } from "../../happyAgentComposerModelControl";
 import { providerAccountName } from "./providerAccountName";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
@@ -21,9 +13,7 @@ export interface HappyAgentUsageSettingsProps {
     loading?: boolean;
     /** The reading itself failed; whatever was already read stays legible beneath it. */
     error?: UserError;
-    /** Renders when a reading (or a failed attempt) was taken, the way the rest of the app renders time. */
-    readingTime?: (capturedAt: number) => string | undefined;
-    /** Current epoch millis used to render live time remaining until each reported reset. */
+    /** Now, in milliseconds: resets and ages are told from it. Absent, no age is told. */
     currentTime?: number;
 }
 
@@ -33,66 +23,23 @@ export interface HappyAgentUsageProviderRow extends HappyAgentProviderUsageEntry
     readonly typeName?: string;
 }
 
-/** An account is in one of these; the first three come straight from its worst window. */
-type UsageTone = UsageWindowTone | "spent" | "unread" | "error";
-
-const TONE_LABELS: Record<UsageTone, string> = {
-    ample: "Room left",
-    warning: "Running low",
-    critical: "Nearly spent",
-    spent: "Spent",
-    unread: "Not read yet",
-    error: "Could not be read",
-};
-
-/** The rolling windows a token count is reported for, widest reading last. */
-const TOKEN_WINDOWS = [
-    { key: "hour", label: "Hour" },
-    { key: "day", label: "Day" },
-    { key: "week", label: "Week" },
-    { key: "month", label: "Month" },
-] as const;
-
-const TOKENS = new Intl.NumberFormat("en-US");
-const TOKENS_COMPACT = new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-});
-
 /**
- * The Usage category: how much of each provider account's plan this machine has
- * spent.
+ * The Usage category: how much of each provider account's plan is left.
  *
- * A person opens this category to learn one thing: whether they can keep
- * working. So the answer is the content and nothing is drawn around it — an
- * account is a name with its windows listed beneath, and the only rule here is
- * the one that separates one account from the next.
- *
- * A window is one line: what it is, how much of it is gone drawn across the
- * middle of the column, the share as a number, and when it starts over. Putting
- * the measure between the name and the number keeps the three readings about
- * one window together, which a name at the far left and a number at the far
- * right could not do.
- *
- * Beneath the windows an account lists what it actually spent, by model and by
- * rolling window. A plan share and a token count answer different questions —
- * "may I keep working" and "on what did this machine spend" — so the counts stay
- * their own reading rather than being folded into a bar, and they are never
- * summed across models, whose tokens are not comparable quantities.
- *
- * Colour answers "can I keep working" and nothing else. Each account carries one
- * dot in the status vocabulary the rest of the app uses — green for room left,
- * orange for running low, red for nearly spent, spent, or failed to read, and
- * grey for an account nothing has been read from yet — so the whole answer is
- * readable down the left edge. The window bars stay the ink of the text until
- * a share crosses into warning, which keeps the coloured bar meaning "this one",
- * not "this is a bar".
+ * Each account is read the way the model menu's account list reads it, which is
+ * the native menu bar's presentation: the week and the session, each with when it
+ * starts over and the share left as a number and a draining ring at the row's
+ * end, then how current the numbers are. An account is a plain row
+ * closed by a hairline; nothing is drawn around it.
  *
  * It renders exactly what it is handed. It reads nothing and refreshes nothing:
  * the owner keeps the readings current for as long as this category is open.
  */
 export function HappyAgentUsageSettings(props: HappyAgentUsageSettingsProps) {
     const providers = props.providers;
+    // Without a clock, resets name their day and no age is told.
+    const now = props.currentTime;
+    const usage = happyAgentComposerModelUsageProject({ providers, loading: false }, now ?? 0);
     return (
         <>
             {props.error ? (
@@ -100,13 +47,8 @@ export function HappyAgentUsageSettings(props: HappyAgentUsageSettingsProps) {
                     {props.error.message}
                 </Banner>
             ) : null}
-
             {providers.length === 0 ? (
                 <EmptyState
-                    // A category-wide wait, like the inbox and the plugin
-                    // catalogue. The settled version asks the reader to go and
-                    // sign in somewhere else, which is not something artwork
-                    // here can help with.
                     animation={props.loading ? "snail" : undefined}
                     description={
                         props.loading
@@ -121,399 +63,51 @@ export function HappyAgentUsageSettings(props: HappyAgentUsageSettingsProps) {
                     description={usageSubtitle(providers)}
                     title="Provider accounts"
                 >
-                    <div
-                        className="happy-agent-usage-settings__providers"
-                        data-happy-desktop-ui="happy-agent-usage-settings-providers"
-                    >
-                        {providers.map((provider) => (
-                            <ProviderSection
-                                currentTime={props.currentTime}
-                                key={provider.providerId}
-                                provider={provider}
-                                {...(props.readingTime ? { readingTime: props.readingTime } : {})}
-                            />
-                        ))}
-                    </div>
+                    {providers.map((provider) => (
+                        <section
+                            className="happy-agent-usage-settings__account"
+                            data-happy-desktop-ui="happy-agent-usage-settings-provider"
+                            data-provider={provider.providerId}
+                            key={provider.providerId}
+                        >
+                            <header className="happy-agent-usage-settings__account-header">
+                                <span className="happy-agent-usage-settings__identity">
+                                    <span
+                                        className="happy-agent-usage-settings__name"
+                                        data-happy-desktop-ui="happy-agent-usage-settings-provider-name"
+                                    >
+                                        {providerAccountName(provider.providerId, provider.name)}
+                                    </span>
+                                    <span className="happy-agent-usage-settings__plan">
+                                        {[provider.typeName, provider.usage?.planName]
+                                            .filter(Boolean)
+                                            .join(" · ")}
+                                    </span>
+                                </span>
+                            </header>
+                            {provider.error !== undefined ? (
+                                <p
+                                    className="happy-agent-usage-settings__note"
+                                    data-happy-desktop-ui="happy-agent-usage-settings-provider-error"
+                                    data-note="error"
+                                >
+                                    {provider.error}
+                                </p>
+                            ) : usage.has(provider.providerId) ? (
+                                <ComposerModelAccountUsageDetails
+                                    className="happy-agent-usage-settings__details"
+                                    now={now}
+                                    usage={usage.get(provider.providerId)}
+                                />
+                            ) : (
+                                <p className="happy-agent-usage-settings__note">Not read yet</p>
+                            )}
+                        </section>
+                    ))}
                 </HappyAgentSettingsSection>
             )}
         </>
     );
-}
-
-function ProviderSection(props: {
-    currentTime?: number;
-    provider: HappyAgentUsageProviderRow;
-    readingTime?: (capturedAt: number) => string | undefined;
-}) {
-    const { provider } = props;
-    const usage = provider.usage;
-    const tone = providerTone(provider);
-    // A reading is dated by the last time the account was read successfully;
-    // a daemon before protocol 29 only dates the reading itself. A failed read
-    // still has an attempt behind it, and when that attempt happened is the
-    // whole difference between "signed out a minute ago" and "signed out since
-    // yesterday".
-    const stamp = usage ? (provider.refreshedAt ?? usage.capturedAt) : provider.checkedAt;
-    const time = stamp === undefined ? undefined : props.readingTime?.(stamp);
-    // An account whose last refresh failed keeps its earlier reading, and says
-    // both: when that reading is from, and that it could not be renewed.
-    const stale = usage !== undefined && provider.refreshError !== undefined;
-    const taken = provider.refreshing
-        ? "Updating…"
-        : time === undefined
-          ? undefined
-          : usage === undefined
-            ? `Checked ${time}`
-            : `Updated ${time}${stale ? " · couldn't refresh" : ""}`;
-    return (
-        <section
-            className="happy-agent-usage-settings__provider"
-            data-happy-desktop-ui="happy-agent-usage-settings-provider"
-            data-provider={provider.providerId}
-            data-tone={tone}
-        >
-            <header className="happy-agent-usage-settings__provider-header">
-                <span className="happy-agent-usage-settings__identity">
-                    <span
-                        aria-label={TONE_LABELS[tone]}
-                        className="happy-agent-usage-settings__dot"
-                        data-happy-desktop-ui="happy-agent-usage-settings-dot"
-                        role="img"
-                    />
-                    {provider.typeName ? (
-                        <span className="happy-agent-usage-settings__service">
-                            {provider.typeName}
-                        </span>
-                    ) : null}
-                    <span
-                        className="happy-agent-usage-settings__name"
-                        data-happy-desktop-ui="happy-agent-usage-settings-provider-name"
-                    >
-                        {providerAccountName(provider.providerId, provider.name)}
-                    </span>
-                    {usage?.planName ? (
-                        <span className="happy-agent-usage-settings__plan">{usage.planName}</span>
-                    ) : null}
-                </span>
-                <span className="happy-agent-usage-settings__provider-meta">
-                    {usage?.exhausted ? (
-                        <span data-happy-desktop-ui="happy-agent-usage-settings-exhausted">
-                            <Badge label="Spent" variant="danger" />
-                        </span>
-                    ) : null}
-                    {taken ? (
-                        <span
-                            className="happy-agent-usage-settings__taken"
-                            data-happy-desktop-ui="happy-agent-usage-settings-taken"
-                        >
-                            {taken}
-                        </span>
-                    ) : null}
-                </span>
-            </header>
-
-            {provider.error !== undefined ? (
-                <p
-                    className="happy-agent-usage-settings__note"
-                    data-happy-desktop-ui="happy-agent-usage-settings-provider-error"
-                    data-note="error"
-                >
-                    <Ionicon
-                        className="happy-agent-usage-settings__note-icon"
-                        name="alert-circle-outline"
-                        size={16}
-                    />
-                    <span>{provider.error}</span>
-                </p>
-            ) : null}
-
-            {provider.refreshError !== undefined && provider.refreshError !== provider.error ? (
-                <p
-                    className="happy-agent-usage-settings__note"
-                    data-happy-desktop-ui="happy-agent-usage-settings-refresh-error"
-                    data-note="error"
-                >
-                    <Ionicon
-                        className="happy-agent-usage-settings__note-icon"
-                        name="alert-circle-outline"
-                        size={16}
-                    />
-                    <span>
-                        {usage === undefined
-                            ? provider.refreshError
-                            : `Couldn't refresh: ${provider.refreshError}`}
-                    </span>
-                </p>
-            ) : null}
-
-            {usage === undefined ? (
-                provider.error === undefined && provider.refreshError === undefined ? (
-                    <p className="happy-agent-usage-settings__note" data-note="unread">
-                        <Ionicon
-                            className="happy-agent-usage-settings__note-icon"
-                            name="time-outline"
-                            size={16}
-                        />
-                        <span>This account has not been read yet.</span>
-                    </p>
-                ) : null
-            ) : (
-                <>
-                    {hasWindows(provider) ? (
-                        <div className="happy-agent-usage-settings__windows">
-                            <UsageWindow
-                                currentTime={props.currentTime}
-                                label="5 hours"
-                                window={usage.fiveHour}
-                            />
-                            <UsageWindow
-                                currentTime={props.currentTime}
-                                label="Week"
-                                window={usage.weekly}
-                            />
-                            <UsageWindow
-                                currentTime={props.currentTime}
-                                label="Month"
-                                window={usage.monthly}
-                            />
-                            {usage.credits ? (
-                                <div
-                                    className="happy-agent-usage-settings__credits"
-                                    data-happy-desktop-ui="happy-agent-usage-settings-credits"
-                                >
-                                    <span className="happy-agent-usage-settings__window-label">
-                                        Credits
-                                    </span>
-                                    <span className="happy-agent-usage-settings__credits-value">
-                                        {creditsText(
-                                            usage.credits.available,
-                                            usage.credits.unlimited,
-                                            usage.credits.remainingCents,
-                                        )}
-                                    </span>
-                                </div>
-                            ) : null}
-                        </div>
-                    ) : null}
-
-                    {usage.models && usage.models.length > 0 ? (
-                        <ModelTokens models={usage.models} />
-                    ) : null}
-
-                    {!hasWindows(provider) && !(usage.models && usage.models.length > 0) ? (
-                        <p className="happy-agent-usage-settings__note" data-note="idle">
-                            <Ionicon
-                                className="happy-agent-usage-settings__note-icon"
-                                name="remove-outline"
-                                size={16}
-                            />
-                            <span>This account has spent nothing this machine can see.</span>
-                        </p>
-                    ) : null}
-                </>
-            )}
-        </section>
-    );
-}
-
-/**
- * One reported window on a single line: its name, then the share drawn across
- * the middle of the column, then that share as a number, then when it starts
- * over. The measure runs the width the column can spare so a few percent is
- * still a visible difference.
- *
- * A vendor that does not report a window is not shown a line for it: an empty
- * track would read as "none of it used", which is the opposite of "we were not
- * told".
- */
-function UsageWindow(props: {
-    currentTime?: number;
-    label: string;
-    window?: HappyAgentProviderUsageWindow;
-}) {
-    const window = props.window;
-    if (!window) return null;
-    const percent = usagePercentClamp(window.usedPercent);
-    const tone = usageWindowTone(percent);
-    const reset =
-        window.resetsAt !== undefined && props.currentTime !== undefined
-            ? resetTimeRemaining(window.resetsAt, props.currentTime)
-            : undefined;
-    return (
-        <div
-            className="happy-agent-usage-settings__window"
-            data-happy-desktop-ui="happy-agent-usage-settings-window"
-            data-tone={tone}
-        >
-            <span className="happy-agent-usage-settings__window-label">{props.label}</span>
-            <span
-                aria-hidden="true"
-                className="happy-agent-usage-settings__track"
-                data-happy-desktop-ui="happy-agent-usage-settings-track"
-            >
-                <span
-                    className="happy-agent-usage-settings__fill"
-                    data-happy-desktop-ui="happy-agent-usage-settings-fill"
-                    style={{ width: `${String(percent)}%` }}
-                />
-            </span>
-            <span
-                aria-label={`${String(Math.round(percent))}% of ${props.label} used`}
-                className="happy-agent-usage-settings__percent"
-                role="img"
-            >
-                {Math.round(percent)}%
-            </span>
-            <span
-                className="happy-agent-usage-settings__reset"
-                data-happy-desktop-ui="happy-agent-usage-settings-reset"
-            >
-                {reset ?? ""}
-            </span>
-        </div>
-    );
-}
-
-/**
- * What the account spent, one row per model and one column per rolling window.
- *
- * Models are the rows because tokens from two models are not the same quantity:
- * there is no honest total across them, so the reading stops at the model that
- * earned it. A cell is that model's whole spend in that window — input, output,
- * and both halves of the cache — rounded for scanning, with the exact counts on
- * the cell for anyone who needs them. A window a model spent nothing in is a
- * dash rather than a zero, so the numbers that exist are what the eye lands on.
- */
-function ModelTokens(props: { models: readonly HappyAgentProviderModelTokenUsage[] }) {
-    return (
-        // Tokens by model are a genuine two-dimensional matrix: four numeric
-        // columns must share one measured width down every model row, which a
-        // flex row per model could not guarantee.
-        <table
-            className="happy-agent-usage-settings__models"
-            data-happy-desktop-ui="happy-agent-usage-settings-models"
-        >
-            <thead>
-                <tr>
-                    <th scope="col">Model</th>
-                    {TOKEN_WINDOWS.map((window) => (
-                        <th data-column="window" key={window.key} scope="col">
-                            {window.label}
-                        </th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody>
-                {props.models.map((model) => (
-                    <tr
-                        className="happy-agent-usage-settings__model-row"
-                        data-happy-desktop-ui="happy-agent-usage-settings-model"
-                        key={model.modelId}
-                    >
-                        <th
-                            className="happy-agent-usage-settings__model"
-                            scope="row"
-                            title={model.modelId}
-                        >
-                            {model.modelId}
-                        </th>
-                        {TOKEN_WINDOWS.map((window) => {
-                            const counts = model[window.key];
-                            return (
-                                <td
-                                    className="happy-agent-usage-settings__tokens"
-                                    data-happy-desktop-ui="happy-agent-usage-settings-tokens"
-                                    data-empty={counts === undefined ? "" : undefined}
-                                    key={window.key}
-                                    {...(counts ? { title: tokensTitle(counts) } : {})}
-                                >
-                                    {counts === undefined
-                                        ? "—"
-                                        : TOKENS_COMPACT.format(tokensTotal(counts))}
-                                </td>
-                            );
-                        })}
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-    );
-}
-
-/** Everything one model consumed in a window; cache is spend too, so it counts. */
-function tokensTotal(counts: HappyAgentProviderTokenCounts): number {
-    return (
-        counts.inputTokens + counts.outputTokens + counts.cacheReadTokens + counts.cacheWriteTokens
-    );
-}
-
-/** The exact counts behind a rounded cell, for the reader who wants them. */
-function tokensTitle(counts: HappyAgentProviderTokenCounts): string {
-    return [
-        `Input ${TOKENS.format(counts.inputTokens)}`,
-        `Output ${TOKENS.format(counts.outputTokens)}`,
-        `Cache read ${TOKENS.format(counts.cacheReadTokens)}`,
-        `Cache write ${TOKENS.format(counts.cacheWriteTokens)}`,
-    ].join(" · ");
-}
-
-/** Whether this account reported any plan share at all, credits included. */
-function hasWindows(provider: HappyAgentProviderUsageEntry): boolean {
-    const usage = provider.usage;
-    if (usage === undefined) return false;
-    return (
-        usage.fiveHour !== undefined ||
-        usage.weekly !== undefined ||
-        usage.monthly !== undefined ||
-        usage.credits !== undefined
-    );
-}
-
-/**
- * The one state an account is in, which its dot reports. A read that failed and
- * a read that never happened are different answers to "can I keep working", so
- * they are separate states rather than one grey absence; otherwise the account
- * takes the tone of its tightest window.
- */
-function providerTone(provider: HappyAgentProviderUsageEntry): UsageTone {
-    if (provider.error !== undefined) return "error";
-    const usage = provider.usage;
-    // A failed refresh beside a kept reading still answers from that reading.
-    if (usage === undefined) return provider.refreshError === undefined ? "unread" : "error";
-    if (usage.exhausted) return "spent";
-    const windows = [usage.fiveHour, usage.weekly, usage.monthly].filter(
-        (window): window is HappyAgentProviderUsageWindow => window !== undefined,
-    );
-    if (windows.length === 0) return "ample";
-    return usageWindowTone(
-        Math.max(...windows.map((window) => usagePercentClamp(window.usedPercent))),
-    );
-}
-
-function resetTimeRemaining(resetsAt: number, currentTime: number): string {
-    const remainingMinutes = Math.ceil((resetsAt - currentTime) / 60_000);
-    if (remainingMinutes <= 0) return "reset due";
-    if (remainingMinutes < 60) return `resets in ${String(remainingMinutes)}m`;
-
-    const remainingHours = Math.floor(remainingMinutes / 60);
-    const minutes = remainingMinutes % 60;
-    if (remainingHours < 24)
-        return `resets in ${String(remainingHours)}h${minutes === 0 ? "" : ` ${String(minutes)}m`}`;
-
-    const days = Math.floor(remainingHours / 24);
-    const hours = remainingHours % 24;
-    return `resets in ${String(days)}d${hours === 0 ? "" : ` ${String(hours)}h`}`;
-}
-
-function creditsText(
-    available: boolean,
-    unlimited: boolean,
-    remainingCents: number | undefined,
-): string {
-    if (unlimited) return "Unlimited";
-    if (!available) return "None left";
-    if (remainingCents === undefined) return "Available";
-    return `$${(remainingCents / 100).toFixed(2)} left`;
 }
 
 /** How many accounts are listed, and how many of them are already spent. */

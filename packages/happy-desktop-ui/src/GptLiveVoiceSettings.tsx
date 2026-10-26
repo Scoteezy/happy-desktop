@@ -1,5 +1,4 @@
 import { useId } from "react";
-import { Badge } from "./Badge";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { ComposerModelControl, type ComposerModelControlProps } from "./ComposerModelControl";
@@ -8,6 +7,7 @@ import { Spinner } from "./Spinner";
 import { Switch } from "./Switch";
 import { TextField } from "./TextField";
 import { HappyAgentSettingsSection } from "./pages/settings/HappyAgentSettingsShell";
+import { HappyAgentSettingsStatus } from "./pages/settings/HappyAgentSettingsStatus";
 
 export interface GptLiveVoiceSettingsProps {
     /** Set until the machine has answered, so nothing is shown that it did not say. */
@@ -74,14 +74,14 @@ export function GptLiveVoiceSettings(props: GptLiveVoiceSettingsProps) {
             data-happy-desktop-ui="gpt-live-voice-settings"
         >
             <HappyAgentSettingsSection
-                description="The model voice hands your requests to. Changes apply from the next call."
+                description="Changes apply from the next call."
                 title="Voice controller"
             >
                 <FormRow
                     control={
                         props.controller ? <ComposerModelControl {...props.controller} /> : null
                     }
-                    description={props.controllerNotice ?? "Any model this machine offers."}
+                    description={props.controllerNotice ?? "The model voice hands your requests to"}
                     label="Model"
                 />
                 <FormRow
@@ -104,13 +104,13 @@ export function GptLiveVoiceSettings(props: GptLiveVoiceSettingsProps) {
                 />
             </HappyAgentSettingsSection>
             <HappyAgentSettingsSection
-                description="What voice is told at the start of every call. Reset removes the saved override and uses the machine's configured prompt, or the built-in default. Changes apply from the next call."
+                description="What voice is told when a call starts. Changes apply from the next call."
                 rows="cards"
                 title="Voice prompt"
             >
                 <div className="happy-gpt-live-voice-settings__prompt">
                     <div className="happy-gpt-live-voice-settings__prompt-head">
-                        <Badge
+                        <HappyAgentSettingsStatus
                             label={props.promptCustom ? "Custom" : "Default"}
                             variant={props.promptCustom ? "accent" : "neutral"}
                         />

@@ -1013,6 +1013,7 @@ export function happyAgentWorkspaceClientCreate(
                         connectActions: deps.connection,
                         connectMutationSubscribe: deps.connectMutationSubscribe,
                         selectionUsed: (selection) => models.selectionUsed(selection),
+                        providerPicked: (providerId) => models.providerPicked(providerId),
                         modelSelect: (current, input) => models.modelSelect(current, input),
                         effortRemembered: (providerId, modelId) =>
                             models.effortRemembered(providerId, modelId),

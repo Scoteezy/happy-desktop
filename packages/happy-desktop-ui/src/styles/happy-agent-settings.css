@@ -81,11 +81,9 @@
 .happy-agent-settings__section-title {
     margin: 0;
     color: var(--text);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
-    letter-spacing: 0.04em;
-    line-height: 16px;
-    text-transform: uppercase;
+    line-height: 20px;
 }
 
 .happy-agent-settings__section-description {
@@ -147,23 +145,6 @@
     gap: 8px;
 }
 
-/* Adding a phone happens on the phones; the steps are read, not acted on. */
-.happy-agent-mobile-settings__steps {
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin: 0;
-    padding: 0 0 0 20px;
-    color: var(--text);
-    font-size: 13px;
-    line-height: 20px;
-}
-
-.happy-agent-mobile-settings__steps strong {
-    font-weight: 600;
-}
-
 /* The terminal CLI's identity, as the host read it: server, key, machine. */
 .happy-agent-mobile-settings__details {
     box-sizing: border-box;
@@ -188,15 +169,15 @@
     border-radius: 8px;
 }
 
+/* A provider is one level: its header row, then its models as plain rows
+   under its name, closed by the same hairline a form row ends with. */
 .happy-agent-provider {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px;
-    background: var(--surface-high);
-    border: 1px solid var(--divider);
-    border-radius: 10px;
+    gap: 4px;
+    padding: 16px 0 8px;
+    border-bottom: 1px solid var(--divider);
 }
 
 .happy-agent-provider__header {
@@ -219,13 +200,8 @@
     align-items: center;
     justify-content: center;
     flex: none;
-    width: 32px;
-    height: 32px;
-    /* The card is 10px and the glyph tile is inset 0px from nothing: it is an
-       independent rounded shape, not a nested corner. */
-    border-radius: 8px;
-    background: var(--surface);
-    border: 1px solid var(--divider);
+    width: 20px;
+    height: 20px;
     color: var(--text-secondary);
 }
 
@@ -241,6 +217,7 @@
 
 .happy-agent-provider__hint {
     margin: 0;
+    padding: 0 0 8px 32px;
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 16px;
@@ -269,16 +246,11 @@
     line-height: 16px;
 }
 
+/* Models start under the provider's name, past its 20px glyph and 12px gap. */
 .happy-agent-provider__models {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    padding: 0;
-    background: var(--surface);
-    /* 16px card padding inset from a 10px outer corner leaves no curve to
-       parallel, so this list is an independent 8px shape. */
-    border: 1px solid var(--divider);
-    border-radius: 8px;
+    padding-left: 32px;
 }
 
 .happy-agent-provider__model {
@@ -286,8 +258,8 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    min-height: 52px;
-    padding: 8px 12px;
+    min-height: 48px;
+    padding: 8px 0;
     border-top: 1px solid var(--divider);
 }
 
@@ -320,6 +292,13 @@
     white-space: nowrap;
 }
 
+.happy-agent-provider__model-default {
+    flex: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 18px;
+}
+
 .happy-agent-provider__model-meta {
     overflow: hidden;
     color: var(--text-secondary);
@@ -332,7 +311,7 @@
 
 .happy-agent-provider__models-empty {
     box-sizing: border-box;
-    padding: 12px;
+    padding: 8px 0;
     color: var(--text-secondary);
     font-size: 13px;
     line-height: 18px;
@@ -565,4 +544,43 @@
     flex: none;
     align-items: center;
     gap: 8px;
+}
+
+.happy-agent-settings-status {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 18px;
+    white-space: nowrap;
+}
+
+.happy-agent-settings-status__dot {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--status-default);
+}
+
+.happy-agent-settings-status[data-variant="success"] .happy-agent-settings-status__dot {
+    background: var(--status-connected);
+}
+
+.happy-agent-settings-status[data-variant="info"] .happy-agent-settings-status__dot {
+    background: var(--status-connecting);
+}
+
+.happy-agent-settings-status[data-variant="warning"] .happy-agent-settings-status__dot {
+    background: var(--box-warning-text);
+}
+
+.happy-agent-settings-status[data-variant="danger"] .happy-agent-settings-status__dot {
+    background: var(--status-error);
+}
+
+.happy-agent-settings-status[data-variant="accent"] .happy-agent-settings-status__dot {
+    background: var(--text-link);
 }

@@ -93,12 +93,7 @@ export function desktopConnectionUiCreate(input: {
               modelPreferencesChanged: input.main.modelPreferencesChanged,
           }
         : happyAgentSettingsStoreOwnedCreate({
-              ...(stored?.defaultSelection
-                  ? {
-                        defaultProviderId: stored.defaultSelection.providerId,
-                        defaultModelId: stored.defaultSelection.modelId,
-                    }
-                  : {}),
+              ...(stored?.defaultModelId ? { defaultModelId: stored.defaultModelId } : {}),
               ...(stored?.defaultEffort ? { defaultEffort: stored.defaultEffort } : {}),
               ...(stored?.defaultPermissionMode
                   ? { defaultPermissionMode: stored.defaultPermissionMode }
@@ -120,34 +115,21 @@ export function desktopConnectionUiCreate(input: {
         if (reconciling) return;
         const value = settings.get();
         const current = input.preferences.read();
-        const modelChanged =
-            value.defaultProviderId !== current?.defaultSelection?.providerId ||
-            value.defaultModelId !== current?.defaultSelection?.modelId;
-        const effortChanged = value.defaultEffort !== current?.defaultEffort;
-        const identity =
-            value.defaultProviderId && value.defaultModelId
-                ? { providerId: value.defaultProviderId, modelId: value.defaultModelId }
-                : undefined;
-        let preferences = current?.preferences ?? {};
-        if (identity && (modelChanged || effortChanged)) {
-            preferences = {
-                ...preferences,
-                [identity.providerId]: {
-                    ...preferences[identity.providerId],
-                    [identity.modelId]: {
-                        ...preferences[identity.providerId]?.[identity.modelId],
-                        effort: value.defaultEffort,
-                    },
-                },
-            };
-        }
+        // Settings has no way to clear the default model, so an absent one is
+        // never a choice to write over the document's.
+        const defaultModelId = value.defaultModelId ?? current?.defaultModelId;
+        if (
+            defaultModelId === current?.defaultModelId &&
+            value.defaultEffort === current?.defaultEffort &&
+            value.defaultPermissionMode === current?.defaultPermissionMode
+        )
+            return;
         input.preferences.write({
             ...current,
-            preferences,
+            preferences: current?.preferences ?? {},
+            ...(defaultModelId ? { defaultModelId } : {}),
             defaultEffort: value.defaultEffort,
             defaultPermissionMode: value.defaultPermissionMode,
-            defaultSelection: modelChanged || effortChanged ? identity : current?.defaultSelection,
-            ...(modelChanged && identity ? { lastPickedModel: identity } : {}),
         });
     });
     return {

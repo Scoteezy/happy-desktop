@@ -63,7 +63,7 @@ const categories: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
     { icon: "users", id: "account", label: "Account" },
     { icon: "lock", id: "secrets", label: "Secrets" },
-    { icon: "mobile", id: "mobile-access", label: "Mobile Access" },
+    { icon: "mobile", id: "mobile-access", label: "Mobile access" },
 ];
 
 /** Fixture-only stand-in for the native macOS traffic lights: 14px at x 14…68, y 13. */
@@ -159,7 +159,7 @@ function Settings(props: { readonly rail: boolean; readonly width: number }) {
             onCategorySelect={noop}
             onClose={noop}
             sidebarWidth={props.width}
-            title="Mobile Access"
+            title="Mobile access"
             windowControls
         >
             <p>Settings body.</p>

@@ -3,6 +3,7 @@ import type {
     HappyAgentModelPreferencePersistence,
     HappyAgentPermissionMode,
     HappyAgentServiceTier,
+    HappyAgentSettingsDesktop,
     HappyAgentSettingsInitial,
     HappyAgentSettingsSnapshot,
     HappyAgentThinkingLevel,
@@ -46,7 +47,7 @@ export interface DesktopPreferences {
     settingsChanged(snapshot: HappyAgentSettingsSnapshot): void;
     configReceived(
         config: DesktopConfig,
-        apply: (settings: HappyAgentSettingsInitial) => void,
+        apply: (settings: HappyAgentSettingsDesktop) => void,
     ): void;
 }
 
@@ -111,7 +112,7 @@ export function desktopPreferencesCreate(
             config = next;
             receiving = true;
             try {
-                apply(settingsInitial(next));
+                apply(settingsDesktop(next));
                 for (const listener of preferenceListeners) listener();
             } finally {
                 receiving = false;
@@ -149,22 +150,23 @@ export function desktopPreferencesCreate(
     };
 }
 
+function settingsDesktop(config: DesktopConfig): HappyAgentSettingsDesktop {
+    return {
+        ...(config.linkOpen === undefined ? {} : { linkOpenPlacement: config.linkOpen }),
+        previewUpdatesEnabled: config.previewUpdatesEnabled === true,
+    };
+}
+
 function settingsInitial(config: DesktopConfig): HappyAgentSettingsInitial {
     const effort =
         thinkingLevel(config.defaultEffort) ??
         thinkingLevel(config.defaultModel?.effort) ??
         HAPPY_AGENT_DEFAULT_THINKING_LEVEL;
     return {
-        ...(config.defaultModel
-            ? {
-                  defaultProviderId: config.defaultModel.providerId,
-                  defaultModelId: config.defaultModel.modelId,
-              }
-            : {}),
+        ...(config.defaultModel ? { defaultModelId: config.defaultModel.modelId } : {}),
         defaultEffort: effort,
         defaultPermissionMode: permissionMode(config.defaultPermissionMode),
-        ...(config.linkOpen === undefined ? {} : { linkOpenPlacement: config.linkOpen }),
-        previewUpdatesEnabled: config.previewUpdatesEnabled === true,
+        ...settingsDesktop(config),
     };
 }
 
@@ -185,19 +187,15 @@ function preferenceDocument(config: DesktopConfig): HappyAgentModelPreferenceDoc
         };
         preferences[preference.providerId] = provider;
     }
-    const defaultEffort = thinkingLevel(config.defaultModel?.effort);
     return {
-        defaultEffort: thinkingLevel(config.defaultEffort) ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
-        ...(config.defaultModel
-            ? {
-                  defaultSelection: {
-                      providerId: config.defaultModel.providerId,
-                      modelId: config.defaultModel.modelId,
-                      ...(defaultEffort ? { effort: defaultEffort } : {}),
-                  },
-              }
+        defaultEffort:
+            thinkingLevel(config.defaultEffort) ??
+            thinkingLevel(config.defaultModel?.effort) ??
+            HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
+        ...(config.defaultModel ? { defaultModelId: config.defaultModel.modelId } : {}),
+        ...(config.lastPickedModel
+            ? { lastPickedProviderId: config.lastPickedModel.providerId }
             : {}),
-        ...(config.lastPickedModel ? { lastPickedModel: config.lastPickedModel } : {}),
         defaultPermissionMode: permissionMode(config.defaultPermissionMode),
         preferences,
     };
@@ -225,22 +223,31 @@ function configFromPreferenceDocument(
             left.providerId.localeCompare(right.providerId) ||
             left.modelId.localeCompare(right.modelId),
     );
+    // This document qualifies both models by provider. The default model is
+    // stored on the provider picked last, and the last pick keeps the model it
+    // was made with while its provider stays the same.
+    const providerId =
+        document.lastPickedProviderId ??
+        current.lastPickedModel?.providerId ??
+        current.defaultModel?.providerId;
+    const defaultModel =
+        document.defaultModelId && providerId
+            ? { providerId, modelId: document.defaultModelId }
+            : undefined;
+    const lastPickedModelId =
+        current.lastPickedModel?.providerId === document.lastPickedProviderId
+            ? current.lastPickedModel?.modelId
+            : document.defaultModelId;
+    const lastPickedModel =
+        document.lastPickedProviderId && lastPickedModelId
+            ? { providerId: document.lastPickedProviderId, modelId: lastPickedModelId }
+            : undefined;
     return {
         appearance: current.appearance,
         ...(current.customTheme ? { customTheme: current.customTheme } : {}),
         defaultEffort: document.defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
-        ...(document.defaultSelection
-            ? {
-                  defaultModel: {
-                      providerId: document.defaultSelection.providerId,
-                      modelId: document.defaultSelection.modelId,
-                      ...(document.defaultSelection.effort
-                          ? { effort: document.defaultSelection.effort }
-                          : {}),
-                  },
-              }
-            : {}),
-        ...(document.lastPickedModel ? { lastPickedModel: document.lastPickedModel } : {}),
+        ...(defaultModel ? { defaultModel } : {}),
+        ...(lastPickedModel ? { lastPickedModel } : {}),
         defaultPermissionMode: document.defaultPermissionMode ?? "auto",
         ...(current.linkOpen === undefined ? {} : { linkOpen: current.linkOpen }),
         ...(current.keepAwake === undefined ? {} : { keepAwake: current.keepAwake }),

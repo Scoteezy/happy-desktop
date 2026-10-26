@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Badge, type BadgeVariant } from "../../Badge";
+import type { BadgeVariant } from "../../Badge";
 import { Banner } from "../../Banner";
 import { Button } from "../../Button";
 import { Box } from "../../Box";
@@ -10,6 +10,7 @@ import {
     type MobileAccessConfirmationState,
 } from "../../MobileAccessConfirmation";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
+import { HappyAgentSettingsStatus } from "./HappyAgentSettingsStatus";
 
 export type HappyAgentMobileStatus =
     | "loading"
@@ -103,7 +104,11 @@ interface MobileState {
     readonly description: string;
 }
 
-/** The Mobile Access category: one composed phone status, the terminal CLI, and removal. */
+/**
+ * The Mobile Access category: connecting a phone, then only what is linked — the
+ * relay when it is, each directly paired phone — and any error; the terminal
+ * CLI; and removal.
+ */
 export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
     const mobile = mobileState(props);
     const blocked = props.unavailable !== undefined;
@@ -130,15 +135,10 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                                 Connect phone
                             </Button>
                         }
-                        description="Pair through Happy relay or connect directly. Both codes appear together."
+                        description="Shows the relay and direct codes side by side"
                         label="Connect a phone"
                     />
                 )}
-            </HappyAgentSettingsSection>
-            <HappyAgentSettingsSection
-                description="Through the Happy server, Happy Mobile follows and continues the work running through this Happy Agent."
-                title="Happy relay"
-            >
                 {props.error ? (
                     <Banner tone="danger" title="Happy Mobile status unavailable">
                         {props.error}
@@ -177,38 +177,22 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                         {props.disconnectError}
                     </Banner>
                 ) : null}
-                <FormRow
-                    control={<Badge label={mobile.label} variant={mobile.variant} />}
-                    description={statusDetail(mobile.description, props)}
-                    label="Status"
-                />
-                {paired ? (
+                {relayShown(props) ? (
                     <FormRow
-                        align="start"
                         control={
-                            <ol className="happy-agent-mobile-settings__steps">
-                                <li>
-                                    On the new phone, install Happy and choose{" "}
-                                    <strong>Restore an existing account</strong>.
-                                </li>
-                                <li>
-                                    On a phone that is already signed in, open{" "}
-                                    <strong>Settings › Account › Link New Device</strong> and scan
-                                    the code the new phone shows. You can also enter your secret key
-                                    from <strong>Settings › Account</strong>.
-                                </li>
-                            </ol>
+                            <HappyAgentSettingsStatus
+                                label={mobile.label}
+                                variant={mobile.variant}
+                            />
                         }
-                        description="Every phone signed in to the same Happy account sees this computer. Adding one does not need a new pairing here."
-                        label="Add another phone"
-                        layout="stacked"
+                        description={
+                            props.status === "connected"
+                                ? "Phones on your Happy account reach this computer from anywhere"
+                                : statusDetail(mobile.description, props)
+                        }
+                        label="Happy relay"
                     />
                 ) : null}
-            </HappyAgentSettingsSection>
-            <HappyAgentSettingsSection
-                description="Straight to this computer over a private Tailcat connection, without the Happy server."
-                title="Direct connection"
-            >
                 {props.direct}
             </HappyAgentSettingsSection>
             {props.terminal ? (
@@ -222,7 +206,7 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                 />
             ) : null}
             {paired ? (
-                <HappyAgentSettingsSection title="Remove">
+                <HappyAgentSettingsSection>
                     <FormRow
                         align="start"
                         control={
@@ -239,8 +223,8 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                         }
                         description={
                             props.removesComputer
-                                ? "Remove this computer and the chats it published from your Happy account. Your phones, this computer's local history, and the Happy CLI stay as they are."
-                                : "Remove this Happy Agent's saved pairing with Happy Mobile. Your account, phones, session history, and the Happy CLI's sign-in stay as they are."
+                                ? "Remove this computer and the chats it published from your Happy account. Local history stays."
+                                : "Forget this computer's pairing. Your account, phones and history stay."
                         }
                         label="Disconnect this computer"
                     />
@@ -275,7 +259,7 @@ function TerminalSection(props: {
         terminal.daemon.state === "online";
     return (
         <HappyAgentSettingsSection
-            description="The Happy CLI on this computer runs terminal Claude Code and Codex sessions you can follow from your phone."
+            description="Terminal Claude Code and Codex sessions you can follow from your phone."
             title="Terminal (Happy CLI)"
         >
             {props.readError ? (
@@ -286,31 +270,33 @@ function TerminalSection(props: {
             {props.paired && props.setupSupport === "personal" ? (
                 <FormRow
                     label="Personal pairing"
-                    control={<Badge label="Separate sign-in" variant="neutral" />}
+                    control={
+                        <HappyAgentSettingsStatus label="Separate sign-in" variant="neutral" />
+                    }
                     description="Happy Mobile is paired to your personal Agent account. The existing CLI sign-in below is separate and has not been matched to this pairing."
                 />
             ) : props.paired && props.setupSupport === "unknown" ? (
                 <FormRow
                     label="Pairing scope"
-                    control={<Badge label="Unavailable" variant="neutral" />}
+                    control={<HappyAgentSettingsStatus label="Unavailable" variant="neutral" />}
                     description="The Agent pairing scope could not be identified. Terminal CLI status below is read independently; your saved phone pairing remains usable."
                 />
             ) : null}
             {terminal.status === "loading" ? (
                 <FormRow
-                    control={<Badge label="Checking…" variant="neutral" />}
+                    control={<HappyAgentSettingsStatus label="Checking…" variant="neutral" />}
                     description="Reading the Happy CLI installed on this computer."
                     label="Happy CLI"
                 />
             ) : terminal.status === "not-installed" ? (
                 <FormRow
-                    control={<Badge label="Not installed" variant="neutral" />}
+                    control={<HappyAgentSettingsStatus label="Not installed" variant="neutral" />}
                     description="No Happy CLI is installed globally on this computer."
                     label="Happy CLI"
                 />
             ) : terminal.status === "unavailable" ? (
                 <FormRow
-                    control={<Badge label="Unavailable" variant="warning" />}
+                    control={<HappyAgentSettingsStatus label="Unavailable" variant="warning" />}
                     description={
                         terminal.cliVersion
                             ? `Version ${terminal.cliVersion}. ${terminal.message}`
@@ -323,9 +309,9 @@ function TerminalSection(props: {
                     <FormRow
                         control={
                             ready ? (
-                                <Badge label="Ready" variant="success" />
+                                <HappyAgentSettingsStatus label="Ready" variant="success" />
                             ) : (
-                                <Badge label="Not ready" variant="warning" />
+                                <HappyAgentSettingsStatus label="Not ready" variant="warning" />
                             )
                         }
                         description={`Version ${terminal.cliVersion}`}
@@ -353,7 +339,7 @@ function TerminalSection(props: {
                     <FormRow
                         align="start"
                         control={
-                            <Badge
+                            <HappyAgentSettingsStatus
                                 label={DAEMON_LABELS[terminal.daemon.state]}
                                 variant={DAEMON_VARIANTS[terminal.daemon.state]}
                             />
@@ -389,13 +375,13 @@ function TerminalSection(props: {
 function AuthBadge(props: { readonly auth: "missing" | "v2" | "legacy" | "invalid" }) {
     switch (props.auth) {
         case "missing":
-            return <Badge label="Not signed in" variant="neutral" />;
+            return <HappyAgentSettingsStatus label="Not signed in" variant="neutral" />;
         case "v2":
-            return <Badge label="Signed in" variant="success" />;
+            return <HappyAgentSettingsStatus label="Signed in" variant="success" />;
         case "legacy":
-            return <Badge label="Older sign-in" variant="warning" />;
+            return <HappyAgentSettingsStatus label="Older sign-in" variant="warning" />;
         case "invalid":
-            return <Badge label="Unreadable" variant="danger" />;
+            return <HappyAgentSettingsStatus label="Unreadable" variant="danger" />;
     }
 }
 
@@ -474,33 +460,32 @@ function mobileState(props: HappyAgentMobileSettingsProps): MobileState {
             return {
                 label: "Waiting for phone",
                 variant: "info",
-                description: "Happy Agent is waiting for a phone to scan its pairing code.",
+                description: "Waiting for a phone to scan the code.",
             };
         case "connected":
             return {
                 label: "Connected",
                 variant: "success",
-                description: "Paired, with a live connection to Happy Mobile.",
+                description: "Live with Happy Mobile.",
             };
         case "connecting":
             return {
                 label: "Reconnecting",
                 variant: "info",
-                description: "The saved pairing is connecting to Happy Mobile.",
+                description: "Connecting the saved pairing.",
             };
         case "disconnected":
             return props.configured === true
                 ? {
                       label: "Offline — pairing saved",
                       variant: "warning",
-                      description:
-                          "The pairing is saved, but Happy Agent is not connected to Happy Mobile right now.",
+                      description: "Paired, but not connected right now.",
                   }
                 : props.configured === false
                   ? {
                         label: "Not set up",
                         variant: "neutral",
-                        description: "No phone is paired with this Happy Agent.",
+                        description: "No phone is paired yet.",
                     }
                   : {
                         label: "Checking…",
@@ -528,6 +513,15 @@ function mobileState(props: HappyAgentMobileSettingsProps): MobileState {
                       description: "The last pairing attempt did not finish.",
                   };
     }
+}
+
+/**
+ * Whether the relay has anything to say: it is linked, or it is in a state worth
+ * knowing about. An unlinked relay that is merely idle is left out.
+ */
+function relayShown(props: HappyAgentMobileSettingsProps): boolean {
+    if (props.configured === true) return true;
+    return props.status !== "loading" && props.status !== "disconnected";
 }
 
 /** The state line, the Agent's own detail, and when the Agent last saw it change. */

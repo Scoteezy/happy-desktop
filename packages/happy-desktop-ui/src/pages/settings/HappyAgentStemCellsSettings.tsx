@@ -24,10 +24,7 @@ export interface HappyAgentStemCellsSettingsProps {
 export function HappyAgentStemCellsSettings(props: HappyAgentStemCellsSettingsProps) {
     const id = useId();
     return (
-        <HappyAgentSettingsSection
-            title={props.connectionLabel}
-            description="Your Stem Cells preference on this connection follows you across devices. Off until you enable it here; previous device-only choices are not imported."
-        >
+        <HappyAgentSettingsSection title={props.connectionLabel}>
             {props.unavailable ? (
                 <Banner tone="neutral" title="Connection unavailable">
                     {props.unavailable}
@@ -50,7 +47,7 @@ export function HappyAgentStemCellsSettings(props: HappyAgentStemCellsSettingsPr
             ) : null}
             <FormRow
                 label="Stem cells"
-                description="Brings the new sidebar, with Create at its top, and the focus agent that files your work into topic sections as it takes shape. Off, you keep the classic sidebar; ordinary task and bot naming stays on either way."
+                description="The new sidebar, with Create at the top and your work filed into topics"
                 htmlFor={id}
                 control={
                     <Box className="happy-agent-settings__pending">

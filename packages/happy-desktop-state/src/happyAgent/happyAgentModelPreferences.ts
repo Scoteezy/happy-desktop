@@ -19,12 +19,13 @@ import {
 
 // Independent defaults are separate LWW keys. Model IDs stay inside values, so
 // arbitrary provider IDs and slash-containing model IDs need no key encoding.
+// The default names a model alone; the provider picked last is its own key.
 const DEFAULT_MODEL = "happy-desktop.model.default";
 const DEFAULT_EFFORT = "happy-desktop.model.effort";
 const DEFAULT_ACCESS = "happy-desktop.model.access";
-const LAST_PICKED = "happy-desktop.model.lastPicked";
+const PROVIDER = "happy-desktop.model.provider";
 const MEMORY = "happy-desktop.model.memory";
-const KEYS = new Set([DEFAULT_MODEL, DEFAULT_EFFORT, DEFAULT_ACCESS, LAST_PICKED, MEMORY]);
+const KEYS = new Set([DEFAULT_MODEL, DEFAULT_EFFORT, DEFAULT_ACCESS, PROVIDER, MEMORY]);
 const EMPTY: HappyAgentModelPreferenceDocument = {
     defaultEffort: HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
     defaultPermissionMode: "auto",
@@ -79,11 +80,14 @@ function identityParse(value: unknown): HappyAgentModelPreferenceIdentity | unde
         modelId: entry["modelId"],
     };
 }
+function idParse(value: unknown): string | undefined {
+    return typeof value === "string" && value ? value : undefined;
+}
 function documentParse(value: unknown): HappyAgentModelPreferenceDocument {
     const entry = object(value);
     if (!entry) return EMPTY;
-    const defaultSelection = identityParse(entry["defaultSelection"]);
-    const lastPickedModel = identityParse(entry["lastPickedModel"]);
+    const defaultModelId = idParse(entry["defaultModelId"]);
+    const lastPickedProviderId = idParse(entry["lastPickedProviderId"]);
     // Legacy defaults embedded an effort in the model. Move that choice into
     // the separate effort field before import, where an existing daemon key wins.
     const defaultEffort =
@@ -108,8 +112,8 @@ function documentParse(value: unknown): HappyAgentModelPreferenceDocument {
         preferences[providerId] = provider;
     }
     return {
-        ...(defaultSelection ? { defaultSelection } : {}),
-        ...(lastPickedModel ? { lastPickedModel } : {}),
+        ...(defaultModelId ? { defaultModelId } : {}),
+        ...(lastPickedProviderId ? { lastPickedProviderId } : {}),
         defaultEffort: defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
         defaultPermissionMode: defaultPermissionMode ?? "auto",
         preferences,
@@ -142,15 +146,7 @@ function encode(
     document: HappyAgentModelPreferenceDocument,
 ): ReadonlyMap<string, UserSettingValue> {
     return new Map<string, UserSettingValue>([
-        [
-            DEFAULT_MODEL,
-            document.defaultSelection
-                ? {
-                      providerId: document.defaultSelection.providerId,
-                      modelId: document.defaultSelection.modelId,
-                  }
-                : null,
-        ],
+        [DEFAULT_MODEL, document.defaultModelId ? { modelId: document.defaultModelId } : null],
         [
             DEFAULT_EFFORT,
             document.defaultEffort === HAPPY_AGENT_DEFAULT_THINKING_LEVEL
@@ -163,15 +159,7 @@ function encode(
                 ? null
                 : (document.defaultPermissionMode ?? null),
         ],
-        [
-            LAST_PICKED,
-            document.lastPickedModel
-                ? {
-                      providerId: document.lastPickedModel.providerId,
-                      modelId: document.lastPickedModel.modelId,
-                  }
-                : null,
-        ],
+        [PROVIDER, document.lastPickedProviderId ?? null],
         [MEMORY, memoryValue(document)],
     ]);
 }
@@ -190,10 +178,10 @@ function decode(values: ReadonlyMap<string, UserSettingValue>): HappyAgentModelP
             preferences[identity.providerId] = provider;
         }
     return documentParse({
-        defaultSelection: identityParse(values.get(DEFAULT_MODEL)),
+        defaultModelId: object(values.get(DEFAULT_MODEL))?.["modelId"],
         defaultEffort: values.get(DEFAULT_EFFORT),
         defaultPermissionMode: values.get(DEFAULT_ACCESS),
-        lastPickedModel: values.get(LAST_PICKED),
+        lastPickedProviderId: values.get(PROVIDER),
         preferences,
     });
 }

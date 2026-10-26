@@ -12,7 +12,7 @@ export const componentNumber = "P-016";
 const categories: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
     { icon: "users", id: "account", label: "Account" },
-    { icon: "code", id: "debug", label: "Dev Tools" },
+    { icon: "code", id: "debug", label: "Dev tools" },
 ];
 
 const noop = () => undefined;

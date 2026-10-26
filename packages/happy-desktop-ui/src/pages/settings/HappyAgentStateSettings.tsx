@@ -1,6 +1,5 @@
-import { Box } from "../../Box";
 import { CopyButton } from "../../CopyButton";
-import { ScrollArea } from "../../Scrollbar";
+import { FormRow } from "../../FormRow";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
 /** One named store snapshot, already serialized by whoever owns it. */
@@ -18,55 +17,33 @@ export interface HappyAgentStateSettingsProps {
 }
 
 /**
- * Every live store snapshot this window can see, printed verbatim.
- *
- * It exists so a state question can be answered by reading rather than by
- * guessing from what the ordinary screens happen to render. Nothing here is
- * summarized, relabelled, or filtered: each document is one store's own
- * snapshot serialized by its owner, so what appears is exactly what the surfaces
- * are rendering from. Each one is copyable whole, because the useful thing to do
- * with it is paste it into a bug report.
- *
- * It updates the way every other surface does — through its stores — so a value
- * that changes while this page is open changes here too.
+ * Every live store snapshot this window can see, handed over whole rather than
+ * shown. The snapshots live only in this window's memory, so the one useful
+ * thing to do with them, pasting them into a bug report, is a single copy: each
+ * store's own serialization, verbatim, under its name.
  */
 export function HappyAgentStateSettings(props: HappyAgentStateSettingsProps) {
     return (
-        <HappyAgentSettingsSection
-            description="Every live store snapshot this window holds, exactly as its surfaces read it."
-            rows="cards"
-            title="Raw state"
-        >
-            {props.documents.map((document) => (
-                <section
-                    className="happy-agent-raw-state"
-                    data-happy-desktop-ui="happy-agent-raw-state"
-                    key={document.id}
-                >
-                    <header className="happy-agent-raw-state__header">
-                        <span className="happy-agent-raw-state__title">{document.label}</span>
-                        <span className="happy-agent-raw-state__detail">
-                            {document.description}
-                        </span>
-                        <CopyButton label={`Copy ${document.label} state`} text={document.value} />
-                    </header>
-                    <ScrollArea
-                        axes="both"
-                        className="happy-agent-raw-state__scrollport"
-                        viewportClassName="happy-agent-raw-state__viewport"
-                        viewportProps={{
-                            "aria-label": `${document.label} state`,
-                            tabIndex: 0,
-                        }}
-                    >
-                        <Box className="happy-agent-raw-state__content">
-                            <pre className="happy-agent-raw-state__value">
-                                <code>{document.value}</code>
-                            </pre>
-                        </Box>
-                    </ScrollArea>
-                </section>
-            ))}
+        <HappyAgentSettingsSection title="Raw state">
+            <FormRow
+                control={
+                    <CopyButton
+                        caption="Copy"
+                        copiedCaption="Copied"
+                        data-happy-desktop-ui="happy-agent-raw-state-copy"
+                        label="Copy raw state"
+                        text={() => stateText(props.documents)}
+                    />
+                }
+                description={`${String(props.documents.length)} store snapshots, held in this window's memory`}
+                label="Copy every snapshot"
+            />
         </HappyAgentSettingsSection>
     );
+}
+
+function stateText(documents: readonly HappyAgentStateDocument[]): string {
+    return documents
+        .map((document) => `# ${document.label} — ${document.description}\n${document.value}`)
+        .join("\n\n");
 }

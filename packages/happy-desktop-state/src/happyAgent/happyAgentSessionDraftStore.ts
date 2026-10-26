@@ -8,6 +8,7 @@ import type {
     HappyAgentMenusSnapshot,
     HappyAgentModelCatalog,
     HappyAgentModelEffortRemembered,
+    HappyAgentModelProvider,
     HappyAgentModelSelection,
     HappyAgentPermissionMode,
     HappyAgentSelection,
@@ -64,9 +65,9 @@ export interface HappyAgentSessionDraftOptions {
     ) => HappyAgentSelection;
     readonly effortRemembered?: HappyAgentModelEffortRemembered;
     /**
-     * What to open the draft on — the workspace's most recent selection, so a
-     * new session starts configured the way the last one was. Absent for the
-     * first draft of a session, which falls back to the catalog's own defaults.
+     * What to open the draft on — what a new session starts on: the default
+     * model on the provider picked last. Absent, the draft falls back to the
+     * catalog's own defaults.
      */
     readonly selection?: HappyAgentSelection;
 }
@@ -127,11 +128,17 @@ export function happyAgentSelectionModelUpdate(
     current: HappyAgentSelection,
     input: HappyAgentModelSelection,
 ): HappyAgentSelection {
+    // A model named without its provider stays on the current provider when
+    // that provider offers it.
+    const serves = (provider: HappyAgentModelProvider): boolean =>
+        provider.models.some((model) => model.id === input.modelId);
+    const currentProvider = catalog.providers.find(
+        (provider) => provider.id === current.providerId,
+    );
     const providerId =
         input.providerId ??
-        catalog.providers.find((provider) =>
-            provider.models.some((model) => model.id === input.modelId),
-        )?.id ??
+        (currentProvider && serves(currentProvider) ? currentProvider.id : undefined) ??
+        catalog.providers.find(serves)?.id ??
         current.providerId;
     const provider = catalog.providers.find((candidate) => candidate.id === providerId);
     const model = provider?.models.find((candidate) => candidate.id === input.modelId);

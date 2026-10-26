@@ -31,7 +31,7 @@ export function GptLiveSettings(props: GptLiveSettingsProps) {
     );
     return (
         <div ref={accountsMount} className="happy-gpt-live-settings">
-            <HappyAgentSettingsSection title="Voice" rows="cards">
+            <HappyAgentSettingsSection title="Calls" rows="cards">
                 <FormRow
                     control={
                         <Switch

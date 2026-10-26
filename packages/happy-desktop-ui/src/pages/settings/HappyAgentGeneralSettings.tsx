@@ -2,6 +2,7 @@ import type { HappyAgentCompletionSound } from "happy-desktop-state";
 import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { Button } from "../../Button";
+import { ComposerModelControl, type ComposerModelControlProps } from "../../ComposerModelControl";
 import { FormRow } from "../../FormRow";
 import { SegmentedControl } from "../../SegmentedControl";
 import { Select, type SelectOption } from "../../Select";
@@ -22,13 +23,12 @@ export type HappyAgentGeneralSettingsProps = {
     appearanceModes?: readonly HappyAgentAppearanceChoice[];
     scrollbarVisibility: HappyAgentScrollbarVisibilityChoice;
     linkOpenPlacement: HappyAgentLinkOpenPlacementChoice;
-    /** The default a new session starts on, keyed `${providerId}:${modelId}`. */
-    defaultModelKey?: string;
-    /** Every model the enabled providers offer, already labelled for display. */
-    modelOptions: readonly SelectOption[];
-    effort?: string;
-    /** The chosen model's own reasoning levels; empty when it exposes none. */
-    effortOptions: readonly SelectOption[];
+    /**
+     * The model and effort a new session starts on, in the composer's own model
+     * pill. Its account headers are read-only: a new session runs on the account
+     * last picked in a conversation's model menu. Absent once the catalog failed.
+     */
+    defaultModel?: ComposerModelControlProps;
     permissionMode: string;
     permissionModeOptions: readonly SelectOption[];
     /** Set while the catalog is still being read, so the pickers say so. */
@@ -94,8 +94,6 @@ export type HappyAgentGeneralSettingsProps = {
     onScrollbarVisibilityChange: (visibility: HappyAgentScrollbarVisibilityChoice) => void;
     onLinkOpenPlacementChange: (placement: HappyAgentLinkOpenPlacementChoice) => void;
     onTitleShimmerChange: (enabled: boolean) => void;
-    onDefaultModelChange: (key: string) => void;
-    onEffortChange: (effort: string) => void;
     onPermissionModeChange: (mode: string) => void;
     onAgentCheck?: () => void;
     onAgentUpgrade?: () => void;
@@ -111,7 +109,12 @@ const keepAwakeOptions = SIDEBAR_KEEP_AWAKE_OPTIONS.map(({ mode, label }) => ({
     label,
 }));
 
-function statusBarRow(id: string, shown: boolean, onChange: (shown: boolean) => void) {
+function statusBarRow(
+    id: string,
+    label: string,
+    shown: boolean,
+    onChange: (shown: boolean) => void,
+) {
     return (
         <FormRow
             control={
@@ -123,9 +126,8 @@ function statusBarRow(id: string, shown: boolean, onChange: (shown: boolean) => 
                     size="small"
                 />
             }
-            description="Adds this control to the bar under the sidebar"
             htmlFor={`happy-agent-settings-status-bar-${id}`}
-            label="Show in status bar"
+            label={label}
         />
     );
 }
@@ -165,10 +167,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                     {props.unavailable}
                 </Banner>
             ) : null}
-            <HappyAgentSettingsSection
-                description="How Happy looks and moves in this window."
-                title="Appearance"
-            >
+            <HappyAgentSettingsSection title="Appearance">
                 <FormRow
                     control={
                         <SegmentedControl
@@ -182,12 +181,12 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                             value={props.appearance}
                         />
                     }
-                    description="Applies to this window immediately"
                     label="Theme"
                 />
                 {props.statusBar
                     ? statusBarRow(
                           "theme",
+                          "Theme switch in status bar",
                           props.statusBar.themeShown,
                           props.statusBar.onThemeShownChange,
                       )
@@ -205,7 +204,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                             value={props.scrollbarVisibility}
                         />
                     }
-                    description="Automatic hides two seconds after user scrolling stops"
+                    description="Automatic hides them two seconds after scrolling stops"
                     label="Scrollbars"
                 />
                 <FormRow
@@ -218,7 +217,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                             size="small"
                         />
                     }
-                    description="Animates running session, project, and workspace names"
+                    description="Animate running session, project, and workspace names"
                     htmlFor="happy-agent-settings-title-shimmer"
                     label="Shimmer active titles"
                 />
@@ -233,17 +232,14 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                                 size="small"
                             />
                         }
-                        description="Leaves the Projects section out of the sidebar for every connection, team and local. Bots and tasks stay listed."
+                        description="Leave Projects out of the sidebar on every connection. Bots and tasks stay."
                         htmlFor="happy-agent-settings-projects-hidden"
                         label="Hide projects"
                     />
                 ) : null}
             </HappyAgentSettingsSection>
             {props.keepAwake && props.onKeepAwakeChange ? (
-                <HappyAgentSettingsSection
-                    description="Stops this computer from sleeping so agents keep working. The display can still turn off."
-                    title="Keep awake"
-                >
+                <HappyAgentSettingsSection title="Keep awake">
                     <FormRow
                         control={
                             <Box width={280}>
@@ -260,13 +256,14 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                                 />
                             </Box>
                         }
-                        description="Only agents on this computer count"
+                        description="Only agents on this computer count. The display can still sleep."
                         htmlFor="happy-agent-settings-keep-awake"
                         label="Keep computer awake"
                     />
                     {props.statusBar
                         ? statusBarRow(
                               "keep-awake",
+                              "Keep-awake switch in status bar",
                               props.statusBar.keepAwakeShown,
                               props.statusBar.onKeepAwakeShownChange,
                           )
@@ -274,10 +271,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                 </HappyAgentSettingsSection>
             ) : null}
             {props.completionSound && props.onCompletionSoundChange ? (
-                <HappyAgentSettingsSection
-                    description="How this connection tells you a conversation finished. Each connection keeps your choice, on every device you use it from."
-                    title="Sound"
-                >
+                <HappyAgentSettingsSection title="Sound">
                     <FormRow
                         control={
                             <SegmentedControl
@@ -292,15 +286,12 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                                 value={props.completionSound}
                             />
                         }
-                        description="When focused plays only while this connection is on screen and the window is active"
+                        description="Plays when a conversation finishes. Saved per connection."
                         label="Completion sound"
                     />
                 </HappyAgentSettingsSection>
             ) : null}
-            <HappyAgentSettingsSection
-                description="Where a web link goes when it is clicked. A link's own menu can always choose the other."
-                title="Links"
-            >
+            <HappyAgentSettingsSection title="Links">
                 <FormRow
                     control={
                         <SegmentedControl
@@ -315,12 +306,12 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                             value={props.linkOpenPlacement}
                         />
                     }
-                    description="Side panel keeps the page beside the conversation; Browser hands it to the machine's own"
+                    description="A link's own menu can always open it the other way"
                     label="Open links in"
                 />
             </HappyAgentSettingsSection>
             <HappyAgentSettingsSection
-                description="What a new session on this connection begins with. Your defaults follow you across devices."
+                description="Saved to your account, so they follow you across devices."
                 title="New sessions"
             >
                 <FormRow
@@ -330,52 +321,19 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                                 <Spinner size={16} />
                                 <span>Reading the model catalog…</span>
                             </Box>
-                        ) : (
-                            <Box width={280}>
-                                <Select
-                                    aria-label="Default model"
-                                    disabled={props.unavailable !== undefined}
-                                    fullWidth
-                                    id="happy-agent-settings-default-model"
-                                    onValueChange={props.onDefaultModelChange}
-                                    options={[...props.modelOptions]}
-                                    placeholder="Choose a model"
-                                    size="small"
-                                    value={props.defaultModelKey}
-                                />
-                            </Box>
-                        )
-                    }
-                    description="Chosen from the models the enabled providers offer"
-                    htmlFor="happy-agent-settings-default-model"
-                    label="Default model"
-                />
-                <FormRow
-                    control={
-                        <Box width={280}>
-                            <Select
-                                aria-label="Reasoning effort"
+                        ) : props.defaultModel ? (
+                            <ComposerModelControl
+                                {...props.defaultModel}
+                                data-testid="happy-agent-settings-default-model"
                                 disabled={
-                                    props.unavailable !== undefined ||
-                                    props.effortOptions.length === 0
+                                    props.defaultModel.disabled === true ||
+                                    props.unavailable !== undefined
                                 }
-                                fullWidth
-                                id="happy-agent-settings-effort"
-                                onValueChange={props.onEffortChange}
-                                options={[...props.effortOptions]}
-                                placeholder={
-                                    props.effortOptions.length === 0
-                                        ? "Not offered by this model"
-                                        : "Model default"
-                                }
-                                size="small"
-                                value={props.effort}
                             />
-                        </Box>
+                        ) : null
                     }
-                    description="How much the model is asked to think before it answers"
-                    htmlFor="happy-agent-settings-effort"
-                    label="Reasoning effort"
+                    description="Runs on the account you last picked in a chat"
+                    label="Default model"
                 />
                 <FormRow
                     control={
@@ -392,16 +350,13 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                             />
                         </Box>
                     }
-                    description="How much of the machine a new session may touch without asking"
+                    description="What a new session may do without asking"
                     htmlFor="happy-agent-settings-permission-mode"
                     label="Default access mode"
                 />
             </HappyAgentSettingsSection>
             {props.onPreviewUpdatesChange ? (
-                <HappyAgentSettingsSection
-                    description="Stable releases only by default, including in Nightly."
-                    title="Updates"
-                >
+                <HappyAgentSettingsSection title="Updates">
                     <FormRow
                         control={
                             <Switch
@@ -412,7 +367,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                                 size="small"
                             />
                         }
-                        description="Include preview Desktop and Happy Agent releases when checking for updates. Turning this off does not downgrade installed versions."
+                        description="Offer preview Desktop and Happy Agent releases. Turning this off never downgrades."
                         htmlFor="happy-agent-settings-preview-updates"
                         label="Preview updates"
                     />
@@ -420,7 +375,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
             ) : null}
             {props.agent ? (
                 <HappyAgentSettingsSection
-                    description="The verified local runtime Happy uses for coding sessions. Updates are found and downloaded on their own, quietly and without interrupting anything. Running one is the part you decide, because it stops the agent."
+                    description="Runs your sessions on this computer. Updates download on their own; you choose when to install, since that restarts it."
                     title="Happy Agent"
                 >
                     <FormRow
@@ -512,7 +467,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                                     />
                                 </Box>
                             }
-                            description="Runs an exact release, forwards or back. One not held on this machine is downloaded first; then the agent is drained and restarted onto it."
+                            description="Switch to any release, newer or older. It restarts once its work finishes."
                             htmlFor="happy-agent-settings-agent-version"
                             label="Version"
                         />
@@ -538,7 +493,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                                 ) : null}
                             </Box>
                         }
-                        description="Follows the daemon Happy is connected to. Restarting lets its work finish first."
+                        description="Restarting lets running work finish first"
                         label="Daemon"
                     />
                 </HappyAgentSettingsSection>
