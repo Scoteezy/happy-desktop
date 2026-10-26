@@ -612,7 +612,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         <HappyAgentGeneralSettings
                             desktopUpdate={{
                                 action: "restart",
-                                detail: updateStatus === "downloading" ? "64% downloaded" : undefined,
+                                detail:
+                                    updateStatus === "downloading" ? "64% downloaded" : undefined,
                                 status: updateStatus,
                                 version: "0.0.102-preview.18",
                             }}

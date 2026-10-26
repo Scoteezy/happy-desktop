@@ -39,6 +39,8 @@ export type AppHappyAgentUpdateProgress =
           readonly message: string;
           readonly failedAt: AppHappyAgentDaemonRestartStep;
           readonly reason: AppHappyAgentUpdateReason;
+          /** Whether this Happy can run it again: it manages the agent it would restart. */
+          readonly retryable: boolean;
       };
 
 /**

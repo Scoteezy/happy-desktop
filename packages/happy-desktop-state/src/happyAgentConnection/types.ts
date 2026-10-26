@@ -4,6 +4,7 @@ import type {
     Bot,
     ConfigurationBlock,
     DaemonConfig,
+    DaemonDrain,
     HappyAgentClient,
     HappyAgentEvent,
     MessageBlock,
@@ -780,7 +781,20 @@ export interface GroupsState {
      * refused, though the connection may still be live and streaming.
      */
     admitting?: false;
+    /**
+     * What the daemon said of its drain when it began: whether a replacement
+     * follows, why, and onto which version. Present only beside `admitting`,
+     * and only from a daemon that records it.
+     */
+    drain?: HappyAgentDrain;
 }
+
+/**
+ * A daemon's drain as this connection learned it, with the process that
+ * reported it when the managed feed named one. Two drains of different
+ * processes can share a start time; the process tells them apart.
+ */
+export type HappyAgentDrain = DaemonDrain & { readonly daemonId?: string };
 
 export type GroupDelta =
     | { type: "projects_changed"; projects: readonly ProjectGroup[] }

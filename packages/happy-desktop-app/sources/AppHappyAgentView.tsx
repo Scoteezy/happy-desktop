@@ -464,7 +464,7 @@ function AgentUpdateSidebar(props: {
                 : {})}
             {...(progress.kind === "failed"
                 ? {
-                      onRetry: store.updateRetry,
+                      ...(progress.retryable ? { onRetry: store.updateRetry } : {}),
                       ...(snapshot.chiefOfStaff === "unavailable"
                           ? {}
                           : { onChiefOfStaffAsk: store.chiefOfStaffAsk }),

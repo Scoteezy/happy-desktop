@@ -1,6 +1,7 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import type { AppHappyAgentDaemonInstall, AppHappyAgentDaemonStore } from "happy-desktop-app";
 import { SetupPage, SetupPrompt } from "happy-desktop-ui";
+import { drainKeyOf, PLANNED_RESTART_GRACE_MS } from "./desktopAgentUpdateStore";
 import { LOCAL_HAPPY_AGENT_ID, type HappyAgentDirectoryStore } from "./happyAgentDirectoryStore";
 import type { DesktopRuntimeStore } from "./runtimeStore";
 
@@ -12,11 +13,13 @@ import type { DesktopRuntimeStore } from "./runtimeStore";
 const BROKEN_HOLD_MS = 3_000;
 
 /**
- * A planned update or restart can finish on the host before this window has
- * reconnected. Keep the current surface for two minutes after that transition;
- * ordinary disconnects still use the short hold above.
+ * A planned update or restart leaves the agent out of reach for a while: the
+ * host can finish before this window has reconnected, and a restart the daemon
+ * announced itself is out of reach from its exit until its replacement admits
+ * work. The current surface is kept for the same minute the update card
+ * waits; ordinary disconnects still use the short hold above.
  */
-const RECONNECT_WAIT_MS = 120_000;
+const RECONNECT_WAIT_MS = PLANNED_RESTART_GRACE_MS;
 
 const HAPPY_URL = "https://happy.engineering";
 const HAPPY_AGENT_REPOSITORY_URL = "https://github.com/slopus/happy-agent";
@@ -86,6 +89,11 @@ export function desktopAgentBrokenStoreCreate(input: {
     let returnExpected = false;
     let recoveryVisible = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    // The daemon-announced restart being waited on, and the last one whose
+    // wait ran out, both by process and drain start. A drain is reported again
+    // on every reconnect attempt; the one already waited out is never waited on again.
+    let drainFollowed: string | undefined;
+    let drainSpent: string | undefined;
     let unsubscribes: (() => void)[] = [];
 
     const holdClear = (): void => {
@@ -105,26 +113,39 @@ export function desktopAgentBrokenStoreCreate(input: {
         const runtime = input.runtime.get();
         const install = daemon.install;
         const restarting = install.phase !== "idle" && install.phase !== "error";
+        // The daemon's own word that a replacement follows, whoever restarted it.
+        const drain = local?.drain?.intent === "restart" ? drainKeyOf(local.drain) : undefined;
         // Draining can leave the old agent connected for a long time. Only a
-        // connection after the host has finished counts as a successful return.
+        // connection to a daemon that admits work again counts as a return.
         if (restarting) {
             returnExpected = true;
             reconnectClear();
-        } else if (local?.status === "connected" || install.phase === "error") {
+        } else if (drain !== undefined && drain !== drainSpent) {
+            if (drainFollowed !== drain) reconnectClear();
+            drainFollowed = drain;
+            returnExpected = true;
+        } else if (
+            (local?.status === "connected" && local.drain === undefined) ||
+            install.phase === "error"
+        ) {
             requested = false;
             returnExpected = false;
+            drainFollowed = undefined;
             reconnectClear();
         }
         if ((!restarting && local?.status === "connected") || local?.protocolMismatch !== undefined)
             recoveryVisible = false;
         const reconnecting = (requested || returnExpected) && install.phase === "idle";
-        // This timer starts once on entering the post-restart reconnect gap.
+        // This timer starts once, when the agent is first out of reach after
+        // the restart: a drain still answering is not waited against.
         // Directory notifications cannot extend the deadline indefinitely.
-        if (reconnecting && reconnectTimer === undefined)
+        if (reconnecting && local?.status !== "connected" && reconnectTimer === undefined)
             reconnectTimer = setTimeout(() => {
                 reconnectTimer = undefined;
                 requested = false;
                 returnExpected = false;
+                drainSpent = drainFollowed;
+                drainFollowed = undefined;
                 reconcile();
             }, RECONNECT_WAIT_MS);
         const mounted =
@@ -197,6 +218,7 @@ export function desktopAgentBrokenStoreCreate(input: {
                 brokenSince = undefined;
                 requested = false;
                 returnExpected = false;
+                drainFollowed = undefined;
                 recoveryVisible = false;
             };
         },
