@@ -31,6 +31,9 @@ export default defineConfig({
                 "ws",
                 // node-usb is native: loaded from node_modules at first use.
                 "usb",
+                // Native FFI binds Firefox NSS and the platform's secure dialogs.
+                // Keep its prebuilt N-API modules in node_modules for packaging.
+                "koffi",
                 // Kept out of the bundle and shipped as a runtime dependency.
                 // Nothing in the main process imports it since the notes
                 // collection was removed, so this entry is inert; it is left in

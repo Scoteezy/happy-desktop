@@ -157,6 +157,8 @@
 @import "./styles/mobile-access-confirmation.css";
 @import "./styles/mobile-pairing.css";
 @import "./styles/happy-agent-secret-settings.css";
+@import "./styles/happy-agent-password-settings.css";
+@import "./styles/browser-import-dialog.css";
 @import "./styles/happy-agent-file-tier-settings.css";
 @import "./styles/happy-agent-usage-settings.css";
 @import "./styles/happy-agent-inbox.css";

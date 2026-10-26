@@ -1,13 +1,18 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gymElectronLaunch } from "./launch.js";
+import {
+    desktopSmokeReportEnvironment,
+    desktopSmokeScreenshotEnvironment,
+    type DesktopSmokeReport,
+} from "../../../happy-desktop-electron/sources/shared/desktopSmokeReport.js";
+import { gymElectronProcessRun } from "./launch.js";
 import { electronEntrypointResolve } from "./paths.js";
 
 export interface GymSmokeResult {
     readonly packaged: boolean;
-    readonly platform: NodeJS.Platform;
-    readonly arch: NodeJS.Architecture;
+    readonly platform: string;
+    readonly arch: string;
     readonly welcomeVisible: boolean;
     readonly windowTitle: string;
 }
@@ -19,48 +24,68 @@ export interface GymSmokeResult {
  * workload gym needs a daemon, but a shell that boots to its welcome deck has
  * proven the main process, the preload boundary, and the renderer on this
  * platform.
+ *
+ * A packaged build accepts no debugger, so the app itself reports what it shows
+ * (`happy-desktop-electron` `sources/main/desktopSmokeReport.ts`) and quits.
  */
 export async function gymSmokeRun(): Promise<GymSmokeResult> {
     const root = await mkdtemp(join(tmpdir(), "hdg-smoke-"));
     const userData = join(root, "user-data");
     const home = join(root, "home");
+    const reportPath = join(root, "smoke-report.json");
     await Promise.all([mkdir(userData), mkdir(home)]);
     const entrypoint = electronEntrypointResolve();
     const expectPackaged = process.env.HAPPY_DESKTOP_GYM_PACKAGED === "1";
     if (expectPackaged && !process.env.HAPPY_DESKTOP_ELECTRON_EXECUTABLE) {
         throw new Error("Packaged smoke requires HAPPY_DESKTOP_ELECTRON_EXECUTABLE.");
     }
-    const app = await gymElectronLaunch({
-        args: [`--user-data-dir=${userData}`, ...(expectPackaged ? [] : [entrypoint.main])],
-        env: smokeEnvironment(home),
-        executablePath: entrypoint.executable,
-        timeout: 60_000,
-    });
+    const screenshotPath = process.env.HAPPY_DESKTOP_GYM_SCREENSHOT;
     try {
-        const packaged = await app.evaluate(({ app }) => app.isPackaged);
-        if (expectPackaged && !packaged) {
+        const exit = await gymElectronProcessRun({
+            args: [`--user-data-dir=${userData}`, ...(expectPackaged ? [] : [entrypoint.main])],
+            env: {
+                ...smokeEnvironment(home),
+                [desktopSmokeReportEnvironment]: reportPath,
+                ...(screenshotPath ? { [desktopSmokeScreenshotEnvironment]: screenshotPath } : {}),
+            },
+            executablePath: entrypoint.executable,
+            timeout: 120_000,
+        });
+        const report = await readFile(reportPath, "utf8").then(
+            (text) => JSON.parse(text) as DesktopSmokeReport,
+            () => {
+                throw new Error(
+                    `The desktop app exited (${exit.exitCode ?? exit.signal}) without a smoke report:\n${exit.output}`,
+                );
+            },
+        );
+        if (expectPackaged && !report.packaged) {
             throw new Error("The installer smoke launched a development Electron entrypoint.");
         }
-        const page = await app.firstWindow();
-        await page.waitForLoadState("domcontentloaded");
-        await page.waitForSelector("body", { timeout: 30_000 });
+        const shown = report.windows.filter((window) => window.visible || window.focused);
+        if (
+            !report.hiddenMode ||
+            report.dockVisible === true ||
+            report.focusedWindow ||
+            shown.length > 0
+        )
+            throw new Error(
+                `The desktop app became visible to the person: ${JSON.stringify(report)}`,
+            );
         // Without a daemon or an installed agent the app must still stand up
         // its onboarding, not crash or hang on a blank window.
-        await page
-            .locator('[data-happy-desktop-ui="welcome-screen"]')
-            .waitFor({ state: "visible", timeout: 30_000 });
-        if (process.env.HAPPY_DESKTOP_GYM_SCREENSHOT) {
-            await page.screenshot({ path: process.env.HAPPY_DESKTOP_GYM_SCREENSHOT });
-        }
+        if (!report.welcomeVisible)
+            throw new Error(`The welcome screen never appeared:\n${exit.output}`);
+        if (screenshotPath && !report.screenshotWritten)
+            throw new Error("The desktop app did not capture its welcome screen.");
         return {
-            packaged,
-            platform: process.platform,
-            arch: process.arch,
-            welcomeVisible: true,
-            windowTitle: await page.title(),
+            packaged: report.packaged,
+            platform: report.platform,
+            arch: report.arch,
+            welcomeVisible: report.welcomeVisible,
+            windowTitle: report.windowTitle,
         };
     } finally {
-        await app.close().catch(() => undefined);
         await rm(root, { force: true, recursive: true });
     }
 }

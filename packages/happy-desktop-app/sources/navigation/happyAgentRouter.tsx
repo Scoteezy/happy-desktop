@@ -59,6 +59,7 @@ import {
     HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY,
     happyAgentSettingsCategoryExists,
     HAPPY_AGENT_SETTINGS_MOVED_CATEGORIES,
+    type AppBrowserPasswords,
     type AppHappyAgentDaemonStore,
     type AppHappyAgentDebugStore,
     type AppHappyAgentProfilerStore,
@@ -74,6 +75,8 @@ import type { AppHappyAgentUpdateStore } from "../agentUpdate";
  * can be constructed before any Happy Agent connects.
  */
 export interface HappyAgentRouterContext {
+    /** This desktop's vault surfaces, independent of the connected agent. */
+    readonly browserPasswords?: AppBrowserPasswords;
     /** A remote daemon uses its own setup inside this connection's router. */
     readonly connectionOnboarding?: boolean;
     /** Native Chromium guest renderer, present only in packaged Electron. */
@@ -817,6 +820,7 @@ function HappyAgentSettingsRoute() {
     return (
         <AppHappyAgentSettingsView
             appearance={context.appearance}
+            browserPasswords={context.browserPasswords}
             {...(context.daemon ? { daemon: context.daemon } : {})}
             {...(context.debug ? { debug: context.debug } : {})}
             {...(context.profiler ? { profiler: context.profiler } : {})}

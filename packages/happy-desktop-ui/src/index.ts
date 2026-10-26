@@ -995,6 +995,14 @@ export {
     type HappyAgentSecretSettingsProps,
 } from "./pages/settings/HappyAgentSecretSettings";
 export {
+    HappyAgentPasswordSettings,
+    type HappyAgentPasswordSettingsProps,
+    type HappyAgentPasswordLogin,
+    type HappyAgentPasswordImportProposal,
+    type HappyAgentPasswordImportSite,
+} from "./pages/settings/HappyAgentPasswordSettings";
+export { BrowserImportDialog, type BrowserImportDialogProps } from "./BrowserImportDialog";
+export {
     HappyAgentSecretCreateDialog,
     type HappyAgentSecretCreateDialogProps,
     type HappyAgentSecretCreateDraft,

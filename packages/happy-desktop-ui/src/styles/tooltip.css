@@ -141,6 +141,26 @@
     transform: none;
 }
 
+/* The mirror: ending at the trigger's trailing edge, for a trigger beside a
+   clipping container's trailing edge. */
+.happy-tooltip__bubble[data-align="end"][data-placement="top"] {
+    right: 0;
+    left: auto;
+    transform: translateY(var(--happy-tooltip-rise));
+}
+
+.happy-tooltip__bubble[data-align="end"][data-placement="bottom"] {
+    right: 0;
+    left: auto;
+    transform: translateY(calc(-1 * var(--happy-tooltip-rise)));
+}
+
+.happy-tooltip:hover > .happy-tooltip__bubble[data-align="end"],
+.happy-tooltip:has(:focus-visible) > .happy-tooltip__bubble[data-align="end"],
+.happy-tooltip[data-open] > .happy-tooltip__bubble[data-align="end"] {
+    transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .happy-tooltip__bubble {
         --happy-tooltip-fade: 0s;

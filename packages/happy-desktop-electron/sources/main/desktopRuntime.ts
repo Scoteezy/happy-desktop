@@ -28,7 +28,7 @@ import {
     type LocalHappyAgentConnector,
 } from "./localHappyAgent";
 import { HappyAgentDataNewerError } from "./happyAgentDataVersion";
-import { HappyAgentClient } from "@slopus/happy-agent-client";
+import { HappyAgentApiError, HappyAgentClient } from "@slopus/happy-agent-client";
 import type { LocalHappyAgentOnboardingState } from "./localOnboarding";
 import {
     HappyAgentDaemonHttpError,
@@ -282,6 +282,27 @@ export class DesktopRuntime implements AsyncDisposable {
         const host = this.browserHost();
         const client = target.connectionId === null ? host : host.connection(target.connectionId);
         return client.getWorkspaceAgentNetwork(target.workspaceId, target.agentId, signal);
+    }
+
+    /**
+     * Whether the workspace whose browser opened a network is still active.
+     * False when it was archived or is gone; other failures throw, since the
+     * network may still exist.
+     */
+    async browserNetworkOwnerActive(
+        target: DesktopBrowserProxyTarget,
+        signal?: AbortSignal,
+    ): Promise<boolean> {
+        const host = this.browserHost();
+        const client = target.connectionId === null ? host : host.connection(target.connectionId);
+        let response;
+        try {
+            response = await client.getWorkspace(target.workspaceId, signal);
+        } catch (error) {
+            if (error instanceof HappyAgentApiError && error.status === 404) return false;
+            throw error;
+        }
+        return response.workspace.archivedAt === null;
     }
 
     /** Opens a browser tunnel into one network through its owning connection. */

@@ -22,6 +22,10 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopRuntime } from "./desktopRuntime";
+import { BrowserPasswords } from "./browserPasswords";
+import { BrowserImportController } from "./browserImport";
+import { BrowserImportTargets } from "./browserImportTargets";
+import { browserPasswordGuestAttach } from "./browserPasswordGuest";
 import { desktopInstanceMenuTargets } from "./applicationMenu";
 import {
     desktopWindowTarget,
@@ -54,6 +58,7 @@ import {
     type DesktopBrowserPopup,
     type DesktopBrowserNetwork,
     type DesktopBrowserNetworkMissing,
+    type DesktopBrowserProxyTarget,
     type DesktopBrowserStatus,
     type DesktopBrowserTunnelFailure,
     type DesktopCloudAuthConfiguration,
@@ -114,10 +119,28 @@ import { DesktopProfilerController } from "./desktopProfilerController";
 import { DesktopWindowStateStore } from "./windowState";
 import { desktopBuildIdentityRead } from "./buildIdentity";
 import { DesktopDaemonController } from "./desktopDaemonController";
+import { desktopSmokeReportStart } from "./desktopSmokeReport";
 import { cloudAuthProductionRedirectUri } from "../shared/cloudAuthConfig";
 
 if (process.platform !== "darwin" && process.platform !== "linux" && process.platform !== "win32") {
     console.error("Happy Place desktop is available only on macOS, Linux, and Windows.");
+    app.exit(1);
+}
+/*
+ * A signed release holds Keychain-wrapped secrets such as saved browser passwords,
+ * so no other process may attach a debugger to it. The fuses already refuse Node's
+ * own inspector flags; Chromium's remote debugging has no fuse and is refused here,
+ * before the DevTools endpoint opens.
+ */
+const packagedDebugSwitches = [
+    "inspect",
+    "inspect-brk",
+    "inspect-port",
+    "remote-debugging-port",
+    "remote-debugging-pipe",
+];
+if (app.isPackaged && packagedDebugSwitches.some((name) => app.commandLine.hasSwitch(name))) {
+    console.error("Happy does not accept debugging switches in a packaged build.");
     app.exit(1);
 }
 // Gym and agent-driven launches render real windows nobody can see. This must
@@ -404,6 +427,10 @@ let quitting = false;
 let desktopUpdater: DesktopUpdater | undefined;
 /** Each workspace keeps its own network profile, including while its tabs are hidden. */
 const browserProxies = new Map<string, HappyAgentBrowser>();
+/** Workspace-browser profiles opened this launch; never a live artifact profile. */
+const browserNetworkPartitions = new Set<string>();
+/** The agent Happy Agent last named as using each network profile, by partition. */
+const browserNetworkOwners = new Map<string, DesktopBrowserProxyTarget>();
 /** The isolated world inline guests are measured in, apart from the page's own. */
 const guestFitWorld = 1_000;
 let htmlPreviewProxy: HtmlPreviewProxyHandle | undefined;
@@ -420,6 +447,13 @@ let browserProxyConnectionId: number | undefined;
 let browserProxyOperation = Promise.resolve();
 // In a hidden-window run, showing a window leaves it hidden (hiddenWindows.ts).
 const windowLifecycle = new DesktopWindowLifecycle<BrowserWindow>();
+let browserPasswords: BrowserPasswords | undefined;
+let browserImport: BrowserImportController | undefined;
+let browserImportTargets: BrowserImportTargets | undefined;
+const browserPasswordGuests = new Map<
+    number,
+    { readonly owner: WebContents; readonly pickerOpen: () => void }
+>();
 const cloudAuthConfiguration: DesktopCloudAuthConfiguration = {
     environment: "production",
     redirectUri: cloudAuthProductionRedirectUri,
@@ -700,6 +734,7 @@ function browserProxyApply(network: DesktopBrowserNetwork): Promise<string> {
                 } satisfies DesktopBrowserNetworkMissing);
             });
             browserProxies.set(partition, candidate);
+            if (network.artifactId === undefined) browserNetworkPartitions.add(partition);
             return partition;
         } catch (error) {
             candidate?.close();
@@ -737,20 +772,11 @@ function browserOpenPublish(window: BrowserWindow, candidate: string): void {
     window.webContents.send(desktopIpc.browserOpenRequested, url);
 }
 
-/**
- * Chromium's own user agent: Electron's default without the two tokens it adds,
- * the app's name and version (written without spaces, so `HappyDev/…` for a
- * development build) and its own. Those make sites serve an embedded-shell
- * variant.
- */
-function browserUserAgent(): string {
-    return app.userAgentFallback
-        .replace(` ${app.getName().replaceAll(" ", "")}/${app.getVersion()}`, "")
-        .replace(` Electron/${process.versions.electron}`, "");
-}
-
 async function browserSessionConfigure(browserSession: Electron.Session): Promise<void> {
-    browserSession.setUserAgent(browserUserAgent(), app.getLocale());
+    // The browser names itself honestly, with Electron's and the app's tokens.
+    // Google's sign-in refuses an embedded engine that claims to be Chrome but
+    // lacks Chrome's own layer, and admits one that says what it is.
+    browserSession.setUserAgent(app.userAgentFallback, app.getLocale());
     await browserProxyFailClosed(browserSession);
 
     const permissionLabels = new Map<string, string>([
@@ -921,8 +947,15 @@ function browserGuestAttach(window: BrowserWindow): void {
             event.preventDefault();
             return;
         }
-        // Guest pages never inherit a preload or Node privilege from the app.
+        // Guest pages never inherit the app's privileged bridge. Only admitted
+        // network browser tabs receive the separate isolated password observer.
         delete webPreferences.preload;
+        if (
+            !previewGuest &&
+            browserNetworkPartitions.has(params.partition) &&
+            (process.platform === "darwin" || process.platform === "win32")
+        )
+            webPreferences.preload = join(dirname, "browserPasswordGuestPreload.cjs");
         webPreferences.contextIsolation = true;
         webPreferences.nodeIntegration = false;
         webPreferences.nodeIntegrationInSubFrames = false;
@@ -989,6 +1022,29 @@ function browserGuestAttach(window: BrowserWindow): void {
             return;
         }
         browser.register(guest);
+        if (
+            browserPasswords &&
+            [...browserNetworkPartitions].some(
+                (partition) =>
+                    electronSession.fromPartition(partition, { cache: true }) === guest.session,
+            ) &&
+            (process.platform === "darwin" || process.platform === "win32")
+        ) {
+            const passwords = browserPasswordGuestAttach({
+                guest,
+                window,
+                vault: browserPasswords.vault,
+                loginsChanged: browserPasswords.loginsChanged,
+            });
+            browserPasswordGuests.set(guest.id, {
+                owner: window.webContents,
+                pickerOpen: passwords.pickerOpen,
+            });
+            guest.once("destroyed", () => {
+                browserPasswordGuests.delete(guest.id);
+                passwords.dispose();
+            });
+        }
         guest.setUserAgent(guest.session.getUserAgent());
         guest.setWindowOpenHandler(({ url }) => {
             if (browser.popupAllowed(guest, url)) browserPopupPublish(window, url, guest.id);
@@ -1651,6 +1707,57 @@ void app
             desktopDebugError("HTML artifacts will be shown as static previews", error),
         );
         const desktopRoot = join(app.getPath("userData"), "desktop");
+        browserPasswords = new BrowserPasswords({
+            path: join(desktopRoot, "browser-passwords.json"),
+            windowCurrent: () => windowLifecycle.get(),
+            windowRequire: (event) => {
+                const window = windowLifecycle.get();
+                if (
+                    !window ||
+                    window.isDestroyed() ||
+                    window.webContents !== event.sender ||
+                    event.senderFrame !== event.sender.mainFrame
+                )
+                    throw new Error("Only Happy's current window can manage browser passwords.");
+                return window;
+            },
+            pickerOpen: (owner, guestId) => {
+                const passwords = browserPasswordGuests.get(guestId);
+                if (!passwords || passwords.owner !== owner)
+                    throw new Error("This browser tab is unavailable.");
+                passwords.pickerOpen();
+            },
+        });
+        browserPasswords.install();
+        browserImportTargets = new BrowserImportTargets({
+            path: join(desktopRoot, "browser-import-targets.json"),
+            ownerActive: (owner, signal) => runtime.browserNetworkOwnerActive(owner, signal),
+        });
+        browserImport = new BrowserImportController({
+            windowCurrent: () => windowLifecycle.get(),
+            windowRequire: (event) => {
+                const window = windowLifecycle.get();
+                if (
+                    !window ||
+                    window.isDestroyed() ||
+                    window.webContents !== event.sender ||
+                    event.senderFrame !== event.sender.mainFrame
+                )
+                    throw new Error("Only Happy's current window can import browser data.");
+                return window;
+            },
+            targets: browserImportTargets,
+            vault: browserPasswords.vault,
+            loginsChanged: browserPasswords.loginsChanged,
+            // Every packaged build is made by electron-builder with the
+            // enableCookieEncryption fuse on; a checkout's Electron has it off.
+            cookieStoreEncrypted: app.isPackaged,
+        });
+        browserImport.install();
+        app.once("will-quit", () => {
+            browserImport?.dispose();
+            browserPasswords?.dispose();
+        });
         desktopWindowStateStore = await DesktopWindowStateStore.create(
             join(desktopRoot, "window-state.json"),
         );
@@ -1719,6 +1826,16 @@ void app
         );
         const debugController = new DesktopDebugController({
             changed: desktopDebugPublish,
+            // The node:inspector API and the renderer's CDP relay are not covered
+            // by the fuses or the switch refusal above, so a packaged build turns
+            // them off here, where every IPC request is decided. A checkout's
+            // own code is already writable by any local process.
+            ...(app.isPackaged
+                ? {
+                      inProcessDisabledReason:
+                          "Off in installed Happy: it holds saved passwords and imported sessions.",
+                  }
+                : {}),
             daemon: () => {
                 const snapshot = runtime.get();
                 if (snapshot.phase !== "ready" || snapshot.mode !== "local") return undefined;
@@ -1960,20 +2077,39 @@ void app
                 desktopReactDevtoolsMessageValidate(raw);
             if (message) desktopProfilerController.reactMessage(message);
         });
-        ipcMain.handle(desktopIpc.browserNetworkResolve, (event, target: unknown) => {
+        ipcMain.handle(desktopIpc.browserNetworkResolve, async (event, rawTarget: unknown) => {
             desktopDaemonSenderRequire(event.sender);
             if (event.senderFrame !== event.sender.mainFrame)
                 throw new Error("Only Happy can open a browser tab.");
-            return runtime.browserNetworkResolve(
-                desktopBrowserProxyTargetValidate(target),
+            const target = desktopBrowserProxyTargetValidate(rawTarget);
+            const networkId = await runtime.browserNetworkResolve(
+                target,
                 AbortSignal.timeout(10_000),
             );
+            // Happy Agent itself named this agent's network: that pairing, not
+            // one the renderer reports, keeps the profile an import destination.
+            browserNetworkOwners.set(
+                HappyAgentBrowser.partition({ connectionId: target.connectionId, networkId }),
+                target,
+            );
+            return networkId;
         });
-        ipcMain.handle(desktopIpc.browserNetworkProfileOpen, (event, network: unknown) => {
+        ipcMain.handle(desktopIpc.browserNetworkProfileOpen, async (event, rawNetwork: unknown) => {
             desktopDaemonSenderRequire(event.sender);
             if (event.senderFrame !== event.sender.mainFrame)
                 throw new Error("Only Happy can configure a browser profile.");
-            return browserProxyApply(desktopBrowserNetworkValidate(network));
+            const network = desktopBrowserNetworkValidate(rawNetwork);
+            const partition = await browserProxyApply(network);
+            const owner =
+                network.artifactId === undefined ? browserNetworkOwners.get(partition) : undefined;
+            // A profile a workspace browser opened receives imported
+            // sessions, now and after later launches.
+            if (owner && browserImportTargets)
+                void browserImportTargets.remember(network, owner).then(
+                    () => browserImport?.targetsChanged(),
+                    () => undefined,
+                );
+            return partition;
         });
         ipcMain.handle(
             desktopIpc.guestFitMeasure,
@@ -2162,6 +2298,7 @@ void app
             fullScreen: BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false,
         }));
         windowSynchronize(runtime.get());
+        desktopSmokeReportStart(desktopWindowsHidden, () => windowLifecycle.get());
         applicationMenuInstall(runtime.get());
         desktopDebugRuntimeLog(runtime.get());
         desktopDebugDaemonStartIfReady(runtime.get());
@@ -2212,6 +2349,7 @@ app.on("before-quit", (event) => {
     ]).finally(() => {
         for (const proxy of browserProxies.values()) proxy.close();
         browserProxies.clear();
+        browserNetworkPartitions.clear();
         htmlPreviewProxy?.close();
         htmlPreviewProxy = undefined;
         artifactNetworkProxy?.close();

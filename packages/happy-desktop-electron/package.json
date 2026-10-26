@@ -47,6 +47,8 @@
         "@sinclair/typebox": "^0.34.49",
         "@slopus/happy-agent-client": "0.0.111",
         "electron-updater": "^6.8.9",
+        "koffi": "3.3.4",
+        "tldts": "7.4.19",
         "usb": "^2.19.1",
         "ws": "^8.21.1",
         "yjs": "^13.6.31"
@@ -87,6 +89,14 @@
         "asarUnpack": [
             "node_modules/**/*"
         ],
+        "electronFuses": {
+            "runAsNode": false,
+            "enableCookieEncryption": true,
+            "enableNodeOptionsEnvironmentVariable": false,
+            "enableNodeCliInspectArguments": false,
+            "enableEmbeddedAsarIntegrityValidation": true,
+            "onlyLoadAppFromAsar": true
+        },
         "directories": {
             "buildResources": "build",
             "output": "release"
