@@ -127,82 +127,84 @@ export function HappyAgentSecretSettings(props: HappyAgentSecretSettingsProps) {
                     description="Environment variables agents can use. Values can’t be read back."
                     label="Environment bundles"
                 />
-            </HappyAgentSettingsSection>
-            {props.error ? (
-                <Banner tone="danger" title="Secrets unavailable">
-                    {props.error}
-                </Banner>
-            ) : props.loading ? (
-                <Box className="happy-agent-settings__pending">
-                    <Spinner size={16} />
-                    <span>Reading secrets…</span>
-                </Box>
-            ) : props.secrets.length === 0 ? (
-                <EmptyState
-                    description="Create a write-only environment bundle for agents on this Happy Agent."
-                    icon="lock"
-                    size="inline"
-                    title="No secrets yet"
-                />
-            ) : (
-                <HappyAgentSettingsSection>
-                    {props.secrets.map((secret) => (
-                        <article
-                            className="happy-agent-secret"
-                            data-happy-desktop-ui="happy-agent-secret"
-                            key={secret.id}
-                        >
-                            <header className="happy-agent-secret__header">
-                                <span
-                                    className="happy-agent-secret__glyph"
-                                    data-happy-desktop-ui="happy-agent-secret-glyph"
-                                >
-                                    <Icon name="lock" size={16} />
-                                </span>
-                                <Box className="happy-agent-secret__identity">
-                                    <span
-                                        className="happy-agent-secret__description"
-                                        data-happy-desktop-ui="happy-agent-secret-description"
-                                    >
-                                        {secret.description}
-                                    </span>
-                                    <span
-                                        className="happy-agent-secret__updated"
-                                        data-happy-desktop-ui="happy-agent-secret-updated"
-                                    >
-                                        Updated {secret.updatedAt}
-                                    </span>
-                                </Box>
-                                <Box className="happy-agent-secret__badges">
-                                    <HappyAgentSettingsStatus
-                                        label={[
-                                            secret.managed ? "Managed" : undefined,
-                                            secret.availableToAgents ? "All agents" : "Scoped",
-                                        ]
-                                            .filter(Boolean)
-                                            .join(" · ")}
-                                        variant={secret.availableToAgents ? "success" : "neutral"}
-                                    />
-                                </Box>
-                            </header>
-                            <Box
-                                aria-label="Environment variables"
-                                className="happy-agent-secret__variables"
+                {props.error ? (
+                    <Banner tone="danger" title="Secrets unavailable">
+                        {props.error}
+                    </Banner>
+                ) : props.loading ? (
+                    <Box className="happy-agent-settings__pending">
+                        <Spinner size={16} />
+                        <span>Reading secrets…</span>
+                    </Box>
+                ) : props.secrets.length === 0 ? (
+                    <EmptyState
+                        description="Create a write-only environment bundle for agents on this Happy Agent."
+                        icon="lock"
+                        size="inline"
+                        title="No secrets yet"
+                    />
+                ) : (
+                    <>
+                        {props.secrets.map((secret) => (
+                            <article
+                                className="happy-agent-secret"
+                                data-happy-desktop-ui="happy-agent-secret"
+                                key={secret.id}
                             >
-                                {secret.environmentVariables.map((name) => (
-                                    <code
-                                        className="happy-agent-secret__variable"
-                                        data-happy-desktop-ui="happy-agent-secret-variable"
-                                        key={name}
+                                <header className="happy-agent-secret__header">
+                                    <span
+                                        className="happy-agent-secret__glyph"
+                                        data-happy-desktop-ui="happy-agent-secret-glyph"
                                     >
-                                        {name}
-                                    </code>
-                                ))}
-                            </Box>
-                        </article>
-                    ))}
-                </HappyAgentSettingsSection>
-            )}
+                                        <Icon name="lock" size={16} />
+                                    </span>
+                                    <Box className="happy-agent-secret__identity">
+                                        <span
+                                            className="happy-agent-secret__description"
+                                            data-happy-desktop-ui="happy-agent-secret-description"
+                                        >
+                                            {secret.description}
+                                        </span>
+                                        <span
+                                            className="happy-agent-secret__updated"
+                                            data-happy-desktop-ui="happy-agent-secret-updated"
+                                        >
+                                            Updated {secret.updatedAt}
+                                        </span>
+                                    </Box>
+                                    <Box className="happy-agent-secret__badges">
+                                        <HappyAgentSettingsStatus
+                                            label={[
+                                                secret.managed ? "Managed" : undefined,
+                                                secret.availableToAgents ? "All agents" : "Scoped",
+                                            ]
+                                                .filter(Boolean)
+                                                .join(" · ")}
+                                            variant={
+                                                secret.availableToAgents ? "success" : "neutral"
+                                            }
+                                        />
+                                    </Box>
+                                </header>
+                                <Box
+                                    aria-label="Environment variables"
+                                    className="happy-agent-secret__variables"
+                                >
+                                    {secret.environmentVariables.map((name) => (
+                                        <code
+                                            className="happy-agent-secret__variable"
+                                            data-happy-desktop-ui="happy-agent-secret-variable"
+                                            key={name}
+                                        >
+                                            {name}
+                                        </code>
+                                    ))}
+                                </Box>
+                            </article>
+                        ))}
+                    </>
+                )}
+            </HappyAgentSettingsSection>
             {draft === undefined ? null : (
                 <HappyAgentSecretCreateDialog
                     attempted={attempted}

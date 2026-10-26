@@ -2,7 +2,8 @@
  * The Usage settings category: one plain row per provider account, closed by a
  * form row's hairline. The readings inside are the model menu's own account
  * usage (number, ring, resets, freshness), so an account reads the same here as
- * it does in the menu bar presentation it is drawn after.
+ * it does in the menu bar presentation it is drawn after. Accounts sit under
+ * their service's section heading, and each lists the models it spent tokens on.
  *
  * Layout is flexbox throughout; colors and type come only from theme roles.
  */
@@ -18,14 +19,6 @@
 }
 
 .happy-agent-usage-settings__account-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    min-height: 20px;
-}
-
-.happy-agent-usage-settings__identity {
     display: flex;
     align-items: baseline;
     gap: 8px;
@@ -64,4 +57,39 @@
 
 .happy-agent-usage-settings__note[data-note="error"] {
     color: var(--warning-critical);
+}
+
+/* Tokens by model: one quiet line each, the model at the start and its totals at the end. */
+.happy-agent-usage-settings__models {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-agent-usage-settings__model {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-agent-usage-settings__model-id {
+    overflow: hidden;
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-usage-settings__model-tokens {
+    flex: none;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }

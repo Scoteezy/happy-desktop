@@ -83,6 +83,46 @@ export const usageAccounts: readonly HappyAgentUsageProviderRow[] = [
         },
     },
     {
+        providerId: "claude_extra",
+        name: "work@example.com",
+        typeName: "Claude",
+        checkedAt: 1_700_000_000_000,
+        refreshedAt: 1_699_999_700_000,
+        usage: {
+            capturedAt: 1_699_999_700_000,
+            planName: "Max 5×",
+            fiveHour: { usedPercent: 12, resetsAt: 1_700_010_000_000 },
+            weekly: { usedPercent: 37, resetsAt: 1_700_300_000_000 },
+            models: [
+                {
+                    modelId: "anthropic/opus-5",
+                    day: {
+                        inputTokens: 41_000,
+                        outputTokens: 12_800,
+                        cacheReadTokens: 610_000,
+                        cacheWriteTokens: 33_000,
+                    },
+                    week: {
+                        inputTokens: 388_000,
+                        outputTokens: 121_000,
+                        cacheReadTokens: 7_400_000,
+                        cacheWriteTokens: 402_000,
+                    },
+                },
+                {
+                    // Configured but never used: Settings leaves it out.
+                    modelId: "anthropic/haiku-5",
+                    week: {
+                        inputTokens: 0,
+                        outputTokens: 0,
+                        cacheReadTokens: 0,
+                        cacheWriteTokens: 0,
+                    },
+                },
+            ],
+        },
+    },
+    {
         providerId: "work_codex",
         name: "work@example.com",
         typeName: "Codex",

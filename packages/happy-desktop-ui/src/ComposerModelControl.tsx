@@ -411,6 +411,8 @@ export function ComposerModelAccountUsageDetails(props: {
     /** The moment ages are told from; without it no freshness is said. */
     now: number | undefined;
     className?: string;
+    /** Both windows read alike, as in Settings, where neither leads. */
+    windowsUniform?: boolean;
 }) {
     const usage = props.usage;
     return (
@@ -419,7 +421,9 @@ export function ComposerModelAccountUsageDetails(props: {
                 .filter(Boolean)
                 .join(" ")}
         >
-            {usage?.week ? <UsageLine primary window={usage.week} /> : null}
+            {usage?.week ? (
+                <UsageLine primary={props.windowsUniform !== true} window={usage.week} />
+            ) : null}
             {usage?.session ? <UsageLine window={usage.session} /> : null}
             {usage?.week || usage?.session ? null : (
                 <span
