@@ -1078,15 +1078,30 @@ function DesktopCloudSignInNotice(props: { store: DesktopCloudSignInNoticeStore 
    update, ⌘R, another window of this origin) while the View menu reports only
    its own steps, so it is read from the window itself: the page fills the
    whole window, whose width is in screen points and whose viewport is in CSS
-   pixels. A zoom step resizes the viewport, so it is read again then. */
+   pixels.
+
+   It is read only when it can have changed: at load, and when the device pixel
+   ratio — the screen's scale times the zoom — moves. Never on resize: the
+   browser delivers the window's new width and its new viewport separately, so
+   a resize read one against the other's old value and kept that wrong zoom
+   until the next resize, which after a full-screen change or a dragged edge
+   put the sidebar toggle over the lights. A zoom step leaves the window as it
+   is, so its width is current whenever the ratio moves. */
 const windowZoomApply = () => {
     const viewport = window.visualViewport?.width ?? window.innerWidth;
     if (!(viewport > 0) || !(window.outerWidth > 0)) return;
     const zoom = Math.round((window.outerWidth / viewport) * 1000) / 1000;
     document.documentElement.style.setProperty("--happy-window-zoom", String(zoom));
 };
-windowZoomApply();
-window.addEventListener("resize", windowZoomApply);
+const windowZoomWatch = () => {
+    windowZoomApply();
+    matchMedia(`(resolution: ${String(window.devicePixelRatio)}dppx)`).addEventListener(
+        "change",
+        windowZoomWatch,
+        { once: true },
+    );
+};
+windowZoomWatch();
 
 function DesktopZoomIndicator(): ReactNode {
     const asks = useSyncExternalStore(zoomSubscribe, () => zoomAsks);

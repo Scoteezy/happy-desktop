@@ -93,20 +93,48 @@ export function surfaceWindowStateStoreCreate(input: {
 }
 
 /**
+ * Where this window keeps the last full-screen state it heard, for the first
+ * frame of its next document. A reload — ⌘R, a renderer update — keeps the
+ * window and its session storage, and the window is still in whatever mode it
+ * was in; a new window starts with neither and is never created full screen.
+ */
+const fullScreenSessionKey = "happy.window.full-screen.v1";
+
+function fullScreenRemembered(): boolean {
+    try {
+        return sessionStorage.getItem(fullScreenSessionKey) === "1";
+    } catch {
+        return false;
+    }
+}
+
+function fullScreenRemember(fullScreen: boolean): void {
+    try {
+        sessionStorage.setItem(fullScreenSessionKey, fullScreen ? "1" : "0");
+    } catch {
+        // Storage refused: the next document starts windowed and the host corrects it.
+    }
+}
+
+/**
  * One coarse bridge subscription owns the window's chrome state for the whole
  * renderer. The main process pushes every full-screen transition, and the
  * initial read fills in the state the window already had when this surface
- * mounted; a push that arrives first wins over that read.
+ * mounted; a push that arrives first wins over that read. Until either
+ * arrives, the state this window last heard before a reload stands in, so the
+ * first frame after reloading in full screen does not hold a lane for traffic
+ * lights that are not there.
  */
 export function windowStateStoreCreate(bridge: HappyDesktopBridge): HappyAgentWindowStore {
     const macOS = trafficLightsPlatform();
-    let snapshot: HappyAgentWindowSnapshot = windowSnapshot(false, macOS);
+    let snapshot: HappyAgentWindowSnapshot = windowSnapshot(fullScreenRemembered(), macOS);
     let bridgeUnsubscribe: (() => void) | undefined;
     let eventReceived = false;
     const listeners = new Set<() => void>();
     const publish = (next: DesktopWindowState) => {
         if (snapshot.fullScreen === next.fullScreen) return;
         snapshot = windowSnapshot(next.fullScreen, macOS);
+        fullScreenRemember(next.fullScreen);
         for (const listener of listeners) listener();
     };
     return {

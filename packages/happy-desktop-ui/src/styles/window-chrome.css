@@ -8,12 +8,21 @@
     --happy-window-zoom: 1;
     /* The safe area of the macOS traffic lights: the window's top-left corner
        that no header content may enter. The Electron host draws the 14px lights
-       at x=14…68, centred in the 40px title band; content starts 16px past them,
-       clear of their hover halo. Windows reports a zero `titlebar-area-x`, its
-       caption buttons being on the right, so nothing is reserved there. Every
-       heading in the band takes its leading inset from these two values. */
-    --happy-window-controls-width: calc(env(titlebar-area-x, 72px) + 12px);
-    --happy-window-controls-height: 40px;
+       at x=14…68 window points, centred in a 40pt title band; content starts
+       16pt past them, clear of their hover halo. Windows reports a zero
+       `titlebar-area-x`, its caption buttons being on the right, so nothing is
+       reserved there.
+
+       These two are the only source of that geometry, already in this page's
+       CSS pixels: the lights stay put while the page zooms, so the lane is
+       divided by the zoom, and the band never gets shorter than the 40pt the
+       lights are centred in. Every heading in the band — the sidebar toggle,
+       the settings back control, a folded sidebar's reveal, the connection
+       rail's title band — takes its inset and height from these. */
+    --happy-window-controls-width: calc(
+        (env(titlebar-area-x, 72px) + 12px) / var(--happy-window-zoom)
+    );
+    --happy-window-controls-height: max(40px, calc(40px / var(--happy-window-zoom)));
     --happy-window-caption-right: max(
         0px,
         calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))

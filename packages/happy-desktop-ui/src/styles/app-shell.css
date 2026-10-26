@@ -37,8 +37,7 @@
     min-height: 0;
 }
 
-/* Integrated window chrome shares a single band with the pane's tabs. Native
-   geometry is divided by the renderer zoom because the OS buttons stay fixed. */
+/* Integrated window chrome shares a single band with the pane's tabs. */
 .happy-desktop-app-shell[data-navigation-chrome="integrated"] {
     --happy-integrated-leading-inset: var(--happy-panel-inset);
     --happy-integrated-band-height: 40px;
@@ -49,18 +48,19 @@
     min-height: min(640px, 100%);
 }
 
+/* In a desktop window the band is the native title bar's, in a window and in
+   full screen alike, so the rows below it and the connection rail's band beside
+   it hold one height as the lights come and go. */
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls] {
+    --happy-integrated-band-height: var(--happy-window-controls-height);
+}
+
 /* The sidebar toggle holds one window position per window mode, whether the
    sidebar is open or folded and whether the connection rail shows. While macOS
    draws its traffic lights (a macOS window, not full screen) it starts where
    their lane ends; `data-window-traffic-lights` is set only then. */
 .happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-traffic-lights] {
-    --happy-integrated-leading-inset: calc(
-        var(--happy-window-controls-width) / var(--happy-window-zoom)
-    );
-    --happy-integrated-band-height: max(
-        40px,
-        calc(var(--happy-window-controls-height) / var(--happy-window-zoom))
-    );
+    --happy-integrated-leading-inset: var(--happy-window-controls-width);
 }
 
 /* Beside the rail the shell starts past it, so the same window position is the
@@ -68,10 +68,7 @@
 .happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-traffic-lights][data-connection-rail] {
     --happy-integrated-leading-inset: max(
         var(--happy-panel-inset),
-        calc(
-            var(--happy-window-controls-width) / var(--happy-window-zoom) -
-                var(--happy-connections-rail-width)
-        )
+        calc(var(--happy-window-controls-width) - var(--happy-connections-rail-width))
     );
 }
 
@@ -565,10 +562,10 @@
     app-region: no-drag;
 }
 
-/* The window chrome row is the native title bar's own 40px, so the traffic
-   lights, the sidebar toggle, and the heading beside them read as one band of
-   window furniture rather than a 56px product header the lights float inside.
-   The 28px toggle centres on the lights' axis at y=6. The band stays in full
+/* The window chrome row is the native title bar's own 40pt at any zoom, so the
+   traffic lights, the sidebar toggle, and the heading beside them read as one
+   band of window furniture rather than a 56px product header the lights float
+   inside. A 28px control centres on the lights' axis. The band stays in full
    screen too, so the rows below keep their place as the lights come and go and
    nothing sits on the top edge where macOS slides its menu bar down. */
 .happy-desktop-app-shell[data-window-controls] .happy-sidebar__header,
@@ -651,6 +648,18 @@
     > .happy-sidebar
     > .happy-sidebar__header {
     padding-left: calc(var(--happy-window-controls-width) - var(--happy-connections-rail-width));
+}
+
+/* A drill-down heading's back control leads the band exactly as the workspace's
+   sidebar toggle does: under the lights its box starts where the safe area
+   ends, rather than reaching 6px back to put its glyph on the rows' ink line,
+   which would carry it into the lights' halo. */
+.happy-desktop-app-shell[data-window-traffic-lights]
+    .happy-desktop-app-shell__sidebar
+    > .happy-sidebar
+    > .happy-sidebar__header
+    .happy-sidebar__back {
+    margin-left: 0;
 }
 
 /* Same reservation on whichever strip heads the workspace once the sidebar is

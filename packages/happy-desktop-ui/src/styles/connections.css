@@ -25,9 +25,10 @@
     background: var(--groupped-background);
 }
 .happy-connections__rail[data-window-controls] {
-    /* Matches the 40px hidden title bar the macOS traffic lights are centred in.
-       Full screen keeps it: the tiles hold their place as the lights go, and
-       Home stays off the edge macOS slides its menu bar down over. */
+    /* Matches the hidden title bar the macOS traffic lights are centred in, at
+       every zoom (window-chrome.css). Full screen keeps it: the tiles hold
+       their place as the lights go, and Home stays off the edge macOS slides
+       its menu bar down over. */
     padding-top: var(--happy-window-controls-height);
 }
 /* The hairline between the rail and the sidebar beside it. In a window it
@@ -68,16 +69,6 @@
 .happy-connections:has([data-navigation-chrome="integrated"])
     .happy-connections__rail[data-window-controls][data-window-full-screen="true"]::after {
     top: 40px;
-}
-
-.happy-connections:has([data-navigation-chrome="integrated"])
-    .happy-connections__rail[data-window-controls]:not([data-window-full-screen="true"]) {
-    padding-top: calc(var(--happy-window-controls-height) / var(--happy-window-zoom));
-}
-
-.happy-connections:has([data-navigation-chrome="integrated"])
-    .happy-connections__rail[data-window-controls]:not([data-window-full-screen="true"])::after {
-    top: calc(var(--happy-window-controls-height) / var(--happy-window-zoom));
 }
 .happy-connections__rail > .happy-scroll-area {
     /* The tile list takes the height between the title bar and the footer. */
