@@ -207,11 +207,12 @@ export type SidebarItem = {
     voiceFocus?: boolean;
 };
 /**
- * Left inset of the row content at depth 0. It is the shared row padding —
- * `--happy-panel-row-padding`, which is what the CSS states — restated here
- * because an indented row and a tree stem are positioned from script.
+ * Left inset of the row content at depth 0: `--happy-sidebar-row-leading`,
+ * which centres the 20px leading lane 16px from the row's edge, as far as the
+ * row's top. Restated here because an indented row and a tree stem are
+ * positioned from script.
  */
-export const SIDEBAR_ROW_PADDING_X = 10;
+export const SIDEBAR_ROW_PADDING_X = 6;
 /** Additional left inset applied per nesting level so children sit under their parent. */
 export const SIDEBAR_ROW_INDENT = 16;
 /** The fixed row geometry used by the sidebar's reorder and connector layers. */

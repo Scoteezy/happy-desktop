@@ -496,7 +496,7 @@ it("holds Sidebar geometry, row treatments, and optical alignment", async () => 
         "background-color": "rgb(234, 234, 234)",
         "border-radius": "6px",
         color: "rgb(0, 0, 0)",
-        "padding-left": "10px",
+        "padding-left": "6px",
     });
     const activeLabel = view.$(
         '[data-testid="full"] [data-item-id="my-issues"] [data-happy-desktop-ui="sidebar-item-label"]',
@@ -571,7 +571,8 @@ it("holds Sidebar geometry, row treatments, and optical alignment", async () => 
 
     /*
      * Leading glyph lane: 16px icon (view / channel / action kinds) inside the
-     * 20px lane that starts at the 10px row padding. The icon font centers the
+     * 20px lane that starts at the 6px row padding, centred 16px from the row's
+     * edge, as far as from its top. The icon font centers the
      * glyph in its own box, so the Sidebar contract here is the lane box plus a
      * really-painted glyph.
      */
@@ -590,11 +591,11 @@ it("holds Sidebar geometry, row treatments, and optical alignment", async () => 
     ] as const) {
         const lane = leading(id);
         expect(lane.bounds().width, `${id} leading lane`).toBe(20);
-        /* Lane center is (20, 16) in row coordinates. */
+        /* Lane center is (16, 16) in row coordinates. */
         const laneBounds = lane.bounds();
         const rowBounds = row(id).bounds();
         expect(
-            Math.abs(laneBounds.x - rowBounds.x + laneBounds.width / 2 - 20),
+            Math.abs(laneBounds.x - rowBounds.x + laneBounds.width / 2 - 16),
             `${id} leading lane box x`,
         ).toBeLessThanOrEqual(0.1);
         expect(
@@ -621,7 +622,7 @@ it("holds Sidebar geometry, row treatments, and optical alignment", async () => 
     expect((await leading("maya").visibleMetrics()).pixelCount).toBeGreaterThan(0);
     for (const id of ["jun", "claude"] as const) {
         const centroid = await rowInk(leading(id), row(id));
-        expect(Math.abs(centroid.x - 20), `${id} avatar optical x`).toBeLessThanOrEqual(OPTICAL);
+        expect(Math.abs(centroid.x - 16), `${id} avatar optical x`).toBeLessThanOrEqual(OPTICAL);
         expect(Math.abs(centroid.y - 16), `${id} avatar optical y`).toBeLessThanOrEqual(OPTICAL);
     }
 
@@ -1150,11 +1151,11 @@ it("nests child channels under their parent and dims archived rows", async () =>
         );
 
     /* ---- Indentation --------------------------------------------------- */
-    expect(row("launch").computedStyle("padding-left"), "parent padding").toBe("10px");
+    expect(row("launch").computedStyle("padding-left"), "parent padding").toBe("6px");
     expect(row("launch").element.getAttribute("data-depth"), "parent depth attr").toBeNull();
-    expect(row("ios").computedStyle("padding-left"), "child padding").toBe("26px");
+    expect(row("ios").computedStyle("padding-left"), "child padding").toBe("22px");
     expect(row("ios").element.getAttribute("data-depth"), "child depth attr").toBe("1");
-    expect(row("legacy").computedStyle("padding-left"), "archived child padding").toBe("26px");
+    expect(row("legacy").computedStyle("padding-left"), "archived child padding").toBe("22px");
 
     /* ---- Tree connectors replace the nested hash ------------------------ */
     /* Only a top-level channel keeps the hash; children are introduced by the tree. */

@@ -481,7 +481,8 @@
     align-items: center;
     gap: 8px;
     min-width: 0;
-    padding: 12px var(--happy-panel-row-padding) 4px;
+    /* Its mark on the rows' leading lane. */
+    padding: 12px var(--happy-panel-row-padding) 4px var(--happy-sidebar-row-leading);
     border-top: 1px solid var(--divider);
 }
 
@@ -550,6 +551,8 @@
  */
 .happy-sidebar__section-head[data-lanes] {
     gap: 8px;
+    /* Its fold on the rows' fold column. */
+    padding-right: var(--happy-sidebar-fold-inset);
 }
 
 .happy-sidebar__section-head[data-lanes] > .happy-sidebar__section-disclosure {
@@ -777,8 +780,8 @@
 .happy-sidebar__drop-line {
     position: absolute;
     z-index: 3;
-    right: calc(var(--happy-panel-inset) + var(--happy-panel-row-padding));
-    left: calc(var(--happy-panel-inset) + var(--happy-panel-row-padding));
+    right: calc(var(--happy-panel-inset) + var(--happy-sidebar-fold-inset));
+    left: calc(var(--happy-panel-inset) + var(--happy-sidebar-row-leading));
     height: 2px;
     margin-top: -1px;
     border-radius: 1px;
@@ -854,7 +857,7 @@
     width: 100%;
     height: 32px;
     margin: 0;
-    padding: 0 var(--happy-panel-row-padding);
+    padding: 0 var(--happy-panel-row-padding) 0 var(--happy-sidebar-row-leading);
     border: none;
     border-radius: var(--happy-hover-radius);
     background: transparent;
@@ -952,6 +955,9 @@
     position: relative;
     min-width: 0;
     height: 28px;
+    /* No mark leads a heading, so its title keeps the row padding, about where
+       a leading glyph's ink begins. */
+    padding-left: var(--happy-panel-row-padding);
 }
 
 .happy-sidebar__section-item:hover:not([data-dragging]) {
@@ -979,7 +985,7 @@
 /* The same 18px box, on the same trailing column, as a row's own fold. */
 .happy-sidebar__section-item-fold {
     position: absolute;
-    inset: calc(50% - 9px) var(--happy-panel-row-padding) auto auto;
+    inset: calc(50% - 9px) var(--happy-sidebar-fold-inset) auto auto;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -998,7 +1004,7 @@
    keeps clear of the fold's lane at all times, so showing the fold moves
    nothing. */
 .happy-sidebar__section-item[data-foldable] {
-    padding-right: calc(var(--happy-panel-row-padding) + 22px);
+    padding-right: calc(var(--happy-sidebar-fold-inset) + 22px);
 }
 
 /* The heading's own control, an 18px box on the column just before the fold's
@@ -1006,20 +1012,20 @@
    clear of it too, so revealing it on hover moves nothing. */
 .happy-sidebar__section-item-action {
     position: absolute;
-    inset: calc(50% - 9px) var(--happy-panel-row-padding) auto auto;
+    inset: calc(50% - 9px) var(--happy-sidebar-fold-inset) auto auto;
     display: flex;
 }
 
 .happy-sidebar__section-item[data-foldable] .happy-sidebar__section-item-action {
-    right: calc(var(--happy-panel-row-padding) + 22px);
+    right: calc(var(--happy-sidebar-fold-inset) + 22px);
 }
 
 .happy-sidebar__section-item[data-actionable] {
-    padding-right: calc(var(--happy-panel-row-padding) + 22px);
+    padding-right: calc(var(--happy-sidebar-fold-inset) + 22px);
 }
 
 .happy-sidebar__section-item[data-actionable][data-foldable] {
-    padding-right: calc(var(--happy-panel-row-padding) + 44px);
+    padding-right: calc(var(--happy-sidebar-fold-inset) + 44px);
 }
 
 .happy-sidebar__section-item:is(:focus-visible, :focus-within)
@@ -1259,6 +1265,8 @@
 .happy-sidebar__item[data-fold-placement="trailing"] > .happy-sidebar__item-fold {
     width: 18px;
     height: 18px;
+    /* On the fold column, past the row's trailing padding. */
+    margin-right: calc(var(--happy-sidebar-fold-inset) - var(--happy-panel-row-padding));
 }
 
 .happy-sidebar[data-fold-control-reveal="hover"]
@@ -1274,7 +1282,8 @@
     .happy-sidebar__item[data-fold-placement="trailing"]:not([data-fold-reveal="always"])
     > .happy-sidebar__item-fold {
     position: absolute;
-    inset: calc(50% - 9px) var(--happy-panel-row-padding) auto auto;
+    inset: calc(50% - 9px) var(--happy-sidebar-fold-inset) auto auto;
+    margin-right: 0;
 }
 
 .happy-sidebar[data-fold-control-reveal="hover"]
@@ -1292,7 +1301,8 @@
         [data-fold-reveal="always"]
     ):not(:has(> .happy-sidebar__item-trailing)):is(:hover, :focus-visible, :has(:focus-visible))
     > .happy-sidebar__item-main {
-    margin-right: 22px;
+    /* Clear of the fold's 18px box and 4px beyond, on the fold column. */
+    margin-right: calc(22px + var(--happy-sidebar-fold-inset) - var(--happy-panel-row-padding));
 }
 
 /* A row that keeps its fold in view has it as its last column, always shown. */
@@ -1328,6 +1338,14 @@
 .happy-sidebar__item[data-active] .happy-sidebar__item-fold,
 .happy-sidebar__item-fold:hover {
     color: var(--text);
+}
+
+/* A chevron's ink sits above the middle of its em, so the glyph is lowered onto
+   the middle of the title's x-height rather than the middle of the row. Like the
+   title chevron above, this aligns a mark to the text beside it; the glyph's own
+   centring in its box is `Icon`'s and unchanged. */
+.happy-sidebar__item-fold > [data-happy-desktop-ui="icon"] {
+    transform: translateY(var(--happy-sidebar-fold-optical-y));
 }
 
 /* An avatar-less row borrows the existing branch box for disclosure instead
@@ -2139,6 +2157,12 @@
  */
 
 .happy-sidebar {
+    /* Each end of a row centres its mark in a square as tall as the row: the
+       leading mark's 20px lane 16px from the left edge, the fold's 18px box
+       16px from the right, so both sit as far from their side as from the top. */
+    --happy-sidebar-row-leading: 6px;
+    --happy-sidebar-fold-inset: 7px;
+    --happy-sidebar-fold-optical-y: 0.65px;
     --happy-sidebar-label-optical-y: -0.4px;
     --happy-sidebar-meta-optical-y: 1px;
     --happy-sidebar-working-optical-y: -0.6px;
@@ -2158,6 +2182,7 @@
 
 @supports (background: -webkit-named-image(i)) {
     .happy-sidebar {
+        --happy-sidebar-fold-optical-y: 0.25px;
         --happy-sidebar-label-optical-y: -0.85px;
         --happy-sidebar-meta-optical-y: 0px;
         --happy-sidebar-working-optical-y: -0.8px;
