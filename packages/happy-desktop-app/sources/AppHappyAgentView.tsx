@@ -3798,13 +3798,15 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // The stem cell and its empty chat are one thing, opened together: in the
     // click itself on a daemon that takes the window's names for them, where
     // the first message waits for the daemon; otherwise once it has made them.
-    const makeStuff = (): void => {
+    // A section heading's `+` makes it right under that heading instead.
+    const makeStuff = (sectionId: string | null = null): void => {
         if (!stemCellsEnabled || !active || !activeHappyAgentOnline()) return;
-        // New work lands right below Happy's row, wherever the reader keeps it.
+        // Without a section, new work lands right below Happy's row, wherever
+        // the reader keeps it.
         const happySpace = [...spaces.spaces.values()].find((space) =>
             happyAgentSpaceHappyIs(space, spacesPlaces),
         );
-        const creation = spacesStore.stemCellCreate(null, happySpace?.id ?? null);
+        const creation = spacesStore.stemCellCreate(sectionId, happySpace?.id ?? null);
         const open = (cell: HappyAgentStemCell): void => {
             spacesStore.happyFocusUpdate(false);
             props.onChatSelect(active.id, cell.workspaceId, cell.agentId);
@@ -3921,11 +3923,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           create: {
                               label: "Create",
                               shortcut: APP_SHORTCUTS.taskCreate,
-                              onOpen: makeStuff,
+                              onOpen: () => makeStuff(),
                           },
                       }
                     : {})}
                 classic={spacesClassic}
+                {...(stemCellsEnabled ? { onSectionCreate: makeStuff } : {})}
                 focus={{
                     ...(props.chatId !== undefined ? { chatId: props.chatId } : {}),
                     ...(props.groupId !== undefined ? { groupId: props.groupId } : {}),

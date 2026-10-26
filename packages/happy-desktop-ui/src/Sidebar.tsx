@@ -2071,6 +2071,7 @@ function SidebarRow({
                 aria-expanded={props.onCollapseToggle ? item().collapsed !== true : undefined}
                 aria-keyshortcuts={props.reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
                 className="happy-sidebar__item happy-sidebar__section-item"
+                data-actionable={item().action && props.onAction ? "" : undefined}
                 data-collapsed={item().collapsed ? "" : undefined}
                 data-dragging={props.dragging ? "" : undefined}
                 data-foldable={props.onCollapseToggle ? "" : undefined}
@@ -2097,6 +2098,16 @@ function SidebarRow({
                 >
                     {item().label}
                 </span>
+                {item().action && props.onAction ? (
+                    /* What the heading offers — new work under it — stands just
+                       before its fold, in a lane the title always keeps clear. */
+                    <span
+                        className="happy-sidebar__section-item-action"
+                        data-happy-desktop-ui="sidebar-section-item-action"
+                    >
+                        <SidebarRowAction action={item().action!} onAction={props.onAction} />
+                    </span>
+                ) : null}
                 {props.onCollapseToggle ? (
                     <span
                         aria-hidden="true"

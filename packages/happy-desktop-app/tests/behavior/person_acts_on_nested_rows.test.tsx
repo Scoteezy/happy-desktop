@@ -347,3 +347,107 @@ it("takes a deleted heading off at once, keeps every row still, and puts it back
         store[Symbol.dispose]();
     }
 });
+
+it("makes new work right under an open heading from its +, in the click, moving no row above it", async () => {
+    const spaces = [space("release", "Release", "task"), space("voice", "Voice", "task")];
+    const html = [
+        "<nav>",
+        "  <happy-search/>",
+        "  <happy-create/>",
+        '  <happy-space id="release"/>',
+        '  <happy-section id="desktop" label="Desktop"/>',
+        '  <happy-space id="voice"/>',
+        '  <happy-section id="later" label="Later" collapsed="true"/>',
+        "</nav>",
+    ].join("\n");
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.client.listSpaces = vi.fn(async () => ({ cursor: "0", spaces, sections: [] }));
+    daemon.client.reportSpaceAttention = vi.fn(async () => ({ batch: null }));
+    daemon.client.getSpaceSidebar = vi.fn(async () => ({
+        artifactId: "sidebar",
+        version: 1,
+        html,
+        spaces,
+    }));
+    const release = daemon.pause("createStemCell");
+    // A daemon that takes the window's names, so the row exists in the click.
+    const named = {
+        ...sync,
+        health: () => ({ healthy: true, capabilities: { stemCellIdentities: true } }),
+    } as unknown as HappyAgentSpacesDeps["sync"];
+    const store = happyAgentSpacesStoreCreate({ client: daemon.client, sync: named });
+    const onSectionCreate = vi.fn((sectionId: string) => {
+        store.stemCellCreate(sectionId, null);
+    });
+    function Spaces(props: { store: HappyAgentSpacesStore }) {
+        const snapshot = useSyncExternalStore(
+            props.store.subscribe,
+            props.store.get,
+            props.store.get,
+        );
+        return (
+            <HappyAgentSpacesSidebar
+                store={props.store}
+                snapshot={snapshot}
+                places={{ bots: [], tasks: [], chatGroupOf: () => undefined }}
+                focus={{}}
+                navigation={{ onChatSelect: () => {} }}
+                actions={{
+                    taskLeave: () => {},
+                    taskArchive: () => {},
+                    botArchive: () => {},
+                    surfaceLeave: () => {},
+                }}
+                now={1}
+                titleShimmerEnabled={false}
+                stemCellAnimation
+                brand={false}
+                footer={null}
+                sessionRow={() => undefined}
+                worktreeRows={() => []}
+                onChildSelect={() => {}}
+                onSectionCreate={onSectionCreate}
+            />
+        );
+    }
+    const view = render(<Spaces store={store} />);
+    const row = (id: string) => view.container.querySelector<HTMLElement>(`[data-item-id="${id}"]`);
+    const plus = (id: string) =>
+        row(id)?.querySelector<HTMLElement>('[data-happy-desktop-ui="sidebar-item-action"]');
+    const order = () =>
+        [...view.container.querySelectorAll<HTMLElement>('[data-happy-desktop-ui="sidebar-item"]')]
+            .map((node) => node.dataset.itemId ?? "")
+            .filter((id) => id !== "search" && id !== "create");
+    try {
+        await waitFor(() => expect(row("section:desktop")).not.toBeNull());
+        // Only the open heading offers it; a folded one would make work out of sight.
+        expect(plus("section:desktop")?.getAttribute("aria-label")).toBe("New in Desktop");
+        expect(plus("section:desktop")?.dataset.reveal).toBe("hover");
+        expect(plus("section:later")).toBeFalsy();
+        const before = { release: row("space:release"), voice: row("space:voice") };
+        fireEvent.click(plus("section:desktop")!);
+        expect(onSectionCreate).toHaveBeenCalledWith("desktop");
+        // The heading did not fold, and the new row stands right under it in the click.
+        expect(row("section:desktop")?.getAttribute("aria-expanded")).toBe("true");
+        const made = order()[2]!;
+        expect(made.startsWith("space:")).toBe(true);
+        expect(order()).toEqual([
+            "space:release",
+            "section:desktop",
+            made,
+            "space:voice",
+            "section:later",
+        ]);
+        expect(row("space:release")).toBe(before.release);
+        expect(row("space:voice")).toBe(before.voice);
+        await waitFor(() => expect(daemon.callCount("createStemCell")).toBe(1));
+        const request = daemon.calls.find((call) => call.method === "createStemCell")!.args[0] as {
+            readonly sectionId: string | null;
+        };
+        expect(request.sectionId).toBe("desktop");
+        release();
+    } finally {
+        view.unmount();
+        store[Symbol.dispose]();
+    }
+});

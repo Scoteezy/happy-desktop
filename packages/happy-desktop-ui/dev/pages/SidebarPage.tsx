@@ -806,6 +806,13 @@ function PinnedReorderDemo() {
     );
 }
 
+/** An open heading's `+`, shown on hover or focus, which makes new work right under it. */
+const SECTION_NEW = (label: string) => ({
+    icon: "plus" as const,
+    label: `New in ${label}`,
+    reveal: "hover" as const,
+});
+
 /** One list where Search, Create, separators and rows are all items of it. */
 const SPACES_LIST: SidebarItem[] = [
     {
@@ -893,12 +900,34 @@ function SpacesListDemo() {
                     onItemReorder={(_section, move) =>
                         setItems((current) => spacesListMove(current, move))
                     }
+                    onItemAction={(id) =>
+                        setItems((current) => {
+                            const at = current.findIndex((item) => item.id === id);
+                            const made: SidebarItem = {
+                                emoji: "🌱",
+                                id: `new-${String(current.length)}`,
+                                kind: "view",
+                                label: "New",
+                            };
+                            return [...current.slice(0, at + 1), made, ...current.slice(at + 1)];
+                        })
+                    }
                     onItemSelect={() => {}}
-                    sections={[{ id: "spaces", items }]}
+                    sections={[
+                        {
+                            id: "spaces",
+                            // Only an open heading offers new work under it.
+                            items: items.map((item) =>
+                                item.kind === "section" && item.collapsed === false
+                                    ? { ...item, action: SECTION_NEW(item.label) }
+                                    : item,
+                            ),
+                        },
+                    ]}
                     title="Spaces"
                 />
             </Frame>
-            <DimensionRule label="section 28 px open or folded, title only · separator 17 px, full width · key caps on the row's edge" />
+            <DimensionRule label="section 28 px open or folded, title only · an open section's + on hover makes new work under it · separator 17 px, full width · key caps on the row's edge" />
         </div>
     );
 }

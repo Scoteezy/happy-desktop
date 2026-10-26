@@ -1001,6 +1001,32 @@
     padding-right: calc(var(--happy-panel-row-padding) + 22px);
 }
 
+/* The heading's own control, an 18px box on the column just before the fold's
+   (or on the fold's own column when the heading does not fold). The title keeps
+   clear of it too, so revealing it on hover moves nothing. */
+.happy-sidebar__section-item-action {
+    position: absolute;
+    inset: calc(50% - 9px) var(--happy-panel-row-padding) auto auto;
+    display: flex;
+}
+
+.happy-sidebar__section-item[data-foldable] .happy-sidebar__section-item-action {
+    right: calc(var(--happy-panel-row-padding) + 22px);
+}
+
+.happy-sidebar__section-item[data-actionable] {
+    padding-right: calc(var(--happy-panel-row-padding) + 22px);
+}
+
+.happy-sidebar__section-item[data-actionable][data-foldable] {
+    padding-right: calc(var(--happy-panel-row-padding) + 44px);
+}
+
+.happy-sidebar__section-item:is(:focus-visible, :focus-within)
+    .happy-sidebar__item-action[data-reveal="hover"] {
+    opacity: 1;
+}
+
 /* A separator is only a hairline, across the row box's whole width: it takes
    none of the row's padding, so it runs as far as a selected row's fill. */
 .happy-sidebar__separator {

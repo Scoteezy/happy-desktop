@@ -23,6 +23,7 @@ export type GymWorkloadName =
     | "sidebar-drag"
     | "stop-shimmer"
     | "nested-row-menus"
+    | "section-create"
     | "window-zoom"
     | "all";
 

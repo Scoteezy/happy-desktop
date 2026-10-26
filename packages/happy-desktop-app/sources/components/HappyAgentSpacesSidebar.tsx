@@ -555,6 +555,8 @@ export interface HappyAgentSpacesSidebarProps {
     readonly search?: HappyAgentSpacesCommand;
     /** Makes new work, from its item. */
     readonly create?: HappyAgentSpacesCommand;
+    /** Makes new work right under a section heading, from the heading's `+`; takes the section's document ID. */
+    readonly onSectionCreate?: (sectionId: string) => void;
     readonly now: number;
     /** Whether a working row shimmers its title, as the reader set it. */
     readonly titleShimmerEnabled: boolean;
@@ -671,6 +673,8 @@ export interface HappyAgentSpacesItemsInput {
     readonly stemCellAnimation: boolean;
     readonly search?: HappyAgentSpacesCommand;
     readonly create?: HappyAgentSpacesCommand;
+    /** Whether an open section's heading offers new work under it. */
+    readonly sectionCreate?: boolean;
     readonly sessionRow: (agentId: string) => SidebarItem | undefined;
     readonly worktreeRows: (agentId: string) => readonly SidebarItem[];
 }
@@ -791,6 +795,17 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
                         kind: "section",
                         label: item.label,
                         collapsed: item.collapsed,
+                        // An open heading offers new work right under it; a folded
+                        // one would make it out of sight.
+                        ...(editable && input.sectionCreate && !item.collapsed
+                            ? {
+                                  action: {
+                                      icon: "plus" as const,
+                                      label: `New in ${item.label}`,
+                                      reveal: "hover" as const,
+                                  },
+                              }
+                            : {}),
                         ...(editable ? {} : { reorderable: false }),
                     },
                 ];
@@ -879,6 +894,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         stemCellAnimation: props.stemCellAnimation,
         ...(props.search ? { search: props.search } : {}),
         ...(props.create ? { create: props.create } : {}),
+        ...(props.onSectionCreate ? { sectionCreate: true } : {}),
         sessionRow: props.sessionRow,
         worktreeRows: props.worktreeRows,
     });
@@ -1020,6 +1036,12 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             foldControlPlacement="trailing"
             foldControlReveal="hover"
             onItemSelect={open}
+            onItemAction={(id) => {
+                const node = view.items.find(
+                    (entry) => sidebarDocumentKey(entry) === anchorOf.get(id),
+                );
+                if (node?.kind === "section") props.onSectionCreate?.(node.id);
+            }}
             onItemCollapseToggle={(id) => {
                 const key = anchorOf.get(id);
                 if (key) documentEdit((current) => sidebarDocumentFold(current, key));

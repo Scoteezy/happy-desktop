@@ -8,6 +8,7 @@ import { gymGoldReplayMaterialRead, type GymGoldReplayMaterial } from "./goldRep
 import { hiddenWindowRun } from "./hiddenWindow.js";
 import { sidebarDragChaosRun } from "./sidebarDragChaos.js";
 import { nestedRowMenusRun } from "./nestedRowMenus.js";
+import { sectionCreateRun } from "./sectionCreate.js";
 import {
     stopShimmerRun,
     stopShimmerSpacesSubtaskStart,
@@ -942,6 +943,18 @@ async function workloadRun(
     await mark("route-ready");
     if (workload === "hidden-window")
         return finish(await hiddenWindowRun(page, app, options.paths.artifacts, mark));
+    if (workload === "section-create") {
+        await options.runtime.client.stemCellsEnable();
+        await page.reload();
+        await page
+            .locator('[data-happy-desktop-ui="sidebar-item"][data-item-id="create"]')
+            .first()
+            .waitFor({ timeout: 45_000 });
+        await mark("sidebar-ready");
+        return finish({
+            ...(await sectionCreateRun(page, options.runtime.client, options.paths.artifacts)),
+        });
+    }
     if (workload === "nested-row-menus") {
         await options.runtime.client.stemCellsEnable();
         await page.reload();
