@@ -23,7 +23,14 @@ A good chat with an AI follows a few principles:
   The space under it is added in that same frame. No animation, no pin to the
   top edge. A send made while the agent is still working joins the queue below
   its live status without a lift; a reader near the bottom follows the queued
-  message into view. A reader scrolled up into history stays put. New work's
+  message into view. The queue also holds room below it for the live status
+  the agent's next turn will show under those messages once it takes them up:
+  in the user's words, "we know that when they go out of queue, the processing
+  thing should appear underneath it. So we should anticipate that and preserve
+  exactly that amount of space for them. So when we queue them up, if there's
+  not enough space, we would add that spacer." Taking up the queue then moves
+  nothing, and the live status never sits under the composer. A reader
+  scrolled up into history stays put. New work's
   first send lands on the lift line: its empty chat rests the intro so that the
   mark and its line sit above the lift line and the create options begin on it,
   and the first message takes the options' place there while the mark and its
@@ -84,6 +91,12 @@ so the reader never sees it as it was left and then watches it catch up.
 Then make ordering and alignment correct: atomic acceptance of sent messages,
 stable ordering, a clear marker for messages sent mid-turn, and one shared text
 column for every kind of row.
+
+Later, not started: streaming shows nothing half-formed. In the user's words,
+"we probably should not be streaming links. If we detect something that doesn't
+have a closing and it's a pretty simple, clear case, we should probably not even
+render it", and the standard HTML fragments put into the DOM "should only show
+up when they get to a reasonable point."
 
 ## How we know it is done
 
