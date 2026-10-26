@@ -25,6 +25,7 @@ import {
     markdownBodyHeight,
     markdownBodyPrepare,
     plainTextHeight,
+    MESSAGE_PLAIN_LINE_HEIGHT,
     messageTextLayoutCacheCreate,
     messageTextLayoutCacheRefresh,
     messageTextLayoutCacheSettledClear,
@@ -135,6 +136,8 @@ export type ConversationRowContext = {
     readonly activityTreatment?: "detailed" | "focused";
     /** Explicit disclosure state supplied by the UI owner; never inferred from a row. */
     readonly expanded?: boolean;
+    /** Explicit per-message reading choice; absent on surfaces without compact sends. */
+    readonly messageExpanded?: boolean;
     /** A live status footer follows the final agent message. */
     readonly liveStatus?: boolean;
     readonly errorAssistance?: ConversationErrorAssistance;
@@ -661,6 +664,7 @@ type MessageRowHeightInput = {
     readonly body: string;
     readonly bodyFormat: MessageBodyFormat;
     readonly bodyVisible: boolean;
+    readonly bodyExpanded?: boolean;
     readonly grouped: boolean;
     readonly mermaidEnabled?: boolean;
     readonly references?: MessageReferences;
@@ -674,22 +678,31 @@ type MessageRowHeightInput = {
     /** The layouts the body's placeholders stand for. */
     readonly layouts?: MessageInlineLayouts;
 };
+const MESSAGE_PREVIEW_HEIGHT = 10 * MESSAGE_PLAIN_LINE_HEIGHT;
+// Existing trace metadata control: 16px plus the plain body's 8px sibling gap.
+const MESSAGE_FOLD_CONTROL_HEIGHT = 24;
+function messagePlainBodyHeight(input: MessageRowHeightInput): number {
+    return plainTextHeight(
+        messageReferencesPlainText(input.body, input.references),
+        messageBodyMeasure(input.width, input.treatment, input.time, input.textCache),
+        input.textCache,
+        input.trailingExtraWidth,
+    );
+}
 export function messageRowHeight(input: MessageRowHeightInput): number {
     const [leading, tight] = MESSAGE_CHROME[input.surface][input.treatment];
     const chrome = input.grouped ? tight : leading;
     if (!input.bodyVisible) return chrome;
     const measure = messageBodyMeasure(input.width, input.treatment, input.time, input.textCache);
-    if (input.bodyFormat === "plain")
+    if (input.bodyFormat === "plain") {
+        const full = messagePlainBodyHeight(input);
         return (
             chrome +
-            plainTextHeight(
-                // Every reference as the words it reads as, as the body paints it.
-                messageReferencesPlainText(input.body, input.references),
-                measure,
-                input.textCache,
-                input.trailingExtraWidth,
-            )
+            (input.bodyExpanded !== undefined && full > MESSAGE_PREVIEW_HEIGHT
+                ? (input.bodyExpanded ? full : MESSAGE_PREVIEW_HEIGHT) + MESSAGE_FOLD_CONTROL_HEIGHT
+                : full)
         );
+    }
     /* Grouped incoming/agent rows append their hover time to the final word in
        one non-wrapping inline run. Include that run in the text model: at a
        narrow width it can move the final word and timestamp onto the next line. */
@@ -735,7 +748,7 @@ function conversationMessageHeightInput(
     entry: Extract<ConversationEntry, { kind: "message" }>,
     grouped: boolean,
     context: ConversationRowContext,
-    cache: ConversationRowHeightCache | undefined,
+    cache: Pick<ConversationRowHeightCache, "text"> | undefined,
 ): MessageRowHeightInput {
     const message = entry.message;
     const agent = message.sender?.kind === "agent";
@@ -751,6 +764,9 @@ function conversationMessageHeightInput(
     return {
         body: layouts?.text ?? message.text,
         bodyFormat: messageBodyFormat(message.sender),
+        ...(message.sender?.kind === "human" && context.messageExpanded !== undefined
+            ? { bodyExpanded: context.messageExpanded }
+            : {}),
         bodyVisible:
             (agent ? message.text.trim().length > 0 : message.text.length > 0) ||
             message.generationStatus !== undefined ||
@@ -770,6 +786,27 @@ function conversationMessageHeightInput(
         width: contentWidth(context.width),
         ...(layouts ? { layouts } : {}),
     };
+}
+
+/** The renderer and row model use the same source, references and body measure. */
+export function conversationMessageCompactLayout(
+    entry: Extract<ConversationEntry, { kind: "message" }>,
+    grouped: boolean,
+    context: ConversationRowContext,
+    cache: MessageTextLayoutCache | undefined,
+): { readonly previewHeight: number; readonly expanded: boolean } | undefined {
+    if (entry.message.sender?.kind !== "human" || context.messageExpanded === undefined)
+        return undefined;
+    const input = conversationMessageHeightInput(
+        entry,
+        grouped,
+        context,
+        cache ? { text: cache } : undefined,
+    );
+    const full = messagePlainBodyHeight(input);
+    return full > MESSAGE_PREVIEW_HEIGHT
+        ? { previewHeight: MESSAGE_PREVIEW_HEIGHT, expanded: context.messageExpanded }
+        : undefined;
 }
 
 /** Background-only preparation. The final call writes the authoritative row
@@ -1321,6 +1358,11 @@ export function conversationRowHeight(
         context.surface,
         treatment,
         grouped ? "grouped" : "leading",
+        context.messageExpanded === undefined
+            ? "uncapped"
+            : context.messageExpanded
+              ? "expanded"
+              : "compact",
         traceCollapsible ? "trace" : "plain",
         resumesAfterActivity ? "resumed" : "continuous",
         precedesActivity ? "continues" : closedByStatus ? "closing" : "open",

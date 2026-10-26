@@ -49,6 +49,8 @@ import {
     type MessageLayoutRender,
 } from "./MessageMarkdown";
 import { ScrollArea } from "./Scrollbar";
+import { AgentTraceRow } from "./AgentTraceRow";
+import { MessageListRowWidthContext } from "./messageListRowWidth";
 import { StemCell, type StemCellMark } from "./StemCell";
 export type MessageSegment =
     | {
@@ -171,6 +173,12 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     body: string | MessageSegment[];
     /** Format of a string body. Human messages use plain text. */
     bodyFormat?: MessageBodyFormat;
+    /** Modeled preview geometry for a submitted human message. */
+    bodyFold?: {
+        readonly previewHeight: number;
+        readonly expanded: boolean;
+        readonly onExpandedChange: (expanded: boolean) => void;
+    };
     /** Attachment cards (runs, approvals, events) rendered below the body. */
     children?: ReactNode;
     /** Follow-up message: no avatar/author row, time sits in the gutter. */
@@ -364,6 +372,7 @@ export function Message(props: MessageProps) {
         "author",
         "body",
         "bodyFormat",
+        "bodyFold",
         "children",
         "className",
         "compact",
@@ -547,6 +556,20 @@ export function Message(props: MessageProps) {
                         : "happy-message__body happy-message__body--markdown"
                 }
                 data-markdown={plainBody() ? undefined : ""}
+                data-body-fold={
+                    local.bodyFold?.expanded === false
+                        ? "closed"
+                        : local.bodyFold
+                          ? "open"
+                          : undefined
+                }
+                style={
+                    local.bodyFold?.expanded === false
+                        ? ({
+                              "--message-preview-height": `${local.bodyFold.previewHeight}px`,
+                          } as CSSProperties)
+                        : undefined
+                }
                 data-happy-desktop-ui="message-body"
                 ref={body}
             >
@@ -566,6 +589,20 @@ export function Message(props: MessageProps) {
                             local.layoutRender,
                         )
                       : null}
+                {local.bodyFold ? (
+                    <AgentTraceRow
+                        entryCount={0}
+                        status="complete"
+                        variant="meta"
+                        toggles
+                        open={local.bodyFold.expanded}
+                        toggleLabels={{ closed: "Show full", open: "Show less" }}
+                        disclosureHold={
+                            local.bodyFold.expanded ? "row-start-or-control" : "row-start"
+                        }
+                        onOpen={() => local.bodyFold?.onExpandedChange(!local.bodyFold.expanded)}
+                    />
+                ) : null}
                 {/* An empty generated reply keeps a non-breaking-space line box
                     so generation-state changes cannot collapse the message row. */}
                 {!local.body && local.emptyText !== undefined ? (
@@ -937,6 +974,8 @@ export type MessageListScrollPosition =
           readonly viewportInset?: number;
           /** Viewport height when this point was saved, before any hidden resize. */
           readonly viewportHeight?: number;
+          /** Leading space held when a short transcript was opened in place. */
+          readonly leadingInset?: number;
       };
 /**
  * The pixel position lists used to report, accepted only as a restore input. A
@@ -1040,6 +1079,8 @@ type MessageListVirtualAnchor =
           readonly index: number;
           readonly itemOffset: number;
           readonly key: Key;
+          /** A collapsing control's point, resolved once against its new row size. */
+          readonly itemEndOffset?: number;
           readonly fallbackKey?: Key;
           readonly viewportInset: number;
       }
@@ -1266,6 +1307,7 @@ export function MessageList(props: MessageListProps) {
             type: "scrollTop",
         };
         readerScrollTop.current = element.scrollTop;
+        if (hold === "row-start" || hold === "row-start-or-control") positionReport();
     }).current;
     const startReachedReport = (element: HTMLElement) => {
         if (
@@ -1754,6 +1796,13 @@ export function MessageList(props: MessageListProps) {
             nextOffset = Math.max(0, pendingFollowerTop.current);
         } else if (parkedAnchor?.anchor) {
             let anchor = parkedAnchor.anchor;
+            if (anchor.type === "item" && anchor.itemEndOffset !== undefined) {
+                const size = sizes[keys.indexOf(anchor.key)];
+                if (size !== undefined) {
+                    const { itemEndOffset, ...fromStart } = anchor;
+                    anchor = { ...fromStart, itemOffset: Math.max(0, size - itemEndOffset) };
+                }
+            }
             if (!widthReflow && anchor.type === "item") {
                 const size = sizes[keys.indexOf(anchor.key)];
                 if (size !== undefined && anchor.itemOffset > size)
@@ -2004,6 +2053,9 @@ export function MessageList(props: MessageListProps) {
                   offset: anchor.itemOffset,
                   viewportInset: anchor.viewportInset,
                   viewportHeight: viewportGeometry.current.height,
+                  ...(geometrySparseInset.current > 0
+                      ? { leadingInset: geometrySparseInset.current }
+                      : {}),
               }
             : { type: "bottom" };
     }
@@ -2174,7 +2226,7 @@ export function MessageList(props: MessageListProps) {
     function disclosureRowAnchor(
         element: HTMLElement,
         disclosure: HTMLElement,
-        hold?: "above",
+        hold?: "above" | "row-start" | "row-start-or-control",
     ): MessageListVirtualAnchor | undefined {
         if (!virtualized) return undefined;
         const row = disclosure.closest<HTMLElement>(".happy-message-list__virtual-row");
@@ -2182,9 +2234,26 @@ export function MessageList(props: MessageListProps) {
         if (!row || !Number.isInteger(index) || index < 0 || index >= items.length)
             return undefined;
         const viewportHeight = messageListViewportHeight(element);
-        const top = disclosure.getBoundingClientRect().top;
-        const offset = top - element.getBoundingClientRect().top;
+        const viewportTop = element.getBoundingClientRect().top;
+        const rowBounds = row.getBoundingClientRect();
+        const collapseControl = hold === "row-start-or-control" && rowBounds.top < viewportTop;
+        const rowStart =
+            hold === "row-start" || (hold === "row-start-or-control" && !collapseControl);
+        // A preview may start just above the viewport. Its first visible
+        // point still holds the same row top while text opens below it.
+        const top = rowStart
+            ? Math.max(rowBounds.top, viewportTop)
+            : disclosure.getBoundingClientRect().top;
+        const offset = top - viewportTop;
         if (offset < 0 || offset > viewportHeight) return undefined;
+        if (rowStart)
+            return {
+                index,
+                itemOffset: top - rowBounds.top,
+                key: itemKeyAt(index),
+                type: "item",
+                viewportInset: viewportHeight - offset,
+            };
         const above = index - 1;
         const aboveSize = rowSizeModel.sizes[above];
         if (hold === "above" && above >= 0 && aboveSize !== undefined)
@@ -2200,7 +2269,8 @@ export function MessageList(props: MessageListProps) {
             };
         return {
             index,
-            itemOffset: Math.max(0, top - row.getBoundingClientRect().top),
+            itemOffset: Math.max(0, top - rowBounds.top),
+            ...(collapseControl ? { itemEndOffset: rowBounds.bottom - top } : {}),
             key: itemKeyAt(index),
             type: "item",
             viewportInset: viewportHeight - offset,
@@ -2475,6 +2545,19 @@ export function MessageList(props: MessageListProps) {
             // Build the saved viewport first. The next report passes its
             // resize through the same geometry transition as a retained view.
             viewportGeometry.current = { height: openingHeight, width: nextWidth };
+            if (
+                opening &&
+                "type" in opening &&
+                opening.type === "row" &&
+                opening.leadingInset !== undefined
+            ) {
+                if (headerLeads) headerRestHold(opening.leadingInset);
+                else {
+                    geometrySparseInset.current = opening.leadingInset;
+                    if (spacer.current)
+                        spacer.current.style.marginTop = `${opening.leadingInset}px`;
+                }
+            }
             headerRestApply();
             if (opening !== undefined && "type" in opening) {
                 /* A saved anchor names its row by key. Lay out that row and the
@@ -3277,6 +3360,7 @@ export function MessageList(props: MessageListProps) {
                     following.current = true;
                     sparseInsetRelease();
                     scrollToBottom();
+                    positionReport();
                 }
             }
         };
@@ -3451,76 +3535,78 @@ export function MessageList(props: MessageListProps) {
     }, [virtualized, virtualizer]);
     return (
         <MessageListDisclosureAnchorProvider value={disclosureAnchor}>
-            <ScrollArea
-                className={["happy-message-list", props.className].filter(Boolean).join(" ")}
-                data-happy-desktop-ui="message-list"
-                data-header={headerLeads ? "" : undefined}
-                style={props.style}
-                viewportClassName="happy-message-list__viewport"
-                viewportRef={list}
-                overlay={
-                    props.jumpToEnd ? (
-                        <div className="happy-message-list__jump" hidden ref={jump}>
-                            <Button
-                                aria-label="Jump to latest"
-                                icon="arrow-down"
-                                iconOnly
-                                onClick={jumpToEnd}
-                                size="small"
-                                variant="secondary"
-                            />
-                        </div>
-                    ) : undefined
-                }
-            >
-                <div
-                    className="happy-message-list__content"
-                    data-happy-desktop-ui="message-list-content"
-                    data-virtualized={virtualized ? "" : undefined}
+            <MessageListRowWidthContext.Provider value={rowSizeModel.width}>
+                <ScrollArea
+                    className={["happy-message-list", props.className].filter(Boolean).join(" ")}
+                    data-happy-desktop-ui="message-list"
+                    data-header={headerLeads ? "" : undefined}
+                    style={props.style}
+                    viewportClassName="happy-message-list__viewport"
+                    viewportRef={list}
+                    overlay={
+                        props.jumpToEnd ? (
+                            <div className="happy-message-list__jump" hidden ref={jump}>
+                                <Button
+                                    aria-label="Jump to latest"
+                                    icon="arrow-down"
+                                    iconOnly
+                                    onClick={jumpToEnd}
+                                    size="small"
+                                    variant="secondary"
+                                />
+                            </div>
+                        ) : undefined
+                    }
                 >
                     <div
-                        aria-hidden="true"
-                        className="happy-message-list__spacer"
-                        data-happy-desktop-ui="message-list-spacer"
-                        ref={spacer}
-                    />
-                    {virtualized ? (
+                        className="happy-message-list__content"
+                        data-happy-desktop-ui="message-list-content"
+                        data-virtualized={virtualized ? "" : undefined}
+                    >
                         <div
-                            className="happy-message-list__virtual"
-                            data-happy-desktop-ui="message-list-virtual"
-                            ref={virtualContent}
-                            style={{ height: `${String(virtualizer.getTotalSize())}px` }}
-                        >
-                            {virtualItems.map((virtualItem) => (
-                                <div
-                                    className="happy-message-list__virtual-row"
-                                    data-index={virtualItem.index}
-                                    data-item-id={
-                                        virtualItem.index === footerIndex
-                                            ? "working-status"
-                                            : undefined
-                                    }
-                                    key={virtualItem.key}
-                                    ref={messageListRowHeightCheckRef(
-                                        virtualItem.index === footerIndex
-                                            ? "working-status"
-                                            : virtualItem.key,
-                                        virtualItem.index,
-                                        virtualItem.size,
-                                    )}
-                                    style={{
-                                        transform: `translateY(${String(virtualItem.start)}px)`,
-                                    }}
-                                >
-                                    {items[virtualItem.index]}
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        items
-                    )}
-                </div>
-            </ScrollArea>
+                            aria-hidden="true"
+                            className="happy-message-list__spacer"
+                            data-happy-desktop-ui="message-list-spacer"
+                            ref={spacer}
+                        />
+                        {virtualized ? (
+                            <div
+                                className="happy-message-list__virtual"
+                                data-happy-desktop-ui="message-list-virtual"
+                                ref={virtualContent}
+                                style={{ height: `${String(virtualizer.getTotalSize())}px` }}
+                            >
+                                {virtualItems.map((virtualItem) => (
+                                    <div
+                                        className="happy-message-list__virtual-row"
+                                        data-index={virtualItem.index}
+                                        data-item-id={
+                                            virtualItem.index === footerIndex
+                                                ? "working-status"
+                                                : undefined
+                                        }
+                                        key={virtualItem.key}
+                                        ref={messageListRowHeightCheckRef(
+                                            virtualItem.index === footerIndex
+                                                ? "working-status"
+                                                : virtualItem.key,
+                                            virtualItem.index,
+                                            virtualItem.size,
+                                        )}
+                                        style={{
+                                            transform: `translateY(${String(virtualItem.start)}px)`,
+                                        }}
+                                    >
+                                        {items[virtualItem.index]}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            items
+                        )}
+                    </div>
+                </ScrollArea>
+            </MessageListRowWidthContext.Provider>
         </MessageListDisclosureAnchorProvider>
     );
 }

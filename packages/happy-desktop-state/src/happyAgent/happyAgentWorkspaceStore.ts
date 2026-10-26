@@ -298,6 +298,7 @@ export interface HappyAgentConversationSnapshot {
     readonly showReasoning: boolean;
     /** Finished turns the reader expanded, so their trace entries stay listed. */
     readonly expandedTurnIds: ReadonlySet<string>;
+    readonly expandedMessageIds: ReadonlySet<string>;
     readonly usage?: HappyAgentSessionUsage;
     readonly usageLoading: boolean;
     readonly usageError?: string;
@@ -2118,6 +2119,7 @@ export interface HappyAgentWorkspaceStore {
     projectInitialPromptSubmit(): Promise<void>;
     /** Shows or hides one finished turn's intermediate entries in the transcript. */
     turnTraceToggle(turnId: string): void;
+    messageExpandedSet(messageId: string, expanded: boolean): void;
     /** Reports the watched-to-the-end turns one view has on screen; see `HappyAgentChatStore`. */
     turnTracesSeen(viewer: HappyAgentTraceViewer, turnIds: ReadonlySet<string>): void;
     /**
@@ -2934,6 +2936,7 @@ export function happyAgentWorkspaceStoreCreate(
             activityAvailable,
             showReasoning: chat.showReasoning,
             expandedTurnIds: chat.expandedTurnIds,
+            expandedMessageIds: chat.expandedMessageIds,
             ...(chat.usage ? { usage: chat.usage } : {}),
             usageLoading: chat.usageLoading,
             ...(chat.usageError !== undefined ? { usageError: chat.usageError } : {}),
@@ -8629,6 +8632,8 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
         },
         turnTraceToggle: (turnId) => chatStore?.turnTraceToggle(turnId),
+        messageExpandedSet: (messageId, expanded) =>
+            chatStore?.messageExpandedSet(messageId, expanded),
         turnTracesSeen: (viewer, turnIds) => chatStore?.turnTracesSeen(viewer, turnIds),
         conversationScrollUpdate(conversationId, position) {
             // Deliberately no `recompute()`. The transcript is the one thing
@@ -8725,6 +8730,7 @@ function conversationAcquiring(
         activityAvailable: false,
         showReasoning: false,
         expandedTurnIds: NO_TURNS,
+        expandedMessageIds: NO_TURNS,
         usageLoading: false,
         activityPanelOpen: false,
         ...(menus ? { menus } : {}),
@@ -8811,6 +8817,7 @@ function scrollPositionEqual(
         left.fallbackRowKey === right.fallbackRowKey &&
         left.offset === right.offset &&
         left.viewportInset === right.viewportInset &&
+        left.leadingInset === right.leadingInset &&
         left.viewportHeight === right.viewportHeight
     );
 }

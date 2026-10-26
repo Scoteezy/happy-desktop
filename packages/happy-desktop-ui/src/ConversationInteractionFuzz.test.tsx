@@ -1363,6 +1363,34 @@ async function act(h: Harness, action: Action, pick: ReturnType<typeof random>, 
                         const controlRow = button.closest<HTMLElement>(
                             ".happy-message-list__virtual-row",
                         );
+                        const messageFold = button.closest("[data-body-fold]") !== null;
+                        const rowTop = controlRow?.getBoundingClientRect().top ?? 0;
+                        if (messageFold && controlRow) {
+                            const holdControl =
+                                button.getAttribute("aria-expanded") === "true" &&
+                                rowTop < nextBounds.top;
+                            const pointBefore = holdControl ? nextControl.top : rowTop;
+                            button.click();
+                            await frame();
+                            const pointAfter = () =>
+                                (holdControl ? button : controlRow).getBoundingClientRect().top;
+                            expect(
+                                Math.abs(pointAfter() - pointBefore),
+                                "message disclosure moved its row top or end control",
+                            ).toBeLessThanOrEqual(1);
+                            await settle();
+                            expect(Math.abs(pointAfter() - pointBefore)).toBeLessThanOrEqual(1);
+                            h.anchorSet(
+                                controlRow,
+                                undefined,
+                                holdControl
+                                    ? button.getBoundingClientRect().top -
+                                          controlRow.getBoundingClientRect().top
+                                    : 0,
+                            );
+                            readerAction = true;
+                            break;
+                        }
                         h.anchorSet(
                             controlRow ?? undefined,
                             () =>
@@ -1375,9 +1403,7 @@ async function act(h: Harness, action: Action, pick: ReturnType<typeof random>, 
                                 ][controls.indexOf(button)]?.closest<HTMLElement>(
                                     ".happy-message-list__virtual-row",
                                 ) ?? undefined,
-                            controlRow
-                                ? nextControl.top - controlRow.getBoundingClientRect().top
-                                : 0,
+                            controlRow ? nextControl.top - rowTop : 0,
                         );
                     }
                     button.click();

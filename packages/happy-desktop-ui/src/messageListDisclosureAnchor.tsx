@@ -5,7 +5,10 @@ import { createContext, useContext, type ReactNode } from "react";
  * `above` holds the edge above the disclosure's row instead, for a control
  * whose own row goes away with what it closes.
  */
-export type MessageListDisclosureAnchor = (disclosure: HTMLElement, hold?: "above") => void;
+export type MessageListDisclosureAnchor = (
+    disclosure: HTMLElement,
+    hold?: "above" | "row-start" | "row-start-or-control",
+) => void;
 
 const MessageListDisclosureAnchorContext = createContext<MessageListDisclosureAnchor | undefined>(
     undefined,

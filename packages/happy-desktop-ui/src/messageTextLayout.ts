@@ -58,7 +58,8 @@ const UI_FAMILY = '"happy Figtree", system-ui, sans-serif';
 const MONO_FAMILY = '"happy Mono", ui-monospace, monospace';
 /** `.happy-message__body p` — the shape almost every chat line takes. */
 const PARAGRAPH_SIZE = 16;
-const PARAGRAPH_LINE = 24;
+export const MESSAGE_PLAIN_LINE_HEIGHT = 24;
+const PARAGRAPH_LINE = MESSAGE_PLAIN_LINE_HEIGHT;
 /** `.happy-message__body pre code`, which never wraps (`white-space: pre`). */
 const CODE_LINE = 20;
 const CODE_PADDING = 16;

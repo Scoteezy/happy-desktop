@@ -69,6 +69,8 @@ it.each(cases)(
                 accepted: false,
             });
             change = (update) => flushSync(() => setState(update));
+            // Keep the tall-row reserve case fully open; compact queue
+            // acceptance has its own boundary coverage.
             return (
                 <div style={{ height: 700, width: 880 }}>
                     <ConversationView
@@ -76,6 +78,16 @@ it.each(cases)(
                         agentAuthor={agentAuthor}
                         viewerId={happyAgentOwnerAuthor.id}
                         entries={state.entries}
+                        expandedMessageIds={
+                            size === "tall"
+                                ? new Set(
+                                      Array.from(
+                                          { length: count },
+                                          (_, index) => `queued-${index}`,
+                                      ),
+                                  )
+                                : undefined
+                        }
                         running={state.running}
                         delegatedAgents={subagents && state.accepted ? 2 : 0}
                         motion="calm"

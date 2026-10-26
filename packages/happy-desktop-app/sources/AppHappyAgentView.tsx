@@ -9790,6 +9790,10 @@ function HappyAgentConversationSurface(props: {
                   }
                 : {})}
             expandedTurnIds={conversation.expandedTurnIds}
+            expandedMessageIds={conversation.expandedMessageIds}
+            onMessageExpandedChange={(messageId, expanded) =>
+                workspace.messageExpandedSet(messageId, expanded)
+            }
             onTraceToggle={(turnId) => workspace.turnTraceToggle(turnId)}
             onTracesSeen={(viewer, turnIds) => workspace.turnTracesSeen(viewer, turnIds)}
             overlay={
@@ -11293,6 +11297,8 @@ function HappyAgentPanelChatSurface(props: {
             {...(chatSnapshot ? { conversationId: chatSnapshot.sessionId } : {})}
             entries={chatSnapshot?.entries ?? []}
             {...(chatSnapshot ? { expandedTurnIds: chatSnapshot.expandedTurnIds } : {})}
+            {...(chatSnapshot ? { expandedMessageIds: chatSnapshot.expandedMessageIds } : {})}
+            onMessageExpandedChange={chat.messageExpandedSet}
             loading={chatSnapshot === undefined}
             onTraceToggle={chat.turnTraceToggle}
             onTracesSeen={chat.turnTracesSeen}
@@ -11306,6 +11312,7 @@ const happyAgentPanelChatNone: HappyAgentPanelChatStore = {
     get: () => ({ type: "loading" }),
     subscribe: () => () => undefined,
     turnTraceToggle: () => undefined,
+    messageExpandedSet: () => undefined,
     turnTracesSeen: () => undefined,
 };
 

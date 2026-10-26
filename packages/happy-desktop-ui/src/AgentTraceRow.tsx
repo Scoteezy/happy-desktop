@@ -39,6 +39,9 @@ export interface AgentTraceRowProps {
     readonly variant?: "meta" | "row";
     /** Closing the trace takes this row away too, so what stays put is what is above it. */
     readonly foldsAway?: boolean;
+    /** The same fold affordance for another transcript body. */
+    readonly toggleLabels?: { readonly closed: string; readonly open: string };
+    readonly disclosureHold?: "row-start" | "row-start-or-control";
 }
 const KIND_ICONS: Record<AgentTraceRowKind, IconName> = {
     reasoning: "spark",
@@ -82,12 +85,19 @@ export function AgentTraceRow(props: AgentTraceRowProps) {
         "label",
         "variant",
         "foldsAway",
+        "toggleLabels",
+        "disclosureHold",
     ]);
     const disclosureAnchor = useMessageListDisclosureAnchor();
     const running = () => local.status === "running";
     const meta = () => local.variant === "meta";
     const stats = () => agentTraceMetaStats(local.toolCallCount, local.totalTokens);
-    const linkLabel = () => agentTraceMetaTitle(local.toggles && local.open);
+    const linkLabel = () =>
+        local.toggleLabels
+            ? local.open
+                ? local.toggleLabels.open
+                : local.toggleLabels.closed
+            : agentTraceMetaTitle(local.toggles && local.open);
     return (
         <button
             aria-expanded={local.open === true ? "true" : "false"}
@@ -105,13 +115,13 @@ export function AgentTraceRow(props: AgentTraceRowProps) {
             data-variant={meta() ? "meta" : "row"}
             data-testid={local["data-testid"]}
             onClick={(event) => {
-                /* Opening or closing the turn in place is a reading action:
-                   the control stays under the pointer while the steps arrive
-                   or leave above it, so the next click lands on it again. */
+                /* A disclosure is a reading action. Its owner chooses the
+                   visible point held while the body opens or closes. */
                 if (local.toggles)
                     disclosureAnchor?.(
                         event.currentTarget,
-                        local.foldsAway && local.open ? "above" : undefined,
+                        local.disclosureHold ??
+                            (local.foldsAway && local.open ? "above" : undefined),
                     );
                 local.onOpen?.();
             }}

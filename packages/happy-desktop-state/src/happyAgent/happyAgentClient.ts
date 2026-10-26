@@ -608,6 +608,9 @@ export function happyAgentWorkspaceClientCreate(
     const deviceBridgeStores = new Map<HappyAgentGroupId, HappyAgentDeviceBridgesStore>();
     let deviceBridgeSupport: HappyAgentDeviceBridgeSupportStore | undefined;
     const chats = new Map<HappyAgentSessionId, ChatBinding>();
+    // Cold views retain their explicit reading choices after the chat's
+    // subscription and projected transcript have been evicted.
+    const expandedMessages = new Map<HappyAgentSessionId, ReadonlySet<string>>();
     let disposed = false;
     let chatUseOrder = 0;
 
@@ -651,6 +654,9 @@ export function happyAgentWorkspaceClientCreate(
             const [sessionId, binding] = candidate;
             binding.activeUnsubscribe?.();
             binding.activeUnsubscribe = undefined;
+            const expanded = binding.store?.get().expandedMessageIds;
+            if (expanded && expanded.size > 0) expandedMessages.set(sessionId, expanded);
+            else expandedMessages.delete(sessionId);
             binding.store?.[Symbol.dispose]();
             chats.delete(sessionId);
         }
@@ -1007,6 +1013,7 @@ export function happyAgentWorkspaceClientCreate(
                     // The catalog may have moved on since this load answered.
                     const latest = models.get();
                     const chatDeps: HappyAgentChatDeps = {
+                        initialExpandedMessageIds: expandedMessages.get(sessionId),
                         catalog: latest.type === "ready" ? latest.catalog : loaded.catalog,
                         catalogFollow,
                         transcriptConnect: deps.transcriptConnect,
@@ -1165,6 +1172,7 @@ export function happyAgentWorkspaceClientCreate(
                 binding.store?.[Symbol.dispose]();
             }
             chats.clear();
+            expandedMessages.clear();
         },
     };
     return workspace;

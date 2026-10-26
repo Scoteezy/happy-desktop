@@ -929,6 +929,8 @@ export type HappyAgentScrollPosition =
           readonly viewportInset?: number;
           /** Viewport height when this point was saved, before any hidden resize. */
           readonly viewportHeight?: number;
+          /** Leading space held while opening a row in a short transcript. */
+          readonly leadingInset?: number;
       };
 
 /** One physical child of a checkout directory. Symlinks are file-like leaves. */

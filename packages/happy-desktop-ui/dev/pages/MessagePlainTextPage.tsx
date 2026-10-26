@@ -199,6 +199,36 @@ export function MessagePlainTextPage() {
             title="Message · plain text"
         >
             <FullScreenSpecimen
+                detail="Submitted text opens below its ten-line preview with the transcript fold control"
+                label="Long sends · Show full"
+                number="10"
+                screen="05-compact-sends-780x760"
+                window={{ width: 780, height: 760 }}
+            >
+                <TranscriptWindow
+                    entries={[
+                        message(
+                            "compact-11",
+                            happyAgentOwnerAuthor,
+                            Array.from({ length: 11 }, (_, index) => `Line ${index + 1}.`).join(
+                                "\n",
+                            ),
+                            "2026-10-23T13:27:00.000Z",
+                        ),
+                        message(
+                            "compact-200",
+                            happyAgentOwnerAuthor,
+                            Array.from(
+                                { length: 200 },
+                                (_, index) => `A longer instruction, line ${index + 1}.`,
+                            ).join("\n"),
+                            "2026-10-23T13:28:00.000Z",
+                        ),
+                    ]}
+                    mode="dark"
+                />
+            </FullScreenSpecimen>
+            <FullScreenSpecimen
                 detail="The reported message in the product transcript; the own bubble is about 560 px wide"
                 label="Reported transcript · dark"
                 number="00"

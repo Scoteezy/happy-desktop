@@ -114,7 +114,12 @@ async function pageZoomSet(panel: HTMLElement, baseScale: number, zoom: number) 
     panel.style.height = `${String(700 / zoom)}px`;
     panel.style.width = `${String(880 / zoom)}px`;
 }
-function renderConversation(count: number, withShell = false, withTitle = false) {
+function renderConversation(
+    count: number,
+    withShell = false,
+    withTitle = false,
+    expandedMessageIds?: ReadonlySet<string>,
+) {
     const view = createRenderer();
     let send!: (text?: string) => void;
     let resize!: (height: number) => void;
@@ -299,6 +304,7 @@ function renderConversation(count: number, withShell = false, withTitle = false)
                     conversationId={`send-stability-${String(count)}`}
                     dock={<Dock />}
                     entries={entries}
+                    expandedMessageIds={expandedMessageIds}
                     failureActions={{ onRetry: () => resume(), onSwitch: () => resume() }}
                     failureSwitch={limitSwitchSource}
                     motion="calm"
@@ -768,8 +774,13 @@ it.each([0, 40])(
     },
 );
 
-it("shows the end of a send taller than the viewport, then follows its reply", async () => {
-    const { view, send, start, stream } = renderConversation(10);
+it("shows the end of an explicitly expanded send taller than the viewport, then follows its reply", async () => {
+    const { view, send, start, stream } = renderConversation(
+        10,
+        false,
+        false,
+        new Set(["sent-message-1"]),
+    );
     await view.ready();
     await frames();
     const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;

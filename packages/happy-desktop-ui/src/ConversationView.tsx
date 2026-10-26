@@ -264,6 +264,8 @@ export type ConversationViewProps = {
     onTraceToggle?: (turnId: string) => void;
     /** Finished turns currently listing their intermediate entries. */
     expandedTurnIds?: ReadonlySet<string>;
+    expandedMessageIds?: ReadonlySet<string>;
+    onMessageExpandedChange?: (messageId: string, expanded: boolean) => void;
     /**
      * Told which turns left open because the reader watched them finish this
      * view has on screen. The owner folds one once no view shows any of it, so
@@ -667,6 +669,13 @@ export function ConversationView(props: ConversationViewProps) {
             return next;
         });
     };
+    const messageExpanded = (entry: Extract<ConversationEntry, { kind: "message" }>) =>
+        props.expandedMessageIds?.has(entry.message.id) ?? rowExpanded(entry);
+    const messageExpandedChange = (entry: ConversationEntry, expanded: boolean) => {
+        if (entry.kind === "message" && props.onMessageExpandedChange)
+            props.onMessageExpandedChange(entry.message.id, expanded);
+        else rowExpandedChange(entry, expanded);
+    };
     const rowHeightCache = conversationRowHeightCacheGet(conversationCacheKey);
     conversationRowHeightCachePrune(rowHeightCache, props.entries);
     /* With no turn running, a send waiting on the daemon is next to nothing:
@@ -1015,6 +1024,10 @@ export function ConversationView(props: ConversationViewProps) {
                 failureFor(entry),
             ),
             expanded: entry === undefined ? false : rowExpanded(entry),
+            messageExpanded:
+                entry?.kind === "message" && entry.message.sender?.kind === "human"
+                    ? messageExpanded(entry)
+                    : undefined,
             surface: "conversation",
             liveStatus: index < transcript.length && statusVisible,
             ...(props.references ? { references: props.references } : {}),
@@ -1166,15 +1179,21 @@ export function ConversationView(props: ConversationViewProps) {
                         }
                         estimateRows={conversationMediaRunRows(listEntries, mediaRuns, (entry) => {
                             if (entry.kind === "message") {
+                                const fold =
+                                    entry.message.sender?.kind === "human"
+                                        ? messageExpanded(entry)
+                                            ? "message-open"
+                                            : "message-closed"
+                                        : "";
                                 const layouts = inlineLayouts.messages.get(entry.message.id);
-                                if (layouts === undefined) return "";
+                                if (layouts === undefined) return fold;
                                 let frames = "";
                                 for (const layout of layouts.layouts.values())
                                     frames += mediaVideoFramesSignature(
                                         layout.members.map((member) => member.item),
                                         framesAt,
                                     );
-                                return `${layouts.signature}|${frames}`;
+                                return `${fold}|${layouts.signature}|${frames}`;
                             }
                             const placed = [
                                 ...(inlineLayouts.hidden.get(entryKey(entry)) ?? []),
@@ -1298,7 +1317,15 @@ export function ConversationView(props: ConversationViewProps) {
                                     onRequestAnswer={props.onRequestAnswer}
                                     onRequestSelectionChange={props.onRequestSelectionChange}
                                     onRowExpandedChange={(expanded) =>
-                                        rowExpandedChange(entry, expanded)
+                                        entry.kind === "message"
+                                            ? messageExpandedChange(entry, expanded)
+                                            : rowExpandedChange(entry, expanded)
+                                    }
+                                    messageExpanded={
+                                        entry.kind === "message" &&
+                                        entry.message.sender?.kind === "human"
+                                            ? messageExpanded(entry)
+                                            : undefined
                                     }
                                     requestSelection={
                                         entry.kind === "request"

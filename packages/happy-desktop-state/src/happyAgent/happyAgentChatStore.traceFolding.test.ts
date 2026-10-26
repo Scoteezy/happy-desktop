@@ -101,9 +101,10 @@ function end(
     };
 }
 
-function storeOpen() {
+function storeOpen(initialExpandedMessageIds?: ReadonlySet<string>) {
     let change!: (elements: readonly ChatElement[]) => void;
     const store = happyAgentChatStoreCreate("trace-agent" as HappyAgentSessionId, {
+        initialExpandedMessageIds,
         catalog: {
             defaultModelId: "model",
             defaultProviderId: "provider",
@@ -127,6 +128,24 @@ function rows(store: HappyAgentChatStore): string[] {
             entry.kind === "message" ? entry.message.id : entry.id,
         );
 }
+
+it("retains explicit message expansion independently of turn folding and cold chat creation", () => {
+    using chat = storeOpen();
+    const history = [...turn("old", 1_000), end("old", 1_100)];
+    chat.change(history);
+    chat.store.messageExpandedSet("old:user", true);
+    const retained = chat.store.get().expandedMessageIds;
+    expect(retained).toEqual(new Set(["old:user"]));
+    chat.store.turnTraceToggle("old");
+    chat.store.turnTracesFold();
+    expect(chat.store.get().expandedMessageIds).toBe(retained);
+    using cold = storeOpen(retained);
+    cold.change(history);
+    expect(cold.store.get().expandedMessageIds).toEqual(new Set(["old:user"]));
+    cold.store.messageExpandedSet("old:user", false);
+    expect(cold.store.get().expandedMessageIds.size).toBe(0);
+    expect(retained).toEqual(new Set(["old:user"]));
+});
 
 it("opens folded what finished before the chat was read", () => {
     using chat = storeOpen();

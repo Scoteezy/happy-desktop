@@ -1,4 +1,7 @@
-import { type CSSProperties, type ReactNode } from "react";
+import { useContext, type CSSProperties, type ReactNode } from "react";
+import { MarkdownLayoutCacheContext } from "./MessageMarkdown";
+import { conversationMessageCompactLayout } from "./conversationRowHeight";
+import { useMessageListRowWidth } from "./messageListRowWidth";
 import type { FileLinkOpenHandler, FileOpenHandler } from "./fileReference";
 import type { LinkOpenHandler, LinkOpenPlacement } from "./MessageMarkdown";
 import type { MessageReferences } from "./messageReferences";
@@ -145,6 +148,8 @@ export type ConversationEntryViewProps = {
     activityDefaultExpanded?: boolean;
     /** Controlled disclosure state for this transcript row. */
     rowExpanded?: boolean;
+    /** Submitted human text may open below its ten-line preview. */
+    messageExpanded?: boolean;
     /** Reports disclosure changes to the owning row-geometry model. */
     onRowExpandedChange?: (expanded: boolean) => void;
     /** Motion profile for live activity rows; see `AgentActivityRow`. */
@@ -219,6 +224,8 @@ function traceControl(
  * compact "View traces" link on the line that opened the turn.
  */
 export function ConversationEntryView(props: ConversationEntryViewProps) {
+    const rowWidth = useMessageListRowWidth();
+    const textCache = useContext(MarkdownLayoutCacheContext);
     const entry = props.entry;
     if (entry.kind === "delegation") {
         /* A delegated child opens its turn the same way a tool call does, so it
@@ -558,6 +565,21 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
         trace?.quiet && props.grouped
             ? undefined
             : traceControl(trace, props.traceOpen, props.onTraceToggle);
+    const compact =
+        rowWidth === undefined
+            ? undefined
+            : conversationMessageCompactLayout(
+                  entry,
+                  props.grouped === true,
+                  {
+                      width: rowWidth,
+                      surface: "conversation",
+                      viewerId: props.viewerId,
+                      references: props.references,
+                      messageExpanded: props.messageExpanded,
+                  },
+                  textCache,
+              );
     return (
         <Message
             agent={author?.kind === "agent"}
@@ -568,6 +590,15 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
             }
             body={props.messageLayouts?.text ?? message.text}
             bodyFormat={messageBodyFormat(author)}
+            {...(compact
+                ? {
+                      bodyFold: {
+                          ...compact,
+                          onExpandedChange: (expanded: boolean) =>
+                              props.onRowExpandedChange?.(expanded),
+                      },
+                  }
+                : {})}
             {...(props.messageLayouts
                 ? { layoutRender: messageLayoutRender(props.messageLayouts, props.onToolMediaOpen) }
                 : {})}

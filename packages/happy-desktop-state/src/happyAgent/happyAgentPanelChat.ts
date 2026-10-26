@@ -20,6 +20,7 @@ export interface HappyAgentPanelChatStore {
     subscribe(listener: () => void): () => void;
     /** Opens or closes one finished turn's intermediate steps. */
     turnTraceToggle(turnId: string): void;
+    messageExpandedSet(messageId: string, expanded: boolean): void;
     turnTracesSeen(viewer: HappyAgentTraceViewer, turnIds: ReadonlySet<string>): void;
 }
 
@@ -82,6 +83,9 @@ export function happyAgentPanelChatOpen(
         },
         turnTraceToggle(turnId) {
             store?.turnTraceToggle(turnId);
+        },
+        messageExpandedSet(messageId, expanded) {
+            store?.messageExpandedSet(messageId, expanded);
         },
         turnTracesSeen(viewer, turnIds) {
             store?.turnTracesSeen(viewer, turnIds);

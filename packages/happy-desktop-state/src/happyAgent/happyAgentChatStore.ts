@@ -665,6 +665,7 @@ export interface HappyAgentChatSnapshot {
     readonly modelLocked: boolean;
     readonly showReasoning: boolean;
     readonly expandedTurnIds: ReadonlySet<string>;
+    readonly expandedMessageIds: ReadonlySet<string>;
     readonly usage?: HappyAgentSessionUsage;
     readonly usageLoading: boolean;
     readonly usageError?: string;
@@ -761,6 +762,7 @@ export interface HappyAgentChatStore {
     imageClose(): void;
     reasoningToggle(): void;
     turnTraceToggle(turnId: string): void;
+    messageExpandedSet(messageId: string, expanded: boolean): void;
     /** Begins a new visit with every completed turn folded, including manually opened turns. */
     turnTracesFold(): void;
     /**
@@ -783,6 +785,8 @@ export interface HappyAgentTraceViewer {
 
 export interface HappyAgentChatDeps {
     readonly catalog: HappyAgentModelCatalog;
+    /** Local presentation retained when an inactive chat store was evicted. */
+    readonly initialExpandedMessageIds?: ReadonlySet<string>;
     /**
      * Owner-only authoritative input: the connection's current model catalog.
      * The listener is called with it now and again on every change; the
@@ -890,6 +894,7 @@ export function happyAgentChatStoreCreate(
         detachedBackgroundProcessIds: new Set<number>(),
         showReasoning: false,
         expandedTurnIds: new Set<string>(),
+        expandedMessageIds: deps.initialExpandedMessageIds ?? new Set<string>(),
         usageLoading: false,
         activityPanelOpen: false,
         failureSwitchSupported: false,
@@ -976,6 +981,7 @@ export function happyAgentChatStoreCreate(
     let settlingTurnIds: ReadonlySet<string> = new Set();
     /* Every turn open, either way: what the projection and the view read. */
     let expandedTurnIds: ReadonlySet<string> = new Set();
+    let expandedMessageIds = deps.initialExpandedMessageIds ?? new Set<string>();
     /* Groups seen finished, and seen still running, in the transcript. */
     const endedGroupIds = new Set<string>();
     const runningGroupIds = new Set<string>();
@@ -1194,6 +1200,7 @@ export function happyAgentChatStoreCreate(
             modelLocked: connected?.modelLocked ?? false,
             showReasoning,
             expandedTurnIds,
+            expandedMessageIds,
             ...(usage === undefined ? {} : { usage }),
             usageLoading: false,
             contextGauge: contextGaugeDerive(
@@ -1224,8 +1231,10 @@ export function happyAgentChatStoreCreate(
            list it was given when nothing moved, so a new one is a change and
            needs no further inspection. Only when the transcript stood still is
            the rest of the snapshot worth comparing — and then the comparison
-           settles the transcript on one reference rather than walking it. */
-        if (entries !== previous.entries) {
+           settles the transcript on one reference rather than walking it.
+           Message choices are immutable sets, whose changed identity must
+           publish too: the record comparison below does not inspect sets. */
+        if (entries !== previous.entries || expandedMessageIds !== previous.expandedMessageIds) {
             store.setState(next, true);
             return;
         }
@@ -1758,6 +1767,14 @@ export function happyAgentChatStoreCreate(
             openedTurnIds = opened;
             settlingTurnIds = new Set();
             turnsOpenPublish();
+            commit();
+        },
+        messageExpandedSet(messageId, expanded) {
+            if (expandedMessageIds.has(messageId) === expanded) return;
+            const next = new Set(expandedMessageIds);
+            if (expanded) next.add(messageId);
+            else next.delete(messageId);
+            expandedMessageIds = next;
             commit();
         },
         turnTraceToggle(turnId) {

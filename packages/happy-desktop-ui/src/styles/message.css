@@ -613,6 +613,21 @@
     overflow-wrap: anywhere;
 }
 
+.happy-message__body[data-body-fold] {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.happy-message__body[data-body-fold] > * {
+    margin: 0;
+}
+
+.happy-message__body[data-body-fold="closed"] > .happy-message__plain-text {
+    max-height: var(--message-preview-height);
+    overflow: clip;
+}
+
 .happy-message__body--markdown h1,
 .happy-message__body--markdown h2,
 .happy-message__body--markdown h3,
