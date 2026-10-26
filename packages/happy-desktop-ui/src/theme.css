@@ -356,7 +356,6 @@
     --story-ring-unseen-top: #34c76f;
     --story-ring-unseen-bottom: #3da1fd;
     --story-ring-seen: #d8d8e1;
-    --story-add: #007aff;
     --story-avatar-fill: #b8bbc4;
     /* Window chrome: what the window reports about itself, which has to be
        legible over whatever the window is showing — including a modal. */
@@ -555,7 +554,6 @@
         --story-danger: var(--status-error);
         --story-ring-unseen: var(--text-link);
         --story-ring-seen: #48484a;
-        --story-add: #3e88f7;
         --story-avatar-fill: #5a5a5f;
     }
 }
@@ -752,7 +750,6 @@
     --story-danger: var(--status-error);
     --story-ring-unseen: var(--text-link);
     --story-ring-seen: #48484a;
-    --story-add: #3e88f7;
     --story-avatar-fill: #5a5a5f;
 }
 

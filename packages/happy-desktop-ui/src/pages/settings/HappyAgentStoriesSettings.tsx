@@ -19,7 +19,7 @@ export interface HappyAgentStoriesSettingsProps {
 
 /**
  * A person's opt-in to Stories on one connection: the stories row above the
- * sidebar, the story viewer and editor, and "post it" in conversations.
+ * sidebar, the story viewer, and "post it" in conversations.
  */
 export function HappyAgentStoriesSettings(props: HappyAgentStoriesSettingsProps) {
     const id = useId();
@@ -50,7 +50,7 @@ export function HappyAgentStoriesSettings(props: HappyAgentStoriesSettingsProps)
             ) : null}
             <FormRow
                 label="Stories"
-                description="Experimental. Shows your team's stories as a row of circles above the sidebar, lets you post photos and videos of your work with text, links and stickers, and lets an agent draft a story when you say “post it”. Off, nothing changes."
+                description="Experimental. Shows your team's stories as a row of circles above the sidebar, and lets any agent draft a story for you to post when you say “post it”. Off, nothing changes."
                 htmlFor={id}
                 control={
                     <Box className="happy-agent-settings__pending">

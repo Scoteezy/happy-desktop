@@ -233,11 +233,7 @@ export interface StoryCanvasProps {
     readonly onVideoEnded?: () => void;
     /** A link or reaction overlay was pressed, in the viewer. */
     readonly onOverlayActivate?: (overlay: StoryLinkOverlay | StoryReactionOverlay) => void;
-    /** The editor's handles on each overlay. */
-    readonly overlayAttributes?: (overlay: StoryOverlay) => StoryOverlayViewProps["attributes"];
-    /** An overlay drawn elsewhere for now, such as text being typed. */
-    readonly overlayHidden?: string;
-    /** Drawn above the overlays: guides, a trash target, an open sheet. */
+    /** Drawn above the overlays: the viewer's progress, header and controls. */
     readonly children?: ReactNode;
     readonly className?: string;
     readonly style?: CSSProperties;
@@ -308,48 +304,42 @@ export function StoryCanvas(props: StoryCanvasProps) {
                         : "This photo is no longer available"}
                 </span>
             ) : null}
-            {frame.overlays.map((overlay) =>
-                overlay.id === props.overlayHidden ? null : (
-                    <StoryOverlayView
-                        key={overlay.id}
-                        overlay={overlay}
-                        sticker={props.sticker}
-                        {...(props.animate === undefined ? {} : { animate: props.animate })}
-                        {...(props.reactions ? { reactions: props.reactions } : {})}
-                        {...(props.myReaction === undefined
-                            ? {}
-                            : { myReaction: props.myReaction })}
-                        {...(props.overlayAttributes
-                            ? { attributes: props.overlayAttributes(overlay) }
-                            : props.onOverlayActivate &&
-                                (overlay.type === "link" || overlay.type === "reaction")
-                              ? {
-                                    attributes: {
-                                        role: "button",
-                                        tabIndex: 0,
-                                        "aria-label":
-                                            overlay.type === "link"
-                                                ? `Link: ${overlay.label ?? storyLinkHost(overlay.url)}`
-                                                : `React with ${overlay.emoji}`,
-                                        "data-activatable": "",
-                                        onPointerDown: (event) => event.stopPropagation(),
-                                        onPointerUp: (event) => event.stopPropagation(),
-                                        onClick: (event) => {
-                                            event.stopPropagation();
-                                            props.onOverlayActivate?.(overlay);
-                                        },
-                                        onKeyDown: (event) => {
-                                            if (event.key !== "Enter" && event.key !== " ") return;
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            props.onOverlayActivate?.(overlay);
-                                        },
-                                    },
-                                }
-                              : {})}
-                    />
-                ),
-            )}
+            {frame.overlays.map((overlay) => (
+                <StoryOverlayView
+                    key={overlay.id}
+                    overlay={overlay}
+                    sticker={props.sticker}
+                    {...(props.animate === undefined ? {} : { animate: props.animate })}
+                    {...(props.reactions ? { reactions: props.reactions } : {})}
+                    {...(props.myReaction === undefined ? {} : { myReaction: props.myReaction })}
+                    {...(props.onOverlayActivate &&
+                    (overlay.type === "link" || overlay.type === "reaction")
+                        ? {
+                              attributes: {
+                                  role: "button",
+                                  tabIndex: 0,
+                                  "aria-label":
+                                      overlay.type === "link"
+                                          ? `Link: ${overlay.label ?? storyLinkHost(overlay.url)}`
+                                          : `React with ${overlay.emoji}`,
+                                  "data-activatable": "",
+                                  onPointerDown: (event) => event.stopPropagation(),
+                                  onPointerUp: (event) => event.stopPropagation(),
+                                  onClick: (event) => {
+                                      event.stopPropagation();
+                                      props.onOverlayActivate?.(overlay);
+                                  },
+                                  onKeyDown: (event) => {
+                                      if (event.key !== "Enter" && event.key !== " ") return;
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      props.onOverlayActivate?.(overlay);
+                                  },
+                              },
+                          }
+                        : {})}
+                />
+            ))}
             {props.caption ? (
                 <div className="happy-story-canvas__caption">
                     <span className="happy-story-canvas__caption-text">{props.caption}</span>

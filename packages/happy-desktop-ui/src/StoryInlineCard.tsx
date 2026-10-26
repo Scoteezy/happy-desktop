@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Button } from "./Button";
 import { StoryCanvas } from "./StoryCanvas";
+import { Tooltip } from "./Tooltip";
 import type { StorySticker } from "./StickerView";
 import type { Story } from "./storyTypes";
 
@@ -21,9 +23,10 @@ export interface StoryInlineCardProps {
     readonly frameUrl: (storyId: string, frameId: string) => string;
     readonly sticker: (packId: string, stickerId: string) => StorySticker | undefined;
     onPost(story: Story): void;
-    onEdit(story: Story): void;
-    /** Opens the story in the viewer. */
+    /** Opens the story in the viewer; a draft opens there as a preview. */
     onOpen(story: Story): void;
+    /** Holds Edit's hint open, so a fixture can show it. */
+    readonly editHintOpen?: boolean;
     readonly "data-testid"?: string;
 }
 
@@ -31,11 +34,16 @@ export interface StoryInlineCardProps {
 export const STORY_INLINE_WIDTH = 180;
 export const STORY_INLINE_HEIGHT = 320;
 
+/** What Edit says: stories are not edited on desktop. */
+const STORY_INLINE_EDIT_HINT = "On desktop, ask an agent to edit it, or use your phone.";
+
 /**
  * A story an agent drafted, in its chat, as on iOS: the story itself, drawn
  * from its latest version, and under it a 32px bar with Post and Edit while it
- * is the reader's draft, or what became of it. Others see it labelled
- * "Draft"; once posted it reads "Posted" and opens the viewer. It is always
+ * is the reader's draft, or what became of it. There is no story editor on
+ * desktop, so Edit only says where a story is changed: by an agent, or on the
+ * phone. Others see it labelled "Draft"; once posted it reads "Posted". The
+ * story itself opens the viewer, a draft as its author's preview. It is always
  * the same height, so nothing in the chat moves when the story loads, changes
  * version, or is posted.
  */
@@ -58,6 +66,8 @@ export function StoryInlineCard(props: StoryInlineCardProps) {
     const actionable =
         state.type === "ready" && state.mine && story?.status === "draft" && !deleted;
     const posting = state.type === "ready" && state.posting === true;
+    // Edit's hint stays up from the press until the pointer or focus leaves.
+    const [editHintOpen, setEditHintOpen] = useState(false);
     return (
         <div
             className="happy-story-inline"
@@ -70,16 +80,14 @@ export function StoryInlineCard(props: StoryInlineCardProps) {
             <button
                 aria-label={
                     story
-                        ? `${story.status === "draft" ? "Edit story draft" : "Open story"}${story.caption ? `: ${story.caption}` : ""}`
+                        ? `${story.status === "draft" ? "Preview story draft" : "Open story"}${story.caption ? `: ${story.caption}` : ""}`
                         : "Story"
                 }
                 className="happy-story-inline__frame"
-                // A draft is not in the viewer yet: its author edits it, but not mid-post.
+                // Only its author reads a draft, and not mid-post.
                 disabled={!story || deleted || posting || (story.status === "draft" && !actionable)}
                 onClick={() => {
-                    if (!story) return;
-                    if (story.status !== "draft") props.onOpen(story);
-                    else if (actionable) props.onEdit(story);
+                    if (story) props.onOpen(story);
                 }}
                 style={{ width: STORY_INLINE_WIDTH, height: STORY_INLINE_HEIGHT }}
                 type="button"
@@ -109,15 +117,23 @@ export function StoryInlineCard(props: StoryInlineCardProps) {
                         >
                             Post
                         </Button>
-                        <Button
-                            data-testid="story-inline-edit"
-                            disabled={posting}
-                            onClick={() => props.onEdit(story)}
-                            size="small"
-                            variant="ghost"
+                        <Tooltip
+                            align="start"
+                            label={STORY_INLINE_EDIT_HINT}
+                            open={props.editHintOpen === true || editHintOpen}
                         >
-                            Edit
-                        </Button>
+                            <Button
+                                data-testid="story-inline-edit"
+                                disabled={posting}
+                                onBlur={() => setEditHintOpen(false)}
+                                onClick={() => setEditHintOpen((open) => !open)}
+                                onMouseLeave={() => setEditHintOpen(false)}
+                                size="small"
+                                variant="ghost"
+                            >
+                                Edit
+                            </Button>
+                        </Tooltip>
                     </>
                 ) : (
                     <span className="happy-story-inline__label" data-testid="story-inline-label">

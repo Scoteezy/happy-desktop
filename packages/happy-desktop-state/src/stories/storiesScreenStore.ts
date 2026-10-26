@@ -1,6 +1,3 @@
-import type { Story } from "@slopus/happy-agent-client";
-import type { HappyAgentStoryEditorStore } from "./storyEditorStore.js";
-
 /** What the viewer was opened on. */
 export type HappyAgentStoriesViewerTarget =
     /** An author's circle in the row; the walk goes on through the row's order. */
@@ -10,35 +7,26 @@ export type HappyAgentStoriesViewerTarget =
 
 export interface HappyAgentStoriesScreenSnapshot {
     readonly viewer?: HappyAgentStoriesViewerTarget;
-    readonly editor?: { readonly store: HappyAgentStoryEditorStore };
 }
 
 /**
- * Which full-window Stories screen the window shows: the viewer, the editor,
- * or neither. One editor at a time; closing it disposes its session.
+ * Whether the window shows the full-window story viewer. Stories are not
+ * edited on desktop, so the viewer is the only Stories screen.
  */
 export interface HappyAgentStoriesScreenStore {
     get(): HappyAgentStoriesScreenSnapshot;
     subscribe(listener: () => void): () => void;
     viewerOpen(target: HappyAgentStoriesViewerTarget): void;
     viewerClose(): void;
-    /** Opens the editor on a draft a conversation made. */
-    editorOpen(story: Story): void;
-    editorClose(): void;
     [Symbol.dispose](): void;
 }
 
-export function happyAgentStoriesScreenStoreCreate(
-    editorCreate: (story: Story) => HappyAgentStoryEditorStore,
-): HappyAgentStoriesScreenStore {
+export function happyAgentStoriesScreenStoreCreate(): HappyAgentStoriesScreenStore {
     const listeners = new Set<() => void>();
     let snapshot: HappyAgentStoriesScreenSnapshot = {};
     const publish = (next: HappyAgentStoriesScreenSnapshot): void => {
         snapshot = next;
         for (const listener of [...listeners]) listener();
-    };
-    const editorRelease = (): void => {
-        snapshot.editor?.store[Symbol.dispose]();
     };
     return {
         get: () => snapshot,
@@ -56,19 +44,7 @@ export function happyAgentStoriesScreenStoreCreate(
             const { viewer: _viewer, ...rest } = snapshot;
             publish(rest);
         },
-        editorOpen(story) {
-            editorRelease();
-            const { viewer: _viewer, ...rest } = snapshot;
-            publish({ ...rest, editor: { store: editorCreate(story) } });
-        },
-        editorClose() {
-            if (!snapshot.editor) return;
-            editorRelease();
-            const { editor: _editor, ...rest } = snapshot;
-            publish(rest);
-        },
         [Symbol.dispose]() {
-            editorRelease();
             listeners.clear();
             snapshot = {};
         },

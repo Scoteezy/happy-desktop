@@ -1,9 +1,4 @@
-import {
-    endpointUrl,
-    type HappyAgentClient,
-    type Story,
-    type StoryAsset,
-} from "@slopus/happy-agent-client";
+import { endpointUrl, type HappyAgentClient } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentStickersStoreCreate, type HappyAgentStickersStore } from "./stickersStore.js";
 import { happyAgentStoriesStoreCreate, type HappyAgentStoriesStore } from "./storiesStore.js";
@@ -20,16 +15,10 @@ import {
     happyAgentStoriesScreenStoreCreate,
     type HappyAgentStoriesScreenStore,
 } from "./storiesScreenStore.js";
-import {
-    happyAgentStoryEditorStoreCreate,
-    type HappyAgentStoryEditorStore,
-} from "./storyEditorStore.js";
 
 /** Where the bytes of a story's media and stickers are read, through the connection's transport. */
 export interface HappyAgentStoryUrls {
     frame(storyId: string, frameId: string): string;
-    /** Media chosen for a story before it is one of its frames. */
-    asset(asset: StoryAsset): string;
     /** A sticker's file; `lottie` reads a `tgs` sticker as plain Lottie JSON. */
     sticker(packId: string, stickerId: string, lottie: boolean): string;
     /** An author's photo, from the daemon-relative path the feed names. */
@@ -38,7 +27,7 @@ export interface HappyAgentStoryUrls {
 
 /**
  * Stories on one connection: the experiment's setting, the row and the
- * stories it shows, the sticker catalog, and editing sessions. Every store is
+ * stories it shows, the stickers they draw, and the viewer. Every store is
  * materialized on first access and opens nothing until it is subscribed.
  */
 export interface HappyAgentStories {
@@ -47,10 +36,8 @@ export interface HappyAgentStories {
     /** Whether the row above the sidebar is open or folded. */
     row(): HappyAgentStoriesRowStore;
     stickers(): HappyAgentStickersStore;
-    /** Which full-window Stories screen is open. */
+    /** Whether the full-window viewer is open. */
     screen(): HappyAgentStoriesScreenStore;
-    /** A new editing session: on `story` when given, otherwise on a new draft. */
-    editorCreate(story?: Story): HappyAgentStoryEditorStore;
     readonly urls: HappyAgentStoryUrls;
     [Symbol.dispose](): void;
 }
@@ -69,8 +56,6 @@ export function happyAgentStoriesCreate(deps: HappyAgentStoriesCreateDeps): Happ
     let row: HappyAgentStoriesRowStore | undefined;
     let screen: HappyAgentStoriesScreenStore | undefined;
     let screenRelease: (() => void) | undefined;
-    const editorCreate = (story?: Story) =>
-        happyAgentStoryEditorStoreCreate({ client, ...(story ? { story } : {}) });
     const settingsGet = (): HappyAgentStoriesSettingsStore => {
         settings ??= happyAgentStoriesSettingsStoreCreate(
             { client, sync: deps.sync },
@@ -84,17 +69,15 @@ export function happyAgentStoriesCreate(deps: HappyAgentStoriesCreateDeps): Happ
     };
     const screenGet = (): HappyAgentStoriesScreenStore => {
         if (screen) return screen;
-        const created = happyAgentStoriesScreenStoreCreate(editorCreate);
+        const created = happyAgentStoriesScreenStoreCreate();
         screen = created;
-        // Turning Stories off closes whatever Stories screen is open and
-        // folds the row, so turning it on again never brings back a stale
-        // one, and an open editor stops its uploads.
+        // Turning Stories off closes the viewer and folds the row, so
+        // turning it on again never brings back a stale one.
         const setting = settingsGet();
         screenRelease = setting.subscribe(() => {
             const current = setting.get();
             if (current.status === "ready" && !current.storiesEnabled) {
                 created.viewerClose();
-                created.editorClose();
                 row?.rowCollapse();
             }
         });
@@ -112,13 +95,8 @@ export function happyAgentStoriesCreate(deps: HappyAgentStoriesCreateDeps): Happ
             return stickers;
         },
         screen: screenGet,
-        editorCreate,
         urls: {
             frame: (storyId, frameId) => client.storyFrameUrl(storyId, frameId),
-            asset: (asset) =>
-                asset.type === "chat_media"
-                    ? client.toolCallMediaUrl(asset.agentId, asset.toolCallId, asset.index)
-                    : client.artifactFileUrl(asset.artifactId, asset.version, asset.path),
             sticker: (packId, stickerId, lottie) =>
                 client.stickerFileUrl(packId, stickerId, lottie),
             photo: (path) => endpointUrl(client.endpoint, path),

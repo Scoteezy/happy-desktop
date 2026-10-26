@@ -1078,12 +1078,3 @@ export {
     type StoryInlineCardState,
 } from "./StoryInlineCard";
 export { StickerView, type StickerViewProps, type StorySticker } from "./StickerView";
-export {
-    StoryEditor,
-    STORY_COLORS,
-    STORY_TEXT_FILLS,
-    STORY_TEXT_FONTS,
-    type StoryEditorPickerHandlers,
-    type StoryEditorProps,
-} from "./StoryEditor";
-export { StickerPicker, type StickerPickerPack, type StickerPickerProps } from "./StickerPicker";

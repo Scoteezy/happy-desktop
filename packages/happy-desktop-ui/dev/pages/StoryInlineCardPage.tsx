@@ -18,12 +18,20 @@ const states: readonly {
     readonly label: string;
     readonly detail: string;
     readonly state: StoryInlineCardState;
+    readonly editHintOpen?: boolean;
 }[] = [
     {
         number: "SI-01",
         label: "My draft",
-        detail: "The author reads it: Post and Edit",
+        detail: "The author reads it: Post, and Edit, which says where to change it",
         state: { type: "ready", story: STORY_DRAFT, mine: true },
+    },
+    {
+        number: "SI-08",
+        label: "Edit pressed",
+        detail: "No editor on desktop: the hint says where to change it",
+        state: { type: "ready", story: STORY_DRAFT, mine: true },
+        editHintOpen: true,
     },
     {
         number: "SI-02",
@@ -76,7 +84,7 @@ export function StoryInlineCardPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The story an agent drafted, shown inline in the conversation as a compact 9:16 card with plain Post and Edit buttons. Every state keeps the same footprint, so posting never moves the transcript."
+            summary="The story an agent drafted, shown inline in the conversation as a compact 9:16 card with plain Post and Edit buttons. There is no editor on desktop: Edit says to ask an agent or use the phone. Every state keeps the same footprint, so posting never moves the transcript."
             title="Story inline card"
         >
             <div className="specimen-grid">
@@ -94,9 +102,9 @@ export function StoryInlineCardPage() {
                             </div>
                             <StoryInlineCard
                                 frameUrl={fixtureFrameUrl}
-                                onEdit={noop}
                                 onOpen={noop}
                                 onPost={noop}
+                                {...(entry.editHintOpen ? { editHintOpen: true } : {})}
                                 state={entry.state}
                                 sticker={fixtureSticker}
                             />

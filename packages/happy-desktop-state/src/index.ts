@@ -269,6 +269,5 @@ export * from "./stories/stories.js";
 export * from "./stories/storiesStore.js";
 export * from "./stories/stickersStore.js";
 export * from "./stories/storiesSettingsStore.js";
-export * from "./stories/storyEditorStore.js";
 export * from "./stories/storiesScreenStore.js";
 export * from "./stories/storiesRowStore.js";

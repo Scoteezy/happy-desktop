@@ -3,13 +3,10 @@ import type {
     HappyAgentStickersStore,
     HappyAgentStories,
     HappyAgentStoriesSnapshot,
-    HappyAgentStoryEditorStore,
     happyAgentProtocol,
 } from "happy-desktop-state";
 import {
-    StickerPicker,
     StoriesRow,
-    StoryEditor,
     StoryInlineCard,
     StoryViewer,
     type InlinePageFit,
@@ -156,12 +153,10 @@ export interface HappyAgentStoriesScreensProps {
     onSourceOpen(agentId: string): void;
 }
 
-/** The viewer and the editor, mounted once beside whatever the window shows. */
+/** The viewer, mounted once beside whatever the window shows. */
 export function HappyAgentStoriesScreens(props: HappyAgentStoriesScreensProps) {
     const screenStore = props.hub.screen();
     const screen = useSyncExternalStore(screenStore.subscribe, screenStore.get, screenStore.get);
-    if (screen.editor)
-        return <HappyAgentStoryEditorScreen editor={screen.editor.store} hub={props.hub} />;
     if (screen.viewer)
         return (
             <HappyAgentStoryViewerScreen
@@ -255,129 +250,6 @@ function HappyAgentStoryViewerScreen(props: {
     );
 }
 
-function HappyAgentStoryEditorScreen(props: {
-    readonly hub: HappyAgentStories;
-    readonly editor: HappyAgentStoryEditorStore;
-}) {
-    const { hub, editor } = props;
-    const snapshot = useSyncExternalStore(editor.subscribe, editor.get, editor.get);
-    const stickersStore = hub.stickers();
-    const stickers = useSyncExternalStore(
-        stickersStore.subscribe,
-        stickersStore.get,
-        stickersStore.get,
-    );
-    const source = stickerSourceOf(hub, stickersStore, stickers);
-    const screen = hub.screen();
-    const storyId = snapshot.story?.id;
-    // Closing saves what changed first. When that save fails, its error shows
-    // and the next close leaves anyway, as does one while a save is running.
-    const close = () => {
-        if (!snapshot.dirty || !snapshot.story || snapshot.error || snapshot.saving)
-            return screen.editorClose();
-        void editor.save().then(
-            () => screen.editorClose(),
-            () => undefined,
-        );
-    };
-    const recentStickers = stickers.recents.flatMap((recent) => {
-        const pack = stickers.stickers.get(recent.packId);
-        if (!pack) stickersStore.packsRequest([recent.packId]);
-        const sticker = pack?.find((each) => each.id === recent.stickerId);
-        return sticker ? [sticker] : [];
-    });
-    return (
-        <StoryEditor
-            caption={snapshot.caption}
-            dirty={snapshot.dirty}
-            draftUrl={(draft) => {
-                const frame = draft.frames[0];
-                return frame ? hub.urls.frame(draft.id, frame.id) : undefined;
-            }}
-            {...(snapshot.drafts.status === "idle"
-                ? {}
-                : {
-                      drafts: {
-                          loading: snapshot.drafts.status === "loading",
-                          drafts: snapshot.drafts.status === "ready" ? snapshot.drafts.drafts : [],
-                      },
-                  })}
-            {...(snapshot.error ? { error: snapshot.error.message } : {})}
-            frameIndex={snapshot.frameIndex}
-            frameUrl={(frame) => (storyId ? hub.urls.frame(storyId, frame.id) : undefined)}
-            frames={snapshot.frames}
-            onCaptionChange={editor.captionUpdate}
-            onClose={close}
-            onDraftOpen={editor.draftOpen}
-            onDraftsRequest={editor.draftsRequest}
-            onFilesAdd={editor.filesAdd}
-            onFrameRemove={editor.frameRemove}
-            onFrameSelect={editor.frameSelect}
-            onOverlayAdd={(overlay) => {
-                editor.overlayAdd(overlay);
-                if (overlay.type === "sticker")
-                    stickersStore.stickerUse({
-                        packId: overlay.packId,
-                        stickerId: overlay.stickerId,
-                    });
-            }}
-            onOverlayRemove={editor.overlayRemove}
-            onOverlayUpdate={editor.overlayUpdate}
-            onPost={() => {
-                // A refused post shows its error in the editor.
-                void editor.post().then(
-                    () => screen.editorClose(),
-                    () => undefined,
-                );
-            }}
-            overlayIdCreate={editor.idCreate}
-            posting={snapshot.posting}
-            saved={snapshot.story !== undefined}
-            saving={snapshot.saving}
-            sticker={source.byId}
-            stickerPicker={(handlers) => {
-                for (const pack of stickers.packs) source.byId(pack.id, pack.thumbnail);
-                // The picker opens fresh each time: a search ends when it closes.
-                const searchEnd = () => stickersStore.searchUpdate("", "stickers");
-                return (
-                    <StickerPicker
-                        onClose={() => {
-                            searchEnd();
-                            handlers.onClose();
-                        }}
-                        onEmojiSelect={(emoji) => {
-                            searchEnd();
-                            handlers.onEmoji(emoji);
-                        }}
-                        onQueryChange={stickersStore.searchUpdate}
-                        onRecentsClear={stickersStore.recentsClear}
-                        onStickerSelect={(sticker) => {
-                            searchEnd();
-                            handlers.onSticker(sticker);
-                        }}
-                        packs={stickers.packs.map((pack) => {
-                            const list = stickers.stickers.get(pack.id);
-                            return list ? { pack, stickers: list } : { pack };
-                        })}
-                        query={stickers.search?.query ?? ""}
-                        recents={recentStickers}
-                        {...(stickers.search
-                            ? {
-                                  results: {
-                                      loading: stickers.search.status === "loading",
-                                      stickers: stickers.search.results,
-                                  },
-                              }
-                            : {})}
-                        stickerOf={source.of}
-                    />
-                );
-            }}
-            uploading={snapshot.uploading}
-        />
-    );
-}
-
 export interface HappyAgentStoryInlineProps {
     readonly hub: HappyAgentStories;
     readonly storyId: string;
@@ -385,7 +257,7 @@ export interface HappyAgentStoryInlineProps {
     readonly fit: InlinePageFit;
 }
 
-/** A story an agent drafted, in its chat, with Post and Edit while it is the reader's draft. */
+/** A story an agent drafted, in its chat, with Post while it is the reader's draft. */
 export function HappyAgentStoryInline(props: HappyAgentStoryInlineProps) {
     const { hub, storyId } = props;
     const store = hub.stories();
@@ -429,7 +301,6 @@ export function HappyAgentStoryInline(props: HappyAgentStoryInlineProps) {
                 <StoryInlineCard
                     data-testid="story-inline"
                     frameUrl={hub.urls.frame}
-                    onEdit={(story) => screen.editorOpen(story)}
                     onOpen={(story) => {
                         screen.viewerOpen({ kind: "story", storyId: story.id });
                     }}

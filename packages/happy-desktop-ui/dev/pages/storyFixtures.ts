@@ -1,4 +1,4 @@
-import type { StickerPickerPack, StorySticker } from "../../src";
+import type { StorySticker } from "../../src";
 import type { Sticker, Story, StoryFrame, StoryOverlay } from "../../src/storyTypes";
 
 /*
@@ -69,44 +69,14 @@ function packStickers(packId: string, count: number, offset: number): Sticker[] 
     }));
 }
 
-export const STICKER_PACKS: readonly StickerPickerPack[] = [
-    {
-        pack: {
-            id: "ducks",
-            title: "Pond ducks",
-            kind: "stickers",
-            thumbnail: "ducks-0",
-            stickerCount: 9,
-            version: "1",
-        },
-        stickers: packStickers("ducks", 9, 0),
-    },
-    {
-        pack: {
-            id: "blobs",
-            title: "Little blobs",
-            kind: "stickers",
-            thumbnail: "blobs-0",
-            stickerCount: 6,
-            version: "1",
-        },
-        stickers: packStickers("blobs", 6, 2),
-    },
-    {
-        pack: {
-            id: "faces",
-            title: "Faces",
-            kind: "emoji",
-            thumbnail: "faces-0",
-            stickerCount: 16,
-            version: "1",
-        },
-        stickers: packStickers("faces", 16, 4),
-    },
+const STICKERS: readonly Sticker[] = [
+    ...packStickers("ducks", 9, 0),
+    ...packStickers("blobs", 6, 2),
+    ...packStickers("faces", 16, 4),
 ];
 
 const stickerIndex = new Map(
-    STICKER_PACKS.flatMap((entry) => entry.stickers ?? []).map((sticker, index) => [
+    STICKERS.map((sticker, index) => [
         `${sticker.packId}/${sticker.id}`,
         {
             format: "webp" as const,
@@ -122,17 +92,6 @@ const stickerIndex = new Map(
 
 export function fixtureSticker(packId: string, stickerId: string): StorySticker | undefined {
     return stickerIndex.get(`${packId}/${stickerId}`);
-}
-
-export function fixtureStickerOf(sticker: Sticker): StorySticker {
-    return (
-        fixtureSticker(sticker.packId, sticker.id) ?? {
-            format: "webp",
-            url: stickerArt("#cccccc", ""),
-            width: 512,
-            height: 512,
-        }
-    );
 }
 
 const at = (x: number, y: number, scale: number, rotation = 0) => ({ x, y, scale, rotation });
