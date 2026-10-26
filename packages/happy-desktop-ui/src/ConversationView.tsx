@@ -1260,6 +1260,14 @@ export function ConversationView(props: ConversationViewProps) {
                               }
                             : {})}
                         jumpToEnd
+                        /* Shimmers exactly while the status line spins: not on
+                           a question or a wait, and on through delegation. */
+                        jumpToEndWorking={
+                            statusVisible &&
+                            !awaitingInput &&
+                            !scheduledWait &&
+                            (delegating || props.workingWait === undefined)
+                        }
                         paddingEnd={24}
                         virtualize
                     >

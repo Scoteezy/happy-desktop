@@ -1194,6 +1194,14 @@
     font-size: 16px !important;
 }
 
+/* While the agent works the arrow is painted by the shared shimmer (C-254).
+   The sweep's box is the icon's box exactly, so the arrow sits on the same
+   pixels with and without it, and the band crosses the glyph rather than a
+   line box around it. */
+.happy-message-list__jump .happy-button__icon .happy-shimmer-text {
+    display: flex;
+}
+
 .happy-message-list__viewport {
     display: flex;
     flex-direction: column;

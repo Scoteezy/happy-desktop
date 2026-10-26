@@ -49,6 +49,7 @@ import {
     type MessageLayoutRender,
 } from "./MessageMarkdown";
 import { ScrollArea } from "./Scrollbar";
+import { ShimmerText } from "./ShimmerText";
 import { AgentTraceRow } from "./AgentTraceRow";
 import { MessageListRowWidthContext } from "./messageListRowWidth";
 import { StemCell, type StemCellMark } from "./StemCell";
@@ -880,6 +881,13 @@ export type MessageListProps = {
      * from it by more than a third of a screen.
      */
     jumpToEnd?: boolean;
+    /**
+     * Sweeps the same shimmer as every other in-progress label through the
+     * jump button's arrow, for a transcript whose agent is still working: the
+     * newest row is still being written, so the way back to it says so. Idle
+     * lists show the plain arrow.
+     */
+    jumpToEndWorking?: boolean;
     /** Bottom clearance represented inside the virtualizer's coordinate space. */
     paddingEnd?: number;
     /**
@@ -3548,12 +3556,19 @@ export function MessageList(props: MessageListProps) {
                             <div className="happy-message-list__jump" hidden ref={jump}>
                                 <Button
                                     aria-label="Jump to latest"
-                                    icon="arrow-down"
                                     iconOnly
                                     onClick={jumpToEnd}
                                     size="small"
                                     variant="secondary"
-                                />
+                                >
+                                    {props.jumpToEndWorking ? (
+                                        <ShimmerText sweep="sheen" tone="inherit">
+                                            <Icon name="arrow-down" size={16} />
+                                        </ShimmerText>
+                                    ) : (
+                                        <Icon name="arrow-down" size={16} />
+                                    )}
+                                </Button>
                             </div>
                         ) : undefined
                     }

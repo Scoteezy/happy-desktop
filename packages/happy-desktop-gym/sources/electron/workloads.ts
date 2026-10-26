@@ -10,6 +10,7 @@ import { sidebarDragChaosRun } from "./sidebarDragChaos.js";
 import { nestedRowMenusRun } from "./nestedRowMenus.js";
 import { sectionCreateRun } from "./sectionCreate.js";
 import { mobileDirectExperimentRun } from "./mobileDirectExperiment.js";
+import { jumpShimmerRun } from "./jumpShimmer.js";
 import {
     stopShimmerRun,
     stopShimmerSpacesSubtaskStart,
@@ -875,6 +876,29 @@ async function workloadRun(
         return finish({
             projectsVisited: Math.min(options.projects.length, 4),
             ...(await performanceCapture(page, app, options.profilerActive())),
+        });
+    }
+    if (workload === "jump-shimmer") {
+        if (location === undefined)
+            return finish({ reason: "No seeded session location.", status: "skipped" });
+        // The classic sidebar, whatever an earlier run left the setting at.
+        await options.runtime.client.stemCellsSet(false);
+        await page.reload();
+        // Back out of Settings if an earlier run left the window there.
+        const back = page.locator('[data-happy-desktop-ui="sidebar"] button[aria-label="Back"]');
+        await page
+            .locator('[data-happy-desktop-ui="sidebar"]')
+            .first()
+            .waitFor({ state: "visible", timeout: 45_000 });
+        if (await back.first().isVisible()) await back.first().click();
+        await navigateRoute(page, location.route);
+        await waitForSessionUiReady(page, location.route, location.sessionId);
+        await mark("route-ready");
+        return finish({
+            ...(await jumpShimmerRun(page, options.runtime.client, {
+                artifacts: options.paths.artifacts,
+                sessionId: location.sessionId,
+            })),
         });
     }
     if (workload === "stop-shimmer") {
