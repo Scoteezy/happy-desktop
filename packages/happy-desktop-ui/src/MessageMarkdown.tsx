@@ -1,5 +1,4 @@
 import {
-    Children,
     createContext,
     createElement,
     memo,
@@ -401,36 +400,17 @@ const MarkdownLink = ({
         </>
     );
 };
+/** The no-break space glues the time to the paragraph's last word or link,
+ * which stays outside the nowrap span so that one too long for a line still
+ * breaks inside itself. */
 function appendTrailingInline(children: ReactNode, trailing: ReactNode): ReactNode {
-    const nodes = Children.toArray(children);
-    const last = nodes.pop();
-    if (typeof last === "string") {
-        const finalWord = /^(.*)(\s+)(\S+)$/.exec(last);
-        if (finalWord)
-            return (
-                <>
-                    {nodes}
-                    {finalWord[1]}
-                    {finalWord[2]}
-                    <span
-                        className="happy-message__trailing-inline"
-                        data-happy-desktop-ui="message-trailing-inline"
-                    >
-                        {finalWord[3]}
-                        {"\u00a0"}
-                        {trailing}
-                    </span>
-                </>
-            );
-    }
     return (
         <>
-            {nodes}
+            {children}
             <span
                 className="happy-message__trailing-inline"
                 data-happy-desktop-ui="message-trailing-inline"
             >
-                {last}
                 {"\u00a0"}
                 {trailing}
             </span>

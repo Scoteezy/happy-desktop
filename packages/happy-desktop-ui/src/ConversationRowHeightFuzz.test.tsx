@@ -94,64 +94,84 @@ function entries(seed: number, text: string): readonly ConversationEntry[] {
     ];
 }
 
+type RowMeasurement = {
+    readonly body: HTMLElement;
+    readonly label: string;
+    readonly overlap: boolean;
+    readonly painted: number;
+    readonly reserved: number;
+};
+/** Mounts one reply between a tool row and its turn footer, then lays a text
+ * out at a width; the footer sits where the model placed it. */
+async function replyRowsMount(): Promise<
+    (seed: number, text: string, width: number) => Promise<RowMeasurement>
+> {
+    const view = createRenderer();
+    let update!: (state: { seed: number; text: string; width: number }) => void;
+    function Harness() {
+        const [state, setState] = useState({ seed: 0, text: "Ready", width: 800 });
+        update = setState;
+        return (
+            <div style={{ width: state.width, height: 4000 }}>
+                <ConversationView
+                    agentAuthor={agent}
+                    dock={
+                        <ConversationDock
+                            composer={composer}
+                            onComposerSend={() => {}}
+                            onComposerValueChange={() => {}}
+                        />
+                    }
+                    conversationId={`row-fuzz-${String(state.seed)}`}
+                    entries={entries(state.seed, state.text)}
+                    motion="calm"
+                />
+            </div>
+        );
+    }
+    view.render(Harness, { width: 1000, height: 4000 });
+    await view.ready();
+    await document.fonts.ready;
+    await nextFrame();
+    return async (seed, text, width) => {
+        flushSync(() => update({ seed, text, width }));
+        await nextFrame();
+        const reply = view.container.querySelector<HTMLElement>(
+            '.happy-message-list__virtual-row:has([data-generation-status="complete"])',
+        );
+        const footerRow = view.container
+            .querySelector('[data-happy-desktop-ui="turn-summary"]')
+            ?.closest<HTMLElement>(".happy-message-list__virtual-row");
+        /* A reply taller than the 4000px scrollport leaves its footer
+           unmounted; such replies are not what this generates. */
+        if (!reply || !footerRow) throw new Error(`seed ${String(seed)}: rows missing`);
+        const body = reply.querySelector<HTMLElement>(".happy-message__body")!;
+        const painted = reply.getBoundingClientRect().height;
+        const reserved = footerRow.getBoundingClientRect().top - reply.getBoundingClientRect().top;
+        return {
+            body,
+            label: `seed ${String(seed)} at ${String(width)}px: painted ${painted.toFixed(2)}px, reserved ${reserved.toFixed(2)}px`,
+            overlap: footerRow.getBoundingClientRect().top < body.getBoundingClientRect().bottom,
+            painted,
+            reserved,
+        };
+    };
+}
+
 it.runIf(server.browser === "chromium")(
     "predicts the painted height of random Markdown replies at random widths",
     async () => {
-        const view = createRenderer();
-        let update!: (state: { seed: number; text: string; width: number }) => void;
-        function Harness() {
-            const [state, setState] = useState({ seed: 0, text: "Ready", width: 800 });
-            update = setState;
-            return (
-                <div style={{ width: state.width, height: 4000 }}>
-                    <ConversationView
-                        agentAuthor={agent}
-                        dock={
-                            <ConversationDock
-                                composer={composer}
-                                onComposerSend={() => {}}
-                                onComposerValueChange={() => {}}
-                            />
-                        }
-                        conversationId={`row-fuzz-${String(state.seed)}`}
-                        entries={entries(state.seed, state.text)}
-                        motion="calm"
-                    />
-                </div>
-            );
-        }
-        view.render(Harness, { width: 1000, height: 4000 });
-        await view.ready();
-        await document.fonts.ready;
-        await nextFrame();
-
+        const measure = await replyRowsMount();
         const short: string[] = [];
         const long: string[] = [];
         let checks = 0;
         for (let seed = FIRST_SEED; seed < FIRST_SEED + SEEDS; seed += 1) {
             const { text, widths } = markdownReplyGenerate(seed);
             for (const width of widths) {
-                flushSync(() => update({ seed, text, width }));
-                await nextFrame();
-                const reply = view.container.querySelector<HTMLElement>(
-                    '.happy-message-list__virtual-row:has([data-generation-status="complete"])',
-                );
-                const footerRow = view.container
-                    .querySelector('[data-happy-desktop-ui="turn-summary"]')
-                    ?.closest<HTMLElement>(".happy-message-list__virtual-row");
-                /* A reply taller than the 4000px scrollport leaves its footer
-                   unmounted; such replies are not what this generates. */
-                if (!reply || !footerRow) throw new Error(`seed ${String(seed)}: rows missing`);
-                const body = reply.querySelector<HTMLElement>(".happy-message__body")!;
-                const painted = reply.getBoundingClientRect().height;
-                const reserved =
-                    footerRow.getBoundingClientRect().top - reply.getBoundingClientRect().top;
-                const overlap =
-                    footerRow.getBoundingClientRect().top < body.getBoundingClientRect().bottom;
+                const row = await measure(seed, text, width);
                 checks += 1;
-                const label = `seed ${String(seed)} at ${String(width)}px: painted ${painted.toFixed(2)}px, reserved ${reserved.toFixed(2)}px`;
-                if (overlap || painted - reserved > TOLERANCE) short.push(label);
-                else if (reserved - painted > TOLERANCE) long.push(label);
+                if (row.overlap || row.painted - row.reserved > TOLERANCE) short.push(row.label);
+                else if (row.reserved - row.painted > TOLERANCE) long.push(row.label);
             }
         }
         console.info(
@@ -167,3 +187,54 @@ it.runIf(server.browser === "chromium")(
     },
     600_000,
 );
+
+const OAUTH_URL =
+    "https://example.com/oauth/authorize?client_id=happy-release-qa-0000000000&redirect_uri=https%3A%2F%2Flocal.app.happy.engineering%2Fcallback%2Fcodex&scope=openid%20profile%20email%20offline_access&state=p_OqQ8Ec_GfRsuT-qa";
+const LONG_WORD = "a1b2c3d4e5".repeat(24);
+
+/* The hover time follows the final paragraph's last word. A link or word too
+   long for any line still breaks inside itself, as in any other paragraph,
+   rather than running out of the column with the time. A link breaks where
+   its URL may, so its end keeps the time; a word with nowhere to break is cut
+   at the line's edge, and Blink and WebKit then wrap the time alone, which
+   the model predicts too. */
+it("wraps a too-long final link or word before the hover time, as modeled", async () => {
+    const measure = await replyRowsMount();
+    const links = [
+        `Open this link to sign in:\n\n[${OAUTH_URL}](${OAUTH_URL})`,
+        `Open the authorization page at [${OAUTH_URL}](${OAUTH_URL})`,
+        `Sign in at ${OAUTH_URL}`,
+    ];
+    const words = [`The token is ${LONG_WORD}`, LONG_WORD, `The token is **${LONG_WORD}**`];
+    for (const [index, text] of [...links, ...words].entries())
+        for (const width of [360, 453, 540, 633, 820]) {
+            const row = await measure(index, text, width);
+            const paragraph = row.body.querySelector("p:last-of-type")!;
+            const range = document.createRange();
+            range.selectNodeContents(paragraph);
+            const rects = [...range.getClientRects()].filter((rect) => rect.width > 0);
+            expect(
+                Math.max(...rects.map((rect) => rect.right)),
+                `${row.label}: painted inside the column`,
+            ).toBeLessThanOrEqual(paragraph.getBoundingClientRect().right + 0.5);
+            const time = paragraph
+                .querySelector('[data-happy-desktop-ui="message-time-label"]')!
+                .getBoundingClientRect();
+            expect(
+                rects.some((rect) => rect.bottom <= time.top),
+                `${row.label}: the text wraps above the time`,
+            ).toBe(true);
+            if (index < links.length) {
+                range.setEndBefore(
+                    paragraph.querySelector('[data-happy-desktop-ui="message-trailing-inline"]')!,
+                );
+                const last = [...range.getClientRects()].filter((rect) => rect.width > 0).at(-1)!;
+                expect(
+                    last.top < time.bottom && time.top < last.bottom,
+                    `${row.label}: the time stays on the link's last line`,
+                ).toBe(true);
+            }
+            expect(row.overlap, `${row.label}: the footer clears the reply`).toBe(false);
+            expect(Math.abs(row.painted - row.reserved), row.label).toBeLessThanOrEqual(TOLERANCE);
+        }
+}, 120_000);

@@ -592,6 +592,8 @@
     line-height: 24px;
 }
 
+/* Only the no-break space and the hover time: the paragraph's last word stays
+   outside, so one too long for a line still breaks inside itself. */
 .happy-message__trailing-inline {
     white-space: nowrap;
 }

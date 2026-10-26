@@ -824,60 +824,24 @@ function markdownInlineItemsAppend(
             tableCell,
         );
 }
+/** The hover time follows a paragraph's last line after a no-break space, in a
+ * nowrap span of its own: the space glues it to the text before it as any
+ * no-break space does, and a word or link too long for a line still breaks
+ * inside itself before it. */
 function markdownTrailingInlineApply(
     runs: MarkdownInlineItem[][],
-    lastChildStart: { readonly item: number; readonly run: number },
-    lastChild: MarkdownPhrasing,
     trailingExtraWidth: number,
     baseFont: string,
     cache: MessageTextLayoutCache,
 ): void {
     if (trailingExtraWidth <= 0) return;
-    const finalRun = runs.at(-1);
-    if (!finalRun || lastChildStart.run !== runs.length - 1) return;
-    if (lastChild.type === "text") {
-        const finalItem = finalRun.at(-1);
-        if (!finalItem) return;
-        const match = /^(.*?)(\s+)(\S+)$/u.exec(finalItem.text);
-        if (match) {
-            finalRun.splice(
-                finalRun.length - 1,
-                1,
-                { ...finalItem, text: `${match[1]!}${match[2]!}` },
-                {
-                    ...finalItem,
-                    break: "never",
-                    extraWidth: (finalItem.extraWidth ?? 0) + trailingExtraWidth,
-                    text: match[3]!,
-                },
-            );
-            return;
-        }
-        finalRun[finalRun.length - 1] = {
-            ...finalItem,
-            break: "never",
-            extraWidth: (finalItem.extraWidth ?? 0) + trailingExtraWidth,
-        };
-        return;
-    }
-    const childItems = finalRun.splice(lastChildStart.item);
-    if (childItems.length === 0) return;
-    const childWidth = richItemsNaturalWidth(childItems, cache);
-    const spaceWidth = naturalTextWidth("\u00a0", baseFont, cache);
-    /* The run becomes one item; a formula in it still sets its line's height. */
-    let math: MathInlineBox | undefined;
-    for (const item of childItems)
-        if (item.math !== undefined)
-            math = {
-                ascent: Math.max(math?.ascent ?? 0, item.math.ascent),
-                descent: Math.max(math?.descent ?? 0, item.math.descent),
-                width: 0,
-            };
-    finalRun.push({
-        break: "never",
-        extraWidth: Math.max(0, childWidth + trailingExtraWidth - spaceWidth),
+    const width = naturalTextWidth("\u00a0", baseFont, cache);
+    /* The span's space is a shaped run of its own, rounded like any other. */
+    const rounding =
+        !WEBKIT_INLINE_SLICE && !GECKO_INLINE_SLICE ? Math.ceil(width * 64) / 64 - width : 0;
+    runs.at(-1)!.push({
+        extraWidth: trailingExtraWidth - width + rounding,
         font: baseFont,
-        ...(math === undefined ? {} : { math }),
         text: "\u00a0",
     });
 }
@@ -902,22 +866,9 @@ function markdownInlineRuns(
             text: "\u00a0",
         });
     }
-    let lastChildStart = { item: runs[0]!.length, run: 0 };
-    for (const [index, child] of children.entries()) {
-        if (index === children.length - 1)
-            lastChildStart = { item: runs.at(-1)!.length, run: runs.length - 1 };
+    for (const child of children)
         markdownInlineItemsAppend(child, style, runs, cache, footnotes, measure, false, tableCell);
-    }
-    const lastChild = children.at(-1);
-    if (lastChild)
-        markdownTrailingInlineApply(
-            runs,
-            lastChildStart,
-            lastChild,
-            trailingExtraWidth,
-            baseFont,
-            cache,
-        );
+    if (children.length > 0) markdownTrailingInlineApply(runs, trailingExtraWidth, baseFont, cache);
     if (suffixText.length > 0) runs.at(-1)!.push({ font: baseFont, text: suffixText });
     return runs;
 }

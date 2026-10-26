@@ -703,9 +703,9 @@ export function messageRowHeight(input: MessageRowHeightInput): number {
                 : full)
         );
     }
-    /* Grouped incoming/agent rows append their hover time to the final word in
-       one non-wrapping inline run. Include that run in the text model: at a
-       narrow width it can move the final word and timestamp onto the next line. */
+    /* Grouped incoming/agent rows glue their hover time to the final word with
+       a no-break space. Include it in the text model: at a narrow width it can
+       move the final word and timestamp onto the next line. */
     return (
         chrome +
         markdownBodyHeight(
