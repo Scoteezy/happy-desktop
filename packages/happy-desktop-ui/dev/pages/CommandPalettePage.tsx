@@ -12,6 +12,7 @@ import { SearchResults, type SearchResultGroup } from "../../src/SearchResults";
 import { SegmentedControl } from "../../src/SegmentedControl";
 import { Switch } from "../../src/Switch";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import happyMark from "../../src/assets/sidebar-icons/happy@40.png";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-060";
@@ -35,24 +36,24 @@ const suggestions: CommandPaletteResultsSection[] = [
         rows: [
             {
                 kind: "command",
-                id: "task-cmdk",
-                icon: "tasks",
-                meta: "Task",
-                title: "Fix Cmd K search",
-            },
-            {
-                kind: "command",
                 id: "bot-happy",
-                avatar: { initials: "H", tone: "violet" },
+                imageMark: { src: happyMark },
                 meta: "Bot",
                 title: "Happy",
             },
             {
                 kind: "command",
-                id: "chat-rows",
-                icon: "chat",
-                meta: "happy-desktop / search-results",
-                title: "Palette result rows",
+                id: "task-release",
+                avatar: { icon: "tasks", initials: "", type: "agent" },
+                meta: "Task",
+                title: "Release desktop",
+            },
+            {
+                kind: "command",
+                id: "project-infra",
+                avatar: { initials: "S", type: "agent" },
+                meta: "~/Developer/search-infra",
+                title: "search-infra",
             },
         ],
     },

@@ -609,3 +609,67 @@ it("draws every result row as a compact settings row: one height, FormRow's type
     // The action wears the chord that does the same outside the palette.
     expect(rows[1]!.element.getAttribute("aria-keyshortcuts")).toBe(commandShortcut("b").aria);
 });
+
+it("wears the sidebar's marks: a 20px rounded tile, the tasks glyph in a task's", async () => {
+    const view = createRenderer();
+    view.render(
+        () => (
+            <CommandPalette autoFocus={false} onClose={() => {}} onQueryChange={() => {}} query="">
+                <CommandPaletteResults
+                    activeIndex={0}
+                    sections={[
+                        {
+                            id: "recent",
+                            caption: "Recent",
+                            rows: [
+                                {
+                                    kind: "command",
+                                    id: "chat",
+                                    icon: "chat",
+                                    meta: "search-infra",
+                                    title: "Index rebuild",
+                                },
+                                {
+                                    kind: "command",
+                                    id: "bot",
+                                    avatar: { initials: "H", tone: "violet", type: "agent" },
+                                    meta: "Bot",
+                                    title: "Happy",
+                                },
+                                {
+                                    kind: "command",
+                                    id: "release",
+                                    avatar: { icon: "tasks", initials: "", type: "agent" },
+                                    meta: "Task",
+                                    title: "Release desktop",
+                                },
+                            ],
+                        },
+                    ]}
+                />
+            </CommandPalette>
+        ),
+        { width: 640, height: 461 },
+    );
+    await view.ready();
+
+    const titleX = (id: string) =>
+        view
+            .$(`[data-row-id="${id}"] [data-happy-desktop-ui="command-palette-results-title"]`)
+            .bounds().x;
+    for (const id of ["bot", "release"]) {
+        const row = view.$(
+            `[data-happy-desktop-ui="command-palette-results-row"][data-row-id="${id}"]`,
+        );
+        const avatar = view.$(`[data-row-id="${id}"] [data-happy-desktop-ui="avatar"]`);
+        expect(row.bounds().height).toBe(56);
+        // The sidebar's agent tile, at the sidebar's size.
+        expect(avatar.element.getAttribute("data-type")).toBe("agent");
+        expect([avatar.bounds().width, avatar.bounds().height]).toEqual([20, 20]);
+        // A mark keeps the words on the same column as a plain glyph does.
+        expect(titleX(id)).toBe(titleX("chat"));
+    }
+    expect(
+        view.$('[data-row-id="release"] [data-happy-desktop-ui="avatar-glyph"]').element,
+    ).toBeTruthy();
+});

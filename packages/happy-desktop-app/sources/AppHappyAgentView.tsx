@@ -79,6 +79,7 @@ import type {
     HappyAgentBotAttention,
     HappyAgentPanelArtifactView,
     HappyAgentPanelSnapshot,
+    HappyAgentRecentTabMemory,
     HappyAgentProjectAddSnapshot,
     HappyAgentPanelStore,
     HappyAgentPanelTabId,
@@ -341,6 +342,7 @@ import {
 import {
     happyAgentSpaceFocused,
     happyAgentSpaceHappyIs,
+    happyAgentSpaceDestination,
     happyAgentSpaceLabel,
     happyAgentSpaceMark,
     happyAgentSpacesNotes,
@@ -360,7 +362,9 @@ import {
     commandPaletteQuickActionRows,
     type CommandPaletteCommand,
     type CommandPaletteContext,
+    type CommandPaletteGlyph,
     type CommandPaletteRow,
+    type CommandPaletteSpace,
     type CommandPaletteSettingRow,
     type CommandPaletteTab,
 } from "./commandPaletteResults";
@@ -4570,6 +4574,46 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         // A window that keeps no fold of its own leaves it to the shell, which
         // nothing outside it can reach, so no row offers it.
         ...(props.sidebarVisibility ? { sidebar: { hidden: sidebarVisibility.hidden } } : {}),
+        // What the sidebar on screen lists at its top level, so the palette
+        // offers those rows first and wears their marks.
+        sidebarMode: spacesSidebar
+            ? {
+                  kind: "spaces",
+                  spaces: [...spaces.spaces.values()].flatMap((space): CommandPaletteSpace[] => {
+                      const destination = happyAgentSpaceDestination(space, spacesPlaces, spaces);
+                      if (!destination) return [];
+                      const title = happyAgentSpaceLabel(space);
+                      const target = space.target;
+                      return [
+                          {
+                              id: space.id,
+                              title,
+                              glyph: paletteMarkGlyph(
+                                  happyAgentSpaceMark(space, spacesPlaces, false),
+                                  title,
+                              ),
+                              target:
+                                  target.kind === "task" || target.kind === "bot"
+                                      ? { kind: target.kind, id: target.id }
+                                      : { kind: target.kind === "surface" ? "surface" : "agent" },
+                              destination,
+                          },
+                      ];
+                  }),
+              }
+            : {
+                  kind: "classic",
+                  botsHidden: new Set(
+                      (active?.bots ?? [])
+                          .filter(
+                              (bot) =>
+                                  happyAgentBotAttention(attention, active!.id, bot.id) ===
+                                  "hidden",
+                          )
+                          .map((bot) => bot.id as string),
+                  ),
+                  projectsHidden,
+              },
     };
     // The same suggestions the empty palette offers, on the gesture the reader
     // already has for discovering chords. The shell mounts it only while
@@ -4591,6 +4635,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         onSettingsSectionOpen: props.onSettingsSectionOpen,
         onUpdateApply: props.onUpdateApply,
         onTaskCreateOpen: props.onTaskCreateOpen,
+        onSurfaceOpen: props.onSurfaceOpen,
         store: commandPaletteStore,
         settings: settingsStore,
         sidebarVisibility: sidebarVisibilityStore,
@@ -5056,6 +5101,8 @@ interface HappyAgentPaletteSubject {
     workspace?: HappyAgentWorkspaceStore;
     /** The window's own fold of its left side, when it keeps one. */
     sidebar?: { readonly hidden: boolean };
+    /** What the sidebar on screen lists at its top level. */
+    sidebarMode: CommandPaletteContext["sidebarMode"];
 }
 
 /** The window acts the palette can commit to. */
@@ -5079,6 +5126,7 @@ interface HappyAgentPaletteActions {
     onSettingsSectionOpen?(section: string): void;
     onUpdateApply?(): void;
     onTaskCreateOpen?(happyAgentId: string): void;
+    onSurfaceOpen?(happyAgentId: string, surfaceId: string): void;
 }
 
 /**
@@ -5093,6 +5141,10 @@ interface HappyAgentPaletteFacts {
     readonly groupResume?: ReadonlyMap<HappyAgentGroupId, HappyAgentSessionId>;
     /** The open workspace's secondary pane, when it has one to show. */
     readonly panel?: { readonly open: boolean };
+    /** Every task the machine lists, joined or not, archived or not. */
+    readonly taskDirectory?: readonly HappyAgentTask[];
+    /** The sessions this window opened, most recently first. */
+    readonly visits: readonly HappyAgentRecentTabMemory[];
 }
 
 /**
@@ -5104,6 +5156,7 @@ const PALETTE_WORKSPACE_ABSENT: HappyAgentPaletteFacts = {
     archivedSessions: [],
     sessionCreateAvailable: false,
     tabs: [],
+    visits: [],
 };
 
 /** The open workspace's strip, sessions and files together in the reader's order. */
@@ -5165,6 +5218,8 @@ function paletteFacts(
             workspace.groupAccess.conversationRefusal === undefined &&
             workspaceLifecyclePhase(openGroup.lifecycle) !== "creating",
         tabs: paletteTabs(workspace, openGroup),
+        taskDirectory: workspace.list.taskDirectory,
+        visits: workspace.recentTabs,
         // The pane the workspace's own toggle shows, on the same condition:
         // a checkout still being prepared has nothing to put in it.
         ...(openGroup !== undefined && workspaceLifecyclePhase(openGroup.lifecycle) !== "creating"
@@ -5246,6 +5301,32 @@ function paletteContext(
         taskCreateAvailable: subject.taskCreateAvailable,
         ...(subject.sidebar ? { sidebar: subject.sidebar } : {}),
         ...(facts.panel ? { panel: facts.panel } : {}),
+        ...(facts.taskDirectory ? { taskDirectory: facts.taskDirectory } : {}),
+        sidebarMode: subject.sidebarMode,
+        visits: facts.visits,
+    };
+}
+
+/**
+ * A spaces row's mark as the palette draws it: its clay icon or stem cell as
+ * drawn, and otherwise the same rounded tile the row's own Avatar is — its
+ * picture, else its glyph, else its initial.
+ */
+function paletteMarkGlyph(
+    mark: Pick<SidebarItem, "icon" | "imageMark" | "imageUrl" | "stemCell">,
+    title: string,
+): CommandPaletteGlyph {
+    if (mark.imageMark || mark.stemCell)
+        return {
+            kind: "mark",
+            ...(mark.imageMark ? { imageMark: mark.imageMark } : {}),
+            ...(mark.stemCell ? { stemCell: mark.stemCell } : {}),
+        };
+    return {
+        kind: "avatar",
+        initials: title.slice(0, 1).toUpperCase(),
+        ...(mark.imageUrl ? { imageUrl: mark.imageUrl } : {}),
+        ...(mark.icon ? { icon: mark.icon } : {}),
     };
 }
 
@@ -5264,7 +5345,7 @@ function HappyAgentQuickActions(
     const items = commandPaletteQuickActionRows(paletteContext(props, props.facts))
         .slice(0, COMMAND_PALETTE_PREVIEW_LIMIT)
         .flatMap((row): QuickActionsCardItem[] =>
-            row.glyph.kind === "avatar"
+            row.glyph.kind === "avatar" || row.glyph.kind === "mark"
                 ? []
                 : [
                       {
@@ -5430,14 +5511,22 @@ function paletteResultsRow(
             ? { icon: row.glyph.name }
             : row.glyph.kind === "emphasis"
               ? { emphasis: row.glyph.emphasis }
-              : {
-                    avatar: {
-                        initials: row.glyph.initials,
-                        ...(row.glyph.imageUrl === undefined
-                            ? {}
-                            : { imageUrl: row.glyph.imageUrl }),
-                    },
-                }),
+              : row.glyph.kind === "mark"
+                ? {
+                      ...(row.glyph.imageMark ? { imageMark: row.glyph.imageMark } : {}),
+                      ...(row.glyph.stemCell ? { stemCell: row.glyph.stemCell } : {}),
+                  }
+                : {
+                      // The rounded tile the sidebar gives the same row.
+                      avatar: {
+                          initials: row.glyph.initials,
+                          type: "agent" as const,
+                          ...(row.glyph.imageUrl === undefined
+                              ? {}
+                              : { imageUrl: row.glyph.imageUrl }),
+                          ...(row.glyph.icon === undefined ? {} : { icon: row.glyph.icon }),
+                      },
+                  }),
         ...(row.shortcut ? { shortcut: row.shortcut } : {}),
     };
 }
@@ -5643,6 +5732,9 @@ function paletteCommandRun(
             return;
         case "sidebarHiddenUpdate":
             props.sidebarVisibility.sidebarHiddenUpdate(command.hidden);
+            return;
+        case "surfaceOpen":
+            props.onSurfaceOpen?.(command.happyAgentId, command.surfaceId);
             return;
         case "panelToggle":
             props.workspace?.panel.panelToggle();

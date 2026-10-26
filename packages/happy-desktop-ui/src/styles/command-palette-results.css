@@ -160,6 +160,15 @@
     color: var(--text-secondary);
 }
 
+/* A clay icon stands as drawn, in the 20px box the sidebar gives it. */
+.happy-command-palette-results__image-mark {
+    display: block;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
 /* A waiting update is the one piece of news in the list, and it wears the same
    warning role as the sidebar footer's mark — the only colour among neutral
    glyphs, in both places, so it is recognized rather than read. */

@@ -8,6 +8,7 @@ import { SegmentedControl } from "../../src/SegmentedControl";
 import { Switch } from "../../src/Switch";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 import { type ReactNode } from "react";
+import happyMark from "../../src/assets/sidebar-icons/happy@40.png";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-273";
@@ -37,33 +38,50 @@ const suggestions: CommandPaletteResultsSection[] = [
         id: "recent",
         caption: "Recent",
         rows: [
-            {
-                kind: "command",
-                id: "task-cmdk",
-                icon: "tasks",
-                meta: "Task",
-                title: "Fix Cmd K search",
-            },
-            {
-                kind: "command",
-                id: "chat-notes",
-                icon: "chat",
-                meta: "Release desktop",
-                title: "Write the release notes",
-            },
+            // The sidebar's rows lead, last opened first, each in the mark its
+            // sidebar row wears: a bot's picture, a project's, the tasks glyph.
             {
                 kind: "command",
                 id: "bot-happy",
-                avatar: { initials: "H", tone: "violet" },
+                imageMark: { src: happyMark },
                 meta: "Bot",
                 title: "Happy",
             },
             {
                 kind: "command",
-                id: "chat-rows",
+                id: "project-infra",
+                avatar: { initials: "S", type: "agent" },
+                meta: "~/Developer/search-infra",
+                title: "search-infra",
+            },
+            {
+                kind: "command",
+                id: "task-release",
+                avatar: { icon: "tasks", initials: "", type: "agent" },
+                meta: "Task",
+                title: "Release desktop",
+            },
+            {
+                kind: "command",
+                id: "task-onboarding",
+                avatar: { initials: "KS", type: "agent" },
+                meta: "Task · Kirill",
+                title: "Onboarding copy pass",
+            },
+            // Then other work: a chat inside a project, an archived task.
+            {
+                kind: "command",
+                id: "chat-index",
                 icon: "chat",
-                meta: "happy-desktop / search-results",
-                title: "Palette result rows",
+                meta: "search-infra",
+                title: "Index rebuild",
+            },
+            {
+                kind: "command",
+                id: "task-old",
+                avatar: { icon: "tasks", initials: "", type: "agent" },
+                meta: "Archived task",
+                title: "Old search experiment",
             },
         ],
     },
@@ -226,10 +244,10 @@ export function CommandPaletteResultsPage() {
         >
             <div className="specimen-grid">
                 <BodySpecimen
-                    detail="empty query · the waiting update, then what was worked in last across tasks, bots, and projects · highlight on the first row"
+                    detail="empty query · the waiting update, then the sidebar's tasks, bots, and projects in their sidebar marks, last opened first, then other work · no subtasks · highlight on the first row"
                     label="Suggestions"
                     number="PR-01"
-                    rule="622px body width · 56px rows · 28px captions"
+                    rule="622px body width · 56px rows · 20px sidebar marks · 28px captions"
                 >
                     <CommandPaletteResults activeIndex={0} sections={suggestions} />
                 </BodySpecimen>
@@ -237,10 +255,10 @@ export function CommandPaletteResultsPage() {
 
             <div className="specimen-grid">
                 <BodySpecimen
-                    detail="the flat index counts across sections: row 3 is the third recent chat"
+                    detail="the flat index counts across sections: row 3 is the third recent row"
                     label="Highlight across sections"
                     number="PR-02"
-                    rule="index 3 of 5 · captions are not rows"
+                    rule="index 3 of 7 · captions are not rows"
                 >
                     <CommandPaletteResults activeIndex={3} sections={suggestions} />
                 </BodySpecimen>

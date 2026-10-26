@@ -4,6 +4,8 @@ import { KeyCap } from "./Badge";
 import { EmptyState } from "./EmptyState";
 import { Icon, type IconName } from "./Icon";
 import type { KeyboardShortcut } from "./keyboardShortcut";
+import type { StemCellMark } from "./StemCell";
+import { StemCellGrowth, type ImageMark } from "./StemCellGrowth";
 import { Ionicon } from "./vectorIcons/VectorIcon";
 /**
  * A row whose leading lane is the product's own mark for one kind of news
@@ -13,10 +15,19 @@ import { Ionicon } from "./vectorIcons/VectorIcon";
  * takes the lane from `icon` and `avatar`.
  */
 export type CommandPaletteRowEmphasis = "update";
+/**
+ * A face in the leading lane, drawn by the same Avatar at the same 20px the
+ * sidebar draws its rows' faces at. `agent` is the rounded tile a bot, a task,
+ * or a project wears there; `human` the round one a person wears. A tile with
+ * no picture may hold a glyph instead of initials, as a task or the home
+ * project's does.
+ */
 export type CommandPaletteResultsAvatar = {
     initials: string;
     imageUrl?: string;
+    icon?: IconName;
     tone?: ToneName;
+    type?: "agent" | "human";
 };
 /**
  * A row that runs something — open a chat, create a workspace, jump to a
@@ -31,6 +42,12 @@ export type CommandPaletteCommandRow = {
     /** Leading glyph. An `avatar` takes the lane instead when both are given. */
     icon?: IconName;
     avatar?: CommandPaletteResultsAvatar;
+    /**
+     * The artwork a sidebar row wears — a clay icon, or the stem cell of work
+     * still taking shape — at the sidebar's own 20px. It outranks `avatar`.
+     */
+    imageMark?: ImageMark;
+    stemCell?: StemCellMark;
     /** The product's own mark for this row's kind of news; it wins the lane. */
     emphasis?: CommandPaletteRowEmphasis;
     /** Trailing cap. The chord is announced on the row and drawn decoratively. */
@@ -126,12 +143,21 @@ function commandRowContent(row: CommandPaletteCommandRow) {
             >
                 {row.emphasis === "update" ? (
                     <Ionicon name="arrow-up-circle" size={18} />
+                ) : row.imageMark || row.stemCell ? (
+                    <StemCellGrowth
+                        imageClassName="happy-command-palette-results__image-mark"
+                        imageMark={row.imageMark}
+                        size={20}
+                        stemCell={row.stemCell}
+                    />
                 ) : row.avatar ? (
                     <Avatar
+                        icon={row.avatar.icon}
                         imageUrl={row.avatar.imageUrl}
                         initials={row.avatar.initials}
-                        size="sm"
+                        size="xs"
                         tone={row.avatar.tone}
+                        type={row.avatar.type}
                     />
                 ) : row.icon ? (
                     <Icon name={row.icon} size={16} />

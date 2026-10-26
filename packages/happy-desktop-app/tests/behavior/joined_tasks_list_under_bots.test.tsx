@@ -566,6 +566,12 @@ it("offers New task in the command palette with its chord, only where a task can
         archivedSessions: [],
         bots: [],
         tasks: [],
+        sidebarMode: {
+            kind: "classic" as const,
+            botsHidden: new Set<string>(),
+            projectsHidden: false,
+        },
+        visits: [],
         happyAgentId: "local",
         projects: [],
         sessionCreateAvailable: false,

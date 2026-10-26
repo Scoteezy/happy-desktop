@@ -2,8 +2,11 @@ import { expect, it } from "vitest";
 import type {
     HappyAgentBot,
     HappyAgentBotId,
+    HappyAgentGroupId,
     HappyAgentProjectGroup,
     HappyAgentProjectId,
+    HappyAgentRecentTabMemory,
+    HappyAgentSessionId,
     HappyAgentTask,
     HappyAgentTaskId,
     HappyAgentWorktreeGroup,
@@ -15,6 +18,7 @@ import { happyAgentSettingsCategoryExists } from "../sources/views/AppHappyAgent
 
 const NOW = 1_764_000_000_000;
 const MINUTE = 60_000;
+const PHOTO = "data:image/png;base64,iVBORw0KGgo=";
 
 const conversation = (id: string, title: string, minutesAgo: number) => ({
     id,
@@ -29,33 +33,37 @@ const task = (
     id: string,
     name: string,
     minutesAgo: number,
-    subtasks: HappyAgentTask["subtasks"] = [],
+    options: { subtasks?: HappyAgentTask["subtasks"]; archived?: boolean } = {},
 ): HappyAgentTask => ({
     id: id as HappyAgentTaskId,
     workspaceId: `ws_${id}` as HappyAgentWorktreeId,
     name,
     conversation: conversation(`ses_${id}`, name, minutesAgo),
-    subtasks,
+    subtasks: options.subtasks ?? [],
     owner: null,
     path: `/Users/happy/Tasks/${id}`,
     displayPath: `~/Tasks/${id}`,
     createdAt: 1,
-    archived: false,
+    archived: options.archived === true,
     canArchive: true,
     membership: { orderKey: id },
 });
 
+const NOTES = {
+    workspaceId: "ws_release" as HappyAgentWorktreeId,
+    path: "/Users/happy/Tasks/release",
+    // The subtask changed last of everything here.
+    conversation: conversation("ses_notes", "Write the changelog", 1),
+    subtasks: [],
+};
+
 const TASKS: readonly HappyAgentTask[] = [
     task("cmdk", "Fix Cmd K search", 5),
-    task("release", "Release desktop", 40, [
-        {
-            workspaceId: "ws_release" as HappyAgentWorktreeId,
-            path: "/Users/happy/Tasks/release",
-            conversation: conversation("ses_notes", "Write the release notes", 20),
-            subtasks: [],
-        },
-    ]),
+    task("release", "Release desktop", 40, { subtasks: [NOTES] }),
 ];
+
+// Archived, never joined: found by name, listed under the sidebar's work.
+const OLD_TASK = task("search_old", "Old search experiment", 2, { archived: true });
 
 const BOTS: readonly HappyAgentBot[] = [
     {
@@ -67,12 +75,12 @@ const BOTS: readonly HappyAgentBot[] = [
         orderKey: "a",
         path: "/Users/happy/Bots/happy",
         displayPath: "~/Bots/happy",
+        avatar: { url: PHOTO, thumbhash: "h" },
         subtasks: [],
     },
 ];
 
-// A project and a worktree whose folder names contain "search", holding chats
-// whose own titles do not.
+// A project whose folder name contains "search", holding a chat whose title does not.
 const PROJECTS = [
     {
         id: "prj_infra" as HappyAgentProjectId,
@@ -83,23 +91,27 @@ const PROJECTS = [
         kind: "regular",
         lifecycle: { phase: "ready" },
         activity: "idle",
-        updatedAt: NOW,
+        updatedAt: NOW - 10 * MINUTE,
+        avatar: { url: PHOTO },
         conversations: [conversation("ses_index", "Index rebuild", 10)],
-        worktrees: [
-            {
-                id: "wt_rows" as HappyAgentWorktreeId,
-                name: "search-results",
-                conversations: [conversation("ses_rows", "Palette rows", 60 * 24)],
-            } as unknown as HappyAgentWorktreeGroup,
-        ],
+        worktrees: [] as HappyAgentWorktreeGroup[],
     },
 ] as unknown as readonly HappyAgentProjectGroup[];
+
+const visit = (groupId: string, sessionId: string): HappyAgentRecentTabMemory => ({
+    type: "session",
+    groupId: groupId as HappyAgentGroupId,
+    sessionId: sessionId as HappyAgentSessionId,
+});
 
 const input = (overrides: Partial<CommandPaletteInput> = {}): CommandPaletteInput => ({
     happyAgentId: "local",
     projects: PROJECTS,
     bots: BOTS,
     tasks: TASKS,
+    taskDirectory: [...TASKS, OLD_TASK],
+    sidebarMode: { kind: "classic", botsHidden: new Set(), projectsHidden: false },
+    visits: [],
     archivedSessions: [],
     tabs: [],
     sessionCreateAvailable: false,
@@ -113,53 +125,127 @@ const input = (overrides: Partial<CommandPaletteInput> = {}): CommandPaletteInpu
     ...overrides,
 });
 
-it("opens on the chats worked in last, newest first, across tasks, bots, and projects", () => {
-    const result = commandPaletteResults(input({ chatId: "ses_cmdk" }));
+const ids = (result: ReturnType<typeof commandPaletteResults>) => result.rows.map((row) => row.id);
+
+it("opens on the sidebar's work, last opened first, then other work; never a subtask", () => {
+    const result = commandPaletteResults(
+        input({
+            chatId: "ses_cmdk",
+            // The reader went to Happy, then to the project, then back to the task.
+            visits: [
+                visit("ws_cmdk", "ses_cmdk"),
+                visit("prj_infra", "ses_index"),
+                visit("ws_happy", "ses_happy"),
+            ],
+        }),
+    );
     expect(result.sections.map((section) => section.id)).toEqual(["recent"]);
-    // The chat on screen is left out; the rest are in order of their last change.
-    expect(result.rows.map((row) => row.kind === "command" && row.title)).toEqual([
-        "Index rebuild",
-        "Write the release notes",
-        "Release desktop",
-        "Happy",
-        "Palette rows",
+    expect(ids(result)).toEqual([
+        // The sidebar's rows: the task on screen is left out, the visited ones
+        // lead in the order they were visited, the rest follow by last change.
+        "workspace:prj_infra",
+        "bot:bot_happy",
+        "task:release",
+        // Other work: the project chat the reader opened, then a task they
+        // never joined.
+        "chat:ses_index",
+        "task:search_old",
     ]);
-    expect(result.rows[1]).toMatchObject({
-        meta: "Release desktop",
-        command: {
-            kind: "chatOpen",
-            groupId: "ws_release",
-            chatId: "ses_notes",
-            archived: false,
-        },
+    expect(ids(result)).not.toContain("chat:ses_notes");
+});
+
+it("puts the sidebar first: a hidden bot or a project left out of the sidebar sinks", () => {
+    const result = commandPaletteResults(
+        input({
+            sidebarMode: {
+                kind: "classic",
+                botsHidden: new Set(["bot_happy"]),
+                projectsHidden: true,
+            },
+            visits: [visit("ws_happy", "ses_happy"), visit("prj_infra", "ses_index")],
+        }),
+    );
+    expect(ids(result).slice(0, 2)).toEqual(["task:cmdk", "task:release"]);
+    expect(result.rows.find((row) => row.id === "bot:bot_happy")).toMatchObject({
+        meta: "Hidden bot",
     });
 });
 
-it("finds tasks by their titles, and never a chat only because of its folder", () => {
+it("wears the sidebar's marks: pictures in rounded tiles, the tasks glyph in its tile", () => {
+    const rows = commandPaletteResults(input()).rows;
+    expect(rows.find((row) => row.id === "bot:bot_happy")).toMatchObject({
+        glyph: { kind: "avatar", initials: "H", imageUrl: PHOTO },
+    });
+    expect(rows.find((row) => row.id === "workspace:prj_infra")).toMatchObject({
+        glyph: { kind: "avatar", initials: "S", imageUrl: PHOTO },
+    });
+    expect(rows.find((row) => row.id === "task:cmdk")).toMatchObject({
+        glyph: { kind: "avatar", icon: "tasks" },
+    });
+});
+
+it("searches titles only, sidebar work first, and lets a subtask's title find its parent", () => {
     const result = commandPaletteResults(input({ query: "search" }));
-    const chats = result.sections.find((section) => section.id === "chats");
-    expect(chats?.rows.map((row) => row.id)).toEqual(["chat:ses_cmdk"]);
-    expect(chats?.rows[0]).toMatchObject({
-        title: "Fix Cmd K search",
-        meta: "Task",
-        command: { kind: "chatOpen", groupId: "ws_cmdk", chatId: "ses_cmdk" },
-    });
-    // The folders themselves still answer, as workspaces.
-    expect(
-        result.sections.find((section) => section.id === "workspaces")?.rows.map((row) => row.id),
-    ).toEqual(["workspace:prj_infra", "workspace:wt_rows"]);
+    expect(result.sections.map((section) => section.id)).toEqual(["work"]);
+    expect(ids(result)).toEqual([
+        "workspace:prj_infra",
+        "task:cmdk",
+        // Archived and never joined, so below the sidebar's own work.
+        "task:search_old",
+    ]);
+    // The project's chat lives in a "search" folder but is not called that.
+    expect(ids(result)).not.toContain("chat:ses_index");
+
+    const parent = commandPaletteResults(input({ query: "changelog" }));
+    expect(ids(parent)).toEqual(["task:release"]);
 });
 
-it("matches the words of a title in any order", () => {
-    const result = commandPaletteResults(input({ query: "notes release" }));
-    expect(result.rows[0]).toMatchObject({ id: "chat:ses_notes" });
+it("ranks a recently opened match above an older one of the same quality", () => {
+    const result = commandPaletteResults(
+        input({ query: "e", visits: [visit("ws_release", "ses_notes")] }),
+    );
+    expect(ids(result)[0]).toBe("task:release");
+});
+
+it("lists the spaces sidebar's rows first, under their names and marks", () => {
+    const result = commandPaletteResults(
+        input({
+            sidebarMode: {
+                kind: "spaces",
+                spaces: [
+                    {
+                        id: "spc_release",
+                        title: "Ship 0.4.90",
+                        glyph: { kind: "mark", imageMark: { src: "rocket.png" } },
+                        target: { kind: "task", id: "release" },
+                        destination: { kind: "chat", groupId: "ws_release", chatId: "ses_release" },
+                    },
+                    {
+                        id: "spc_list",
+                        title: "Movies",
+                        glyph: { kind: "icon", name: "doc" },
+                        target: { kind: "surface" },
+                        destination: { kind: "surface", surfaceId: "srf_movies" },
+                    },
+                ],
+            },
+        }),
+    );
+    expect(ids(result).slice(0, 2)).toEqual(["task:release", "space:spc_list"]);
+    expect(result.rows[0]).toMatchObject({
+        title: "Ship 0.4.90",
+        glyph: { kind: "mark", imageMark: { src: "rocket.png" } },
+    });
+    expect(result.rows[1]).toMatchObject({
+        command: { kind: "surfaceOpen", surfaceId: "srf_movies" },
+    });
 });
 
 it("answers “fold sidebar” with the sidebar's own action and chord", () => {
     const result = commandPaletteResults(
         input({ query: "fold sidebar", sidebar: { hidden: false }, panel: { open: false } }),
     );
-    expect(result.rows.map((row) => row.id)).toEqual(["action:sidebar-toggle"]);
+    expect(ids(result)).toEqual(["action:sidebar-toggle"]);
     expect(result.rows[0]).toMatchObject({
         title: "Hide sidebar",
         shortcut: { caps: APP_SHORTCUTS.sidebarToggle.caps },
@@ -172,6 +258,18 @@ it("answers “fold sidebar” with the sidebar's own action and chord", () => {
     });
     // A window that keeps no fold of its own offers none.
     expect(commandPaletteResults(input({ query: "fold sidebar" })).rows).toEqual([]);
+});
+
+it("lists a section with a better answer first", () => {
+    // "Hide sidebar" starts with what was typed; the task only contains it.
+    const result = commandPaletteResults(
+        input({
+            query: "hide",
+            tasks: [...TASKS, task("hidden", "Why tasks hide on reload", 1)],
+            sidebar: { hidden: false },
+        }),
+    );
+    expect(result.sections.map((section) => section.id)).toEqual(["actions", "work", "settings"]);
 });
 
 it.each([false, true])(
@@ -190,5 +288,6 @@ it.each([false, true])(
         expect(
             result.rows.some((row) => row.kind === "command" && row.id === "settings:experimental"),
         ).toBe(false);
+        void experimentalFeaturesEnabled;
     },
 );
