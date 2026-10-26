@@ -1,10 +1,16 @@
-import { Fragment, useState, type CSSProperties } from "react";
+import { Fragment, useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { ConversationMediaItem, ConversationMediaLayout } from "happy-desktop-state";
 import { artifactSizeText } from "./pages/artifacts/artifactPresentation";
 import { conversationMediaPlan, mediaFlowPointSize } from "./mediaLayout";
 import { MediaFlow } from "./MediaFlow";
 import { MediaVideoTile } from "./MediaVideoTile";
 import { MediaTree } from "./MediaTree";
+import {
+    mediaItemsFramed,
+    mediaItemsUnframed,
+    mediaVideoFramesSubscribe,
+    mediaVideoFramesVersion,
+} from "./mediaVideoFrames";
 import { FileTreeFamilyIcon, fileTreeFamily } from "./FileTree";
 import { Icon } from "./Icon";
 import { ResultCard } from "./ResultCard";
@@ -189,7 +195,19 @@ function mediaTypeLabel(item: ConversationMediaItem): string {
  * which `conversationRowHeight` shares — so the transcript reserves exactly
  * the height this paints. Nothing is cropped unless a tree asks for it.
  */
+/* Items whose sizes are all stated never wait on a recording's metadata. */
+const framesIgnore = () => () => undefined;
+const framesSettled = () => 0;
+
 export function ConversationMedia(props: ConversationMediaProps) {
+    /* A recording that stated no size is laid out at the size its metadata
+       reports, once it has (`mediaVideoFrames`); only such a set listens. */
+    const unframed = mediaItemsUnframed(props.items);
+    const framesAt = useSyncExternalStore(
+        unframed ? mediaVideoFramesSubscribe : framesIgnore,
+        unframed ? mediaVideoFramesVersion : framesSettled,
+    );
+    const items = mediaItemsFramed(props.items, unframed ? framesAt : undefined);
     const open = props.onItemOpen;
     const className = ["happy-conversation-media", props.className].filter(Boolean).join(" ");
     const image = (tile: {
@@ -201,7 +219,7 @@ export function ConversationMedia(props: ConversationMediaProps) {
         className?: string;
     }) => {
         const index = tile.index;
-        const item = props.items[index]!;
+        const item = items[index]!;
         const placeholderUrl = item.thumbhash ? thumbhashDataUrl(item.thumbhash) : undefined;
         const pointSize = item.scale && item.scale > 1 ? mediaFlowPointSize(item) : undefined;
         return (
@@ -225,7 +243,7 @@ export function ConversationMedia(props: ConversationMediaProps) {
         className?: string;
     }) => {
         const index = tile.index;
-        const item = props.items[index]!;
+        const item = items[index]!;
         const posterUrl = item.thumbhash ? thumbhashDataUrl(item.thumbhash) : undefined;
         return (
             <MediaVideoTile
@@ -239,7 +257,7 @@ export function ConversationMedia(props: ConversationMediaProps) {
         );
     };
     const card = (index: number) => {
-        const item = props.items[index]!;
+        const item = items[index]!;
         const family = fileTreeFamily({ kind: "file", name: item.name });
         return (
             <ResultCard
@@ -265,9 +283,9 @@ export function ConversationMedia(props: ConversationMediaProps) {
                 style={props.style}
             >
                 <MediaTree
-                    items={props.items}
+                    items={items}
                     renderItem={(rendered) => {
-                        const item = props.items[rendered.index]!;
+                        const item = items[rendered.index]!;
                         if (item.kind === "image")
                             return image({
                                 index: rendered.index,
@@ -294,7 +312,7 @@ export function ConversationMedia(props: ConversationMediaProps) {
                 />
             </div>
         );
-    const indexed = props.items.map((item, index) => ({ item, index }));
+    const indexed = items.map((item, index) => ({ item, index }));
     const visuals = indexed.filter(({ item }) => item.kind === "image" || item.kind === "video");
     const plan = conversationMediaPlan(
         visuals.map(({ item }) => item),
@@ -316,7 +334,7 @@ export function ConversationMedia(props: ConversationMediaProps) {
                     plan={plan}
                     renderTile={(position, style) => {
                         const index = visuals[position]!.index;
-                        return props.items[index]!.kind === "video"
+                        return items[index]!.kind === "video"
                             ? video({ index, style })
                             : image({ index, style });
                     }}

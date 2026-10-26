@@ -10,6 +10,7 @@ import {
     type ConversationToolCall,
 } from "happy-desktop-state";
 import {
+    mediaAspectRecordings,
     mediaDesktopRecording,
     mediaPhoneInbox,
     mediaPhoneProfile,
@@ -892,8 +893,16 @@ export const inlineEntries: readonly ConversationEntry[] = [
     message("m-48", agentAuthor, INLINE_REPLY, "2026-10-20T10:04:20.000Z"),
 ];
 
-/* Recordings an agent made on a phone and presented, then laid out again. */
-const phoneTakes = [mediaPhoneInbox, mediaPhoneProfile, mediaPhoneSettings];
+/*
+ * Recordings an agent made on a phone and presented, then laid out again —
+ * with no stated size, as today's daemon presents every recording, so the
+ * transcript learns each shape from the recording itself.
+ */
+const unsized = ({ width: _width, height: _height, ...item }: ConversationMediaItem) => ({
+    ...item,
+    url: `${item.url}#transcript`,
+});
+const phoneTakes = [mediaPhoneInbox, mediaPhoneProfile, mediaPhoneSettings].map(unsized);
 const phoneRetakes = phoneTakes.map((take) =>
     sourced(
         { ...take, name: take.name.replace(".webm", "-dark.webm") },
@@ -932,7 +941,7 @@ export const videoEntries: readonly ConversationEntry[] = [
     ),
     message("m-63", agentAuthor, "And the desktop walkthrough:", "2026-10-20T10:06:40.000Z"),
     activity(
-        mediaTool("tool-present-desktop", "present_files", [mediaDesktopRecording]),
+        mediaTool("tool-present-desktop", "present_files", [unsized(mediaDesktopRecording)]),
         "m-64",
         "2026-10-20T10:06:41.000Z",
     ),
@@ -942,4 +951,10 @@ export const videoEntries: readonly ConversationEntry[] = [
         "2026-10-20T10:07:00.000Z",
     ),
     message("m-66", agentAuthor, VIDEO_REPLY, "2026-10-20T10:07:10.000Z"),
+    message("m-67", agentAuthor, "And the odd sizes:", "2026-10-20T10:07:20.000Z"),
+    activity(
+        mediaTool("tool-present-aspects", "present_files", mediaAspectRecordings.map(unsized)),
+        "m-68",
+        "2026-10-20T10:07:21.000Z",
+    ),
 ];

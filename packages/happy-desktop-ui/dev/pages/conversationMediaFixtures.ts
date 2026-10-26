@@ -245,6 +245,38 @@ export const mediaDesktopRecording = recording(
     new URL("../assets/screen-recording-desktop.webm", import.meta.url).href,
 );
 
+/*
+ * Recordings at awkward shapes, encoded at exactly the sizes they state, each
+ * framed by a bright band so any letterbox or padding around the picture is
+ * plain to see.
+ */
+function aspect(width: number, height: number, asset: string): ConversationMediaItem {
+    return recording(`aspect-${String(width)}x${String(height)}.webm`, width, height, asset);
+}
+
+export const mediaAspectRecordings: readonly ConversationMediaItem[] = [
+    aspect(886, 1920, new URL("../assets/aspect-886x1920.webm", import.meta.url).href),
+    aspect(1170, 2532, new URL("../assets/aspect-1170x2532.webm", import.meta.url).href),
+    aspect(480, 480, new URL("../assets/aspect-480x480.webm", import.meta.url).href),
+    aspect(1280, 360, new URL("../assets/aspect-1280x360.webm", import.meta.url).href),
+];
+
+/**
+ * The same recordings as today's daemon presents them: no stated size, so the
+ * layout learns each shape from the recording's own metadata.
+ */
+export const mediaAspectRecordingsUnsized: readonly ConversationMediaItem[] =
+    mediaAspectRecordings.map(({ width: _width, height: _height, ...item }) => ({
+        ...item,
+        // Its own address, so nothing learned from the sized copies applies.
+        url: `${item.url}#unsized`,
+        name: item.name.replace(".webm", "-unsized.webm"),
+        source: {
+            path: `recordings/${item.name.replace(".webm", "-unsized.webm")}`,
+            absolutePath: `/work/recordings/${item.name.replace(".webm", "-unsized.webm")}`,
+        },
+    }));
+
 export const mediaDocument: ConversationMediaItem = {
     kind: "document",
     name: "Q3 launch readiness review.pdf",

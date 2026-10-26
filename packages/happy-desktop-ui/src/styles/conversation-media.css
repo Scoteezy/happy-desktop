@@ -320,7 +320,10 @@ button.happy-media-image-tile:focus-visible {
     overflow: hidden;
     background: var(--surface-pressed);
     border-radius: var(--happy-radius-window);
-    container-type: inline-size;
+    /* Both axes: a short, wide recording keeps fewer controls. The box is
+       always sized from outside (a layout's width and the recording's
+       shape), never by what is drawn over it. */
+    container-type: size;
     /* Played fraction, painted per frame by the component. */
     --happy-media-video-tile-progress: 0;
 }
@@ -522,11 +525,12 @@ button.happy-media-image-tile:focus-visible {
 
 /* ---- What shows when ----
 
-   Idle: the frame alone; the pointer brings only the play button.
-   Started: the pointer brings the corners and the timeline as well, and
-   they rest after a moment of stillness while it plays; otherwise only the
-   line shows. Keyboard focus inside brings everything, so a control is never
-   operated unseen. Hidden controls take no clicks. */
+   Not playing — before the first play, paused, or ended: the play button and
+   the timeline always, so the tile reads as a recording and its length and
+   position are in view; the pointer adds the corners. Playing: everything
+   while the pointer moves over it, resting after a moment of stillness;
+   otherwise only the thin line. Keyboard focus inside brings everything, so
+   a control is never operated unseen. Hidden controls take no clicks. */
 .happy-media-video-tile__center,
 .happy-media-video-tile__corners,
 .happy-media-video-tile__bar,
@@ -540,38 +544,61 @@ button.happy-media-image-tile:focus-visible {
     pointer-events: none;
 }
 
-.happy-media-video-tile:hover:not([data-resting]) .happy-media-video-tile__center,
-.happy-media-video-tile:has(:focus-visible) .happy-media-video-tile__center {
+.happy-media-video-tile:not([data-playback="playing"])
+    :is(.happy-media-video-tile__center, .happy-media-video-tile__bar),
+.happy-media-video-tile:hover:not([data-resting])
+    :is(
+        .happy-media-video-tile__center,
+        .happy-media-video-tile__corners,
+        .happy-media-video-tile__bar
+    ),
+.happy-media-video-tile:has(:focus-visible)
+    :is(
+        .happy-media-video-tile__center,
+        .happy-media-video-tile__corners,
+        .happy-media-video-tile__bar
+    ) {
     opacity: 1;
 }
 
-.happy-media-video-tile:not([data-playback="idle"]):hover:not([data-resting])
-    :is(.happy-media-video-tile__corners, .happy-media-video-tile__bar),
-.happy-media-video-tile:not([data-playback="idle"]):has(:focus-visible)
-    :is(.happy-media-video-tile__corners, .happy-media-video-tile__bar) {
-    opacity: 1;
-}
-
-.happy-media-video-tile:not([data-playback="idle"]):hover:not([data-resting])
+.happy-media-video-tile:not([data-playback="playing"]) .happy-media-video-tile__bar,
+.happy-media-video-tile:hover:not([data-resting])
     :is(.happy-media-video-tile__control, .happy-media-video-tile__bar),
-.happy-media-video-tile:not([data-playback="idle"]):has(:focus-visible)
+.happy-media-video-tile:has(:focus-visible)
     :is(.happy-media-video-tile__control, .happy-media-video-tile__bar) {
     pointer-events: auto;
 }
 
-.happy-media-video-tile:not([data-playback="idle"]) .happy-media-video-tile__line {
+.happy-media-video-tile[data-playback="playing"] .happy-media-video-tile__line {
     opacity: 1;
 }
 
-.happy-media-video-tile:not([data-playback="idle"]):hover:not([data-resting])
+.happy-media-video-tile[data-playback="playing"]:hover:not([data-resting])
     .happy-media-video-tile__line,
-.happy-media-video-tile:has(:focus-visible) .happy-media-video-tile__line {
+.happy-media-video-tile[data-playback="playing"]:has(:focus-visible) .happy-media-video-tile__line {
     opacity: 0;
 }
 
 /* A tile this narrow keeps the timeline and lets the readouts go. */
 @container (max-width: 159px) {
     .happy-media-video-tile__time {
+        display: none;
+    }
+}
+
+/* Too short for the play button between the corners and the timeline (two
+   28px rows, their 8px gaps and inset, and 48px between): the timeline
+   stays, and a click on the frame still plays. */
+@container (max-height: 135px) {
+    .happy-media-video-tile__center {
+        display: none;
+    }
+}
+
+/* Too short for the corners above the timeline: the expand and mute
+   controls go, and opening and muting remain in the full viewer. */
+@container (max-height: 79px) {
+    .happy-media-video-tile__corners {
         display: none;
     }
 }

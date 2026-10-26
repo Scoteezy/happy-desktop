@@ -177,8 +177,9 @@ const DEFINITE_HEIGHT = /^\d+(?:\.\d+)?(?:px|em|rem)?$/u;
  * width it is drawn at its natural size in points, at most its container's
  * width and to the width `.happy-media-tree__item`'s height cap leaves it —
  * or, given only a fixed height, as wide as that height and its shape make
- * it. A picture the layout sized past the cap letterboxes, unless the layout
- * set a height of its own.
+ * it. A picture at its own shape never passes the cap: whatever width it was
+ * given, it narrows to the width the cap leaves it rather than letterboxing,
+ * unless the layout set a height or a shape of its own.
  *
  * `object-fit` and `object-position` describe the picture inside the box, not
  * the box, and go to the tile instead.
@@ -220,11 +221,14 @@ function mediaTreeItemStyle(
         else sized.width = natural ? `min(100%, ${String(natural.width)}px)` : "100%";
     }
     if (sized.maxHeight === undefined && sized.height !== undefined) sized.maxHeight = "none";
-    /* A picture at its own size that would pass the height cap narrows to
-       it instead of letterboxing: the cap is a size, not a crop. */
+    /* A picture at its own shape that would pass the height cap — at its
+       own size or at the width the layout gave it — narrows to it instead
+       of letterboxing: the cap is a size, not a band around the picture. */
     if (sized.maxWidth === undefined)
         sized.maxWidth =
-            naturalWidth && sized.maxHeight === undefined && sized.aspectRatio === String(ratio)
+            sized.height === undefined &&
+            sized.maxHeight === undefined &&
+            sized.aspectRatio === String(ratio)
                 ? `min(100%, ${String(MEDIA_TREE_ITEM_MAX_HEIGHT * ratio)}px)`
                 : "100%";
     return sized;

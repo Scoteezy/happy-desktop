@@ -8,6 +8,8 @@ import { conversationMediaHeight } from "../../src/conversationRowHeight";
 import { MediaVideoTile } from "../../src/MediaVideoTile";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 import {
+    mediaAspectRecordings,
+    mediaAspectRecordingsUnsized,
     mediaDesktopRecording,
     mediaPhoneInbox,
     mediaPhoneProfile,
@@ -43,6 +45,26 @@ const phoneGrid = mediaLayoutProject(
 );
 if (!phoneGrid) throw new Error("fixture layout did not project");
 
+const aspectGrid = mediaLayoutProject(
+    {
+        type: "tree",
+        root: [
+            {
+                type: "element",
+                tag: "div",
+                style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" },
+                children: mediaAspectRecordings.map((_, index) => ({
+                    type: "item",
+                    index,
+                    style: { width: "100%" },
+                })),
+            },
+        ],
+    },
+    mediaAspectRecordings.length,
+);
+if (!aspectGrid) throw new Error("fixture layout did not project");
+
 const specimens: readonly {
     label: string;
     detail: string;
@@ -70,17 +92,33 @@ const specimens: readonly {
         items: phones,
         layout: phoneGrid,
     },
+    {
+        label: "Awkward shapes",
+        detail: "886 × 1920, 1170 × 2532, square, 32:9 — each at its own shape; the pink band is the picture's own edge",
+        items: mediaAspectRecordings,
+    },
+    {
+        label: "Awkward shapes, no stated size",
+        detail: "as today's daemon presents recordings: each shape learned from its own metadata, once",
+        items: mediaAspectRecordingsUnsized,
+    },
+    {
+        label: "Awkward shapes in a grid the agent wrote",
+        detail: "a two-column reply layout of the same four",
+        items: mediaAspectRecordings,
+        layout: aspectGrid,
+    },
 ];
 
 export function MediaVideoTilePage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="A recording played where it was presented, the way the system's inline player draws one: the frame alone at rest, a translucent play button on hover, and once it plays the corners and a thin timeline."
+            summary="A recording played where it was presented, the way the system's inline player draws one: at its own shape, with a translucent play button and a timeline showing its length whenever it is not playing, the corners on hover, and only a thin progress line while it plays unwatched."
             title="MediaVideoTile"
         >
             <Specimen
-                detail="idle frame · hover for the play button · click to play, then hover for the corners and timeline"
+                detail="play button and timeline at rest · hover for expand and mute · click to play; the controls rest while it plays"
                 label="Inline player"
                 number="01"
                 stage="surface"

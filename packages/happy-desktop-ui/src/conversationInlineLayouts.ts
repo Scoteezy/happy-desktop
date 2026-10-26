@@ -10,6 +10,7 @@ import {
 } from "happy-desktop-state";
 import type { ConversationMediaRunMember } from "./conversationMediaRuns";
 import { mediaTreeSound } from "./MediaTree";
+import { mediaVideoFramesSignature } from "./mediaVideoFrames";
 
 /**
  * Layouts an agent wrote into its reply as HTML, drawn where it wrote them.
@@ -73,6 +74,12 @@ type Shown = Map<string, ConversationMediaRunMember>;
 /** Every reply's layouts in `entries`, and the pictures they take from their calls. */
 export function conversationInlineLayouts(
     entries: readonly ConversationEntry[],
+    /**
+     * The `mediaVideoFrames` version the caller read: a recording that stated
+     * no size is part of its layout's identity once its size is learned, so
+     * the reply's text, and every height keyed on it, changes with it.
+     */
+    framesAt?: number,
 ): ConversationInlineLayouts {
     const shown: Shown = new Map();
     let messages: Map<string, MessageInlineLayouts> | undefined;
@@ -92,7 +99,7 @@ export function conversationInlineLayouts(
         }
         if (entry.kind !== "message" || entry.message.sender?.kind !== "agent") continue;
         if (shown.size === 0) continue;
-        const layouts = messageInlineLayouts(entry, shown);
+        const layouts = messageInlineLayouts(entry, shown, framesAt);
         if (layouts === undefined) continue;
         messages ??= new Map();
         messages.set(entry.message.id, layouts);
@@ -137,6 +144,7 @@ const resolved = new WeakMap<ConversationEntry, MessageInlineLayouts>();
 function messageInlineLayouts(
     entry: Extract<ConversationEntry, { kind: "message" }>,
     shown: Shown,
+    framesAt: number | undefined,
 ): MessageInlineLayouts | undefined {
     const message = entry.message;
     /* No tag, no layout: almost every reply leaves here. */
@@ -176,7 +184,10 @@ function messageInlineLayouts(
         }
         changed = true;
         const key = `${String(position)}-${hash(
-            `${segment.html}\u0000${layout.members.map(memberSignature).join(",")}`,
+            `${segment.html}\u0000${layout.members.map(memberSignature).join(",")}\u0000${mediaVideoFramesSignature(
+                layout.members.map((member) => member.item),
+                framesAt,
+            )}`,
         )}`;
         layouts.set(key, { key, ...layout });
         /* Its own block, at the left margin, whatever surrounds it. */

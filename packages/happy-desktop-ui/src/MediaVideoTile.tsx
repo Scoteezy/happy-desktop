@@ -5,6 +5,7 @@ import {
     type KeyboardEvent as ReactKeyboardEvent,
     type PointerEvent as ReactPointerEvent,
 } from "react";
+import { mediaVideoFrameRecord } from "./mediaVideoFrames";
 import { Ionicon } from "./vectorIcons/VectorIcon";
 
 export type MediaVideoTileProps = {
@@ -65,15 +66,22 @@ function timeFormat(seconds: number): string {
  * C-293 MediaVideoTile — a recording played where it was presented, drawn the
  * way the system's own inline player draws one.
  *
- * At rest it is the recording's frame and nothing else, at the recording's own
- * shape with the same corners and hairline as a picture. A pointer over it
- * brings a centred play button of translucent material; a click anywhere on
- * the frame plays or pauses. Once it has started, the pointer also brings the
- * expand and mute controls to the top corners and a timeline with the elapsed
- * and remaining time to the bottom, and they rest again after a moment of
- * stillness; a playing recording the pointer is not over keeps only a thin
- * progress line along its bottom edge. Every control is an overlay, so the box
- * is exactly the one the layout reserved and nothing in it ever moves.
+ * The recording at its own shape, with the same corners and hairline as a
+ * picture. Until it plays, and whenever it is paused, it says what it is: a
+ * centred play button of translucent material and a timeline along the
+ * bottom with the elapsed and remaining time, so its length and position are
+ * always in view. A click anywhere on the frame plays or pauses. A pointer
+ * over it also brings the expand and mute controls to the top corners. While
+ * it plays the controls stay only while the pointer moves over it; otherwise
+ * a thin progress line along the bottom edge is all that is drawn over the
+ * picture. Every control is an overlay, so the box is exactly the one the
+ * layout reserved and nothing in it ever moves.
+ *
+ * The layout gives the box the recording's own shape — the size the producer
+ * stated, or, when it stated none, the one this tile's metadata reports
+ * (`mediaVideoFrames`) — so the frame fills it edge to edge with no band
+ * around it. It is still drawn contained, never cropped: what is left of
+ * rounding is under a pixel, beneath the hairline.
  *
  * The played fraction is painted on every frame straight into one custom
  * property, rather than through React at the element's coarse `timeupdate`
@@ -207,7 +215,14 @@ export function MediaVideoTile(props: MediaVideoTileProps) {
                     delete root.current?.dataset.resting;
                     update({ phase: "idle" });
                 }}
-                onLoadedMetadata={(event) => update({ duration: event.currentTarget.duration })}
+                onLoadedMetadata={(event) => {
+                    const element = event.currentTarget;
+                    mediaVideoFrameRecord(props.url, {
+                        width: element.videoWidth,
+                        height: element.videoHeight,
+                    });
+                    update({ duration: element.duration });
+                }}
                 onPause={(event) => {
                     delete root.current?.dataset.resting;
                     if (!event.currentTarget.ended) update({ phase: "paused" });
@@ -323,7 +338,7 @@ export function MediaVideoTile(props: MediaVideoTileProps) {
                         </span>
                     </span>
                     <span aria-hidden="true" className="happy-media-video-tile__time">
-                        {known ? `-${timeFormat(playback.duration - playback.second)}` : "-0:00"}
+                        {known ? `-${timeFormat(playback.duration - playback.second)}` : "--:--"}
                     </span>
                 </span>
             </span>

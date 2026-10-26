@@ -72,6 +72,7 @@ import {
     mediaJustifiedPlan,
     type MediaFlowImage,
 } from "./mediaLayout";
+import { mediaItemsFramed, mediaVideoFramesSignature } from "./mediaVideoFrames";
 import { mediaTreeHeight } from "./MediaTree";
 import { userInputRuleText } from "./userInputRule";
 import { conversationMediaRunSignature, type ConversationMediaRun } from "./conversationMediaRuns";
@@ -469,10 +470,11 @@ const RESULT_CARD_HEIGHT = 64;
  * then one card per document or file.
  */
 export function conversationMediaHeight(
-    items: readonly ConversationMediaItem[],
+    stated: readonly ConversationMediaItem[],
     measure: number,
     layout?: ConversationMediaLayout,
 ): number {
+    const items = mediaItemsFramed(stated);
     if (layout?.type === "tree") return mediaTreeHeight(layout.root, items, measure);
     const visuals = items.filter((item) => item.kind === "image" || item.kind === "video");
     const blocks: number[] = [];
@@ -528,6 +530,22 @@ function toolResultHeight(
     if (presentation?.type === "artifact" || presentation?.type === "page")
         return TOOL_MEDIA_GAP + INLINE_PAGE_TITLE_HEIGHT;
     return 0;
+}
+
+/** The learned sizes of a call's recordings that stated none, as part of its row's cache key. */
+function activityFramesSignature(entry: ConversationEntry): string {
+    if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") return "";
+    const presentation = entry.activity.tool.presentation;
+    return presentation?.type === "media" ? mediaVideoFramesSignature(presentation.items) : "";
+}
+
+/** The same for the recordings a reply's layouts place. */
+function messageLayoutsFramesSignature(layouts: MessageInlineLayouts | undefined): string {
+    if (layouts === undefined) return "";
+    let signature = "";
+    for (const layout of layouts.layouts.values())
+        signature += mediaVideoFramesSignature(layout.members.map((member) => member.item));
+    return signature;
 }
 
 /** Which of a call's pictures went to replies, as part of its row's cache key. */
@@ -686,7 +704,7 @@ function messageLayoutsHeight(
         if (layout === undefined) return undefined;
         return mediaTreeHeight(
             layout.root,
-            layout.members.map((member) => member.item),
+            mediaItemsFramed(layout.members.map((member) => member.item)),
             measure,
         );
     };
@@ -985,7 +1003,7 @@ export function conversationRowHeight(
         return rowHeightCached(
             cache,
             entry,
-            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${inlinePageSignature(context.inlinePage)}:${conversationMediaRunSignature(context.mediaRun)}:${mediaPlacedSignature(context.mediaPlaced)}:${messageReferencesSignature(
+            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${inlinePageSignature(context.inlinePage)}:${conversationMediaRunSignature(context.mediaRun)}:${mediaPlacedSignature(context.mediaPlaced)}:${activityFramesSignature(entry)}:${messageReferencesSignature(
                 conversationEntryReferences(entry),
                 context.references,
             )}`,
@@ -1288,6 +1306,7 @@ export function conversationRowHeight(
         // What the body's references read as: a title changing re-sizes the row.
         messageReferencesSignature(conversationEntryReferences(entry), context.references),
         context.messageLayouts?.signature ?? "",
+        messageLayoutsFramesSignature(context.messageLayouts),
     ].join(":");
     return rowHeightCached(cache, entry, cacheKey, () => {
         let height = messageRowHeight(

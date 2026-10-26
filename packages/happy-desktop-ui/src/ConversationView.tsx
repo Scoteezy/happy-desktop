@@ -94,6 +94,11 @@ import { toolCallStillGlyph } from "./toolCallStillGlyph";
 import { WindowOverlay } from "./WindowOverlay";
 import { conversationMediaRunRows, conversationMediaRuns } from "./conversationMediaRuns";
 import { conversationInlineLayouts } from "./conversationInlineLayouts";
+import {
+    mediaVideoFramesSignature,
+    mediaVideoFramesSubscribe,
+    mediaVideoFramesVersion,
+} from "./mediaVideoFrames";
 
 /** The transcript's first row: what it shows, and how tall it is at a row width. */
 export type ConversationLeadingHeader = {
@@ -639,6 +644,13 @@ export function ConversationView(props: ConversationViewProps) {
         messageTextLayoutFontGenerationGet,
         messageTextLayoutFontGenerationGet,
     );
+    /* A recording that stated no size changes its row's height once its
+       metadata reports one; the rows that hold such a recording are asked again. */
+    const framesAt = useSyncExternalStore(
+        mediaVideoFramesSubscribe,
+        mediaVideoFramesVersion,
+        mediaVideoFramesVersion,
+    );
     const conversationCacheKey =
         props.conversationId === undefined ? "anonymous" : `conversation:${props.conversationId}`;
     const [rowExpansion, setRowExpansion] = useState(() => new Map<string, boolean>());
@@ -745,7 +757,7 @@ export function ConversationView(props: ConversationViewProps) {
             setInlinePageGeneration((generation) => generation + 1);
         },
     };
-    const inlineLayouts = conversationInlineLayouts(transcript);
+    const inlineLayouts = conversationInlineLayouts(transcript, framesAt);
     const mediaRuns = conversationMediaRuns(transcript, inlineLayouts.hidden);
     /* What a row draws because of a reply's layouts: the pictures a call gave
        up to one, or the layouts a reply draws. */
@@ -1145,11 +1157,31 @@ export function ConversationView(props: ConversationViewProps) {
                         prepareRowSize={(index, width) =>
                             conversationRowHeightPrepare(...rowGeometry(index, width))
                         }
-                        estimateRows={conversationMediaRunRows(listEntries, mediaRuns, (entry) =>
-                            entry.kind === "message"
-                                ? (inlineLayouts.messages.get(entry.message.id)?.signature ?? "")
-                                : [...(inlineLayouts.hidden.get(entryKey(entry)) ?? [])].join(","),
-                        )}
+                        estimateRows={conversationMediaRunRows(listEntries, mediaRuns, (entry) => {
+                            if (entry.kind === "message") {
+                                const layouts = inlineLayouts.messages.get(entry.message.id);
+                                if (layouts === undefined) return "";
+                                let frames = "";
+                                for (const layout of layouts.layouts.values())
+                                    frames += mediaVideoFramesSignature(
+                                        layout.members.map((member) => member.item),
+                                        framesAt,
+                                    );
+                                return `${layouts.signature}|${frames}`;
+                            }
+                            const placed = [
+                                ...(inlineLayouts.hidden.get(entryKey(entry)) ?? []),
+                            ].join(",");
+                            const presentation =
+                                entry.kind === "agentActivity" && entry.activity.kind === "tool"
+                                    ? entry.activity.tool.presentation
+                                    : undefined;
+                            const frames =
+                                presentation?.type === "media"
+                                    ? mediaVideoFramesSignature(presentation.items, framesAt)
+                                    : "";
+                            return frames === "" ? placed : `${placed}|${frames}`;
+                        })}
                         estimateRowWidth={contentWidth}
                         estimateVersion={textLayoutGeneration}
                         footer={workingStatusRow}
