@@ -144,7 +144,6 @@ function fixture(options: { readonly canArchive: boolean }) {
                 html,
                 agentIcons: new Map(),
                 seed: false,
-                attachments: true,
             },
         },
         places: { bots, tasks, chatGroupOf: () => undefined },

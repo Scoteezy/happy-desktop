@@ -2,10 +2,8 @@ import {
     sidebarDocumentEdit,
     sidebarDocumentFold,
     sidebarDocumentMove,
-    sidebarDocumentPlace,
     sidebarDocumentView,
     type HappyAgentSidebarProposalsStore,
-    type HappyAgentSpaceId,
     type HappyAgentSpacesSnapshot,
     type SidebarDocumentView,
 } from "happy-desktop-state";
@@ -59,14 +57,12 @@ export function HappyAgentSidebarProposal(props: HappyAgentSidebarProposalProps)
     const proposal = entry?.type === "ready" ? entry.proposal : undefined;
     const view = proposal ? viewOf(proposal.html) : undefined;
     const open = proposal?.status === "open" && proposal.answering === undefined;
-    const attaching = props.snapshot.sidebar?.attachments === true;
     const drawn = view
         ? happyAgentSpacesItems({
               view,
               snapshot: props.snapshot,
               places: props.places,
               editable: open,
-              attaching: open && attaching,
               titleShimmerEnabled: props.titleShimmerEnabled,
               stemCellAnimation: props.stemCellAnimation,
               search: { label: "Search", ...COMMAND_INERT },
@@ -142,20 +138,7 @@ export function HappyAgentSidebarProposal(props: HappyAgentSidebarProposalProps)
                                 move.afterId === null
                                     ? null
                                     : (anchorOf?.get(move.afterId) ?? null);
-                            const parentKey =
-                                move.parentId === undefined
-                                    ? null
-                                    : (anchorOf?.get(move.parentId) ?? undefined);
-                            const space =
-                                move.id.startsWith("space:") &&
-                                props.snapshot.spaces.has(
-                                    move.id.slice("space:".length) as HappyAgentSpaceId,
-                                );
-                            edit((current) =>
-                                attaching && space && parentKey !== undefined
-                                    ? sidebarDocumentPlace(current, key, parentKey, afterKey)
-                                    : sidebarDocumentMove(current, key, afterKey),
-                            );
+                            edit((current) => sidebarDocumentMove(current, key, afterKey));
                         }}
                         sections={[{ id: LIST, items: drawn.items }]}
                         status={proposal.status}

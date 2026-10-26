@@ -32,11 +32,12 @@ import { createRenderer } from "./testing";
  *   - once settled the column has no gaps: every neighbour is one gap apart;
  *   - confirmations, echoes and name batches move nothing.
  *
- * Rows attached under other rows are carried in, out and between rows too: a
- * random sideways path picks the level wherever both are open, the row lands
- * at the level it was let go of at, and its name never moves sideways after
- * the drop unless the move is put back; no other row's name ever does. A
- * subtask's session under its row is carried too, and never leaves its row.
+ * No drag changes a row's level. Every drag also wanders sideways, by up to
+ * more than a level either way, and rows nested under other rows — attached
+ * Surfaces and a subtask's session — are carried as often as any: every move
+ * the sidebar reports keeps the row under the row it stood under, or at the
+ * top level, every row keeps its parent and depth through every drop, the
+ * held row is drawn at its own level, and no row's name ever moves sideways.
  */
 
 const GAP = 2;
@@ -44,33 +45,26 @@ const GAP = 2;
 const fixture = (): SidebarItem[] => [
     { icon: "search", id: "search", kind: "view", label: "Search" },
     { icon: "compose", id: "create", kind: "view", label: "Create" },
-    { attachTarget: true, icon: "doc", id: "happy", kind: "view", label: "Happy" },
-    { attachable: true, icon: "doc", id: "stem-1", kind: "view", label: "New" },
-    { attachable: true, icon: "doc", id: "roadmap", kind: "view", label: "Q4 roadmap" },
-    {
-        attachTarget: true,
-        collapsed: false,
-        icon: "doc",
-        id: "launch",
-        kind: "view",
-        label: "Launch checklist",
-    },
+    { icon: "doc", id: "happy", kind: "view", label: "Happy" },
+    { icon: "doc", id: "stem-1", kind: "view", label: "New" },
+    { icon: "doc", id: "roadmap", kind: "view", label: "Q4 roadmap" },
+    { collapsed: false, icon: "doc", id: "launch", kind: "view", label: "Launch checklist" },
     { depth: 1, icon: "doc", id: "s1", kind: "view", label: "Review session" },
-    { attachable: true, depth: 1, icon: "doc", id: "a1", kind: "view", label: "Launch todos" },
-    { attachable: true, depth: 1, icon: "doc", id: "a2", kind: "view", label: "Launch notes" },
+    { depth: 1, icon: "doc", id: "a1", kind: "view", label: "Launch todos" },
+    { depth: 1, icon: "doc", id: "a2", kind: "view", label: "Launch notes" },
     { collapsed: true, id: "tasks", kind: "section", label: "Tasks" },
-    { attachTarget: true, icon: "doc", id: "t1", kind: "view", label: "Task one" },
-    { attachable: true, icon: "doc", id: "t2", kind: "view", label: "Task two" },
+    { icon: "doc", id: "t1", kind: "view", label: "Task one" },
+    { icon: "doc", id: "t2", kind: "view", label: "Task two" },
     { collapsed: false, id: "bots", kind: "section", label: "Bots" },
-    { attachTarget: true, collapsed: false, icon: "doc", id: "b1", kind: "view", label: "Bot one" },
-    { attachable: true, depth: 1, icon: "doc", id: "a3", kind: "view", label: "Bot chat" },
-    { attachTarget: true, collapsed: true, icon: "doc", id: "b2", kind: "view", label: "Bot two" },
-    { attachable: true, depth: 1, icon: "doc", id: "a4", kind: "view", label: "Folded away" },
+    { collapsed: false, icon: "doc", id: "b1", kind: "view", label: "Bot one" },
+    { depth: 1, icon: "doc", id: "a3", kind: "view", label: "Bot chat" },
+    { collapsed: true, icon: "doc", id: "b2", kind: "view", label: "Bot two" },
+    { depth: 1, icon: "doc", id: "a4", kind: "view", label: "Folded away" },
     { collapsed: true, id: "later", kind: "section", label: "Later" },
     { icon: "doc", id: "l1", kind: "view", label: "Later one" },
     { id: "divider", kind: "separator", label: "" },
-    { attachTarget: true, icon: "doc", id: "loose", kind: "view", label: "Loose one" },
-    { attachable: true, icon: "doc", id: "loose-2", kind: "view", label: "Loose two" },
+    { icon: "doc", id: "loose", kind: "view", label: "Loose one" },
+    { icon: "doc", id: "loose-2", kind: "view", label: "Loose two" },
 ];
 
 const depthOf = (item: SidebarItem | undefined) => item?.depth ?? 0;
@@ -101,8 +95,6 @@ const visibleIds = (items: readonly SidebarItem[]): string[] => {
     return ids;
 };
 
-/* Whether the sidebar lets this row change parents: attachable, with nothing
-   nested under it, at the top level or directly under a row. */
 /* The row a nested row stands under: the nearest one above it that is shallower. */
 const parentOf = (items: readonly SidebarItem[], id: string): string | null => {
     const at = items.findIndex((item) => item.id === id);
@@ -110,13 +102,12 @@ const parentOf = (items: readonly SidebarItem[], id: string): string | null => {
         if (depthOf(items[row]) < depthOf(items[at])) return items[row]!.id;
     return null;
 };
-const attaches = (items: readonly SidebarItem[], id: string): boolean => {
-    const at = items.findIndex((item) => item.id === id);
-    const item = items[at]!;
-    return (
-        item.attachable === true && depthOf(item) <= 1 && depthOf(items[at + 1]) <= depthOf(item)
-    );
-};
+/* Every row's parent and depth, whatever the order, which no drag may change. */
+const levelsOf = (items: readonly SidebarItem[]): string =>
+    items
+        .map((item) => `${item.id}<${String(parentOf(items, item.id))}@${String(depthOf(item))}`)
+        .sort()
+        .join(" ");
 
 /* The same peers the sidebar drags among: a section with its rows, a separator
    alone, the rows before the first section as one run; any other row alone. */
@@ -258,16 +249,13 @@ const check = (
             if (!foldCarried) problems.push(`${id} left the list`);
             continue;
         }
-        // Only the carried row changes level, and only while it is held, or
-        // once more when a move is put back.
+        // No row changes level, so no row's name ever moves sideways.
         const lefts = boxes.map((box) => box![4]);
-        const sideways = lefts
-            .slice(carried.has(id) ? releaseIndex : 0)
-            .filter((left, index, list) => index > 0 && Math.abs(left - list[index - 1]!) > 0.5);
-        if (sideways.length > (carried.has(id) && returns ? 1 : 0))
-            problems.push(
-                `${id}'s name moved sideways ${String(sideways.length)} times${carried.has(id) ? " after it was let go of" : ""}`,
-            );
+        const sideways = lefts.filter(
+            (left, index, list) => index > 0 && Math.abs(left - list[index - 1]!) > 0.5,
+        );
+        if (sideways.length > 0)
+            problems.push(`${id}'s name moved sideways ${String(sideways.length)} times`);
         const tops = boxes.map((box) => box![1]);
         // The carried block follows the hand until it is let go of.
         const from = carried.has(id) ? releaseIndex : 0;
@@ -436,9 +424,13 @@ const chaos = async (seed: number, iterations: number) => {
 
     for (let iteration = 0; iteration < iterations; iteration += 1) {
         const outcome = pick<Outcome>(["confirm", "twice", "late", "async", "refuse", "decline"]);
-        const id =
-            next() < 0.15 && visibleIds(shown).includes("s1") ? "s1" : pick(visibleIds(shown));
+        // Nested rows are carried as often as top-level ones.
+        const visible = visibleIds(shown);
+        const nested = visible.filter((candidate) => parentOf(shown, candidate) !== null);
+        const id = next() < 0.4 && nested.length > 0 ? pick(nested) : pick(visible);
         const parentBefore = parentOf(shown, id);
+        const levelsBefore = levelsOf(shown);
+        const reported: SidebarReorder[] = [];
         const slots = Math.floor(next() * 8) - 4 || 1;
         // A refusal puts back the document as the daemon has it, so every
         // earlier write is answered first.
@@ -448,6 +440,7 @@ const chaos = async (seed: number, iterations: number) => {
         let landedDepth = depthOf(before.find((item) => item.id === id));
         let written: number | undefined;
         applyMove = (move) => {
+            reported.push(move);
             const items = moveApply(shown, move);
             landed = visibleIds(items);
             landedDepth = depthOf(items.find((item) => item.id === id));
@@ -458,9 +451,8 @@ const chaos = async (seed: number, iterations: number) => {
             else show(items);
         };
         const carried = new Set(carriedOf(shown, id).map((item) => item.id));
-        // A row that may change parents is also carried sideways, by up to a
-        // level and a half either way.
-        const sideways = attaches(shown, id) ? Math.round((next() * 2 - 1) * 24) : 0;
+        // Every drag wanders sideways too, by up to two and a half levels either way.
+        const sideways = Math.round((next() * 2 - 1) * 40);
 
         const frames: Frame[] = [];
         let recording = true;
@@ -581,14 +573,19 @@ const chaos = async (seed: number, iterations: number) => {
             landed,
             head.kind === "section" && head.collapsed === true,
         );
-        // A subtask's session stays under its own row, wherever it was carried.
-        if (!attaches(before, id) && depthOf(before.find((item) => item.id === id)) > 0) {
-            const parentAfter = parentOf(shown, id);
-            if (parentAfter !== parentBefore)
+        // No drag changes a row's level: what the sidebar reports keeps the row
+        // under the row it stood under, and every row keeps its parent and depth.
+        for (const move of reported)
+            if ((move.parentId ?? null) !== parentBefore)
                 problems.push(
-                    `${id} left its row ${String(parentBefore)} for ${String(parentAfter)}`,
+                    `${id} was reported under ${String(move.parentId ?? null)}, not ${String(parentBefore)}`,
                 );
-        }
+        if (previewDepth !== depthOf(head))
+            problems.push(
+                `${id} was held at level ${String(previewDepth)}, not its own ${String(depthOf(head))}`,
+            );
+        if (levelsOf(shown) !== levelsBefore)
+            problems.push(`levels changed: ${levelsBefore} became ${levelsOf(shown)}`);
         if (Number(row(id)?.dataset.depth ?? 0) !== landedDepth)
             problems.push(
                 `${id} settled at level ${row(id)?.dataset.depth ?? "0"}, expected ${String(landedDepth)}`,

@@ -5,7 +5,6 @@ import {
     sidebarDocumentFold,
     sidebarDocumentKey,
     sidebarDocumentMove,
-    sidebarDocumentPlace,
     sidebarDocumentSessionsHide,
     sidebarDocumentSessionsReveal,
     sidebarDocumentView,
@@ -667,8 +666,6 @@ export interface HappyAgentSpacesItemsInput {
     readonly places: HappyAgentSpacesPlaces;
     /** Whether rows may be carried; a read-only document holds them in place. */
     readonly editable: boolean;
-    /** Whether spaces may be carried in and out of rows. */
-    readonly attaching: boolean;
     readonly titleShimmerEnabled: boolean;
     readonly stemCellAnimation: boolean;
     readonly search?: HappyAgentSpacesCommand;
@@ -688,7 +685,7 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
     readonly items: SidebarItem[];
     readonly anchorOf: ReadonlyMap<string, string | null>;
 } {
-    const { view, snapshot, places, editable, attaching } = input;
+    const { view, snapshot, places, editable } = input;
     const anchorOf = new Map<string, string | null>();
     const foldReveal = (own: "hover" | "always" | undefined) =>
         (own ?? view.foldRibbon) === "always" ? { foldReveal: "always" as const } : {};
@@ -723,7 +720,6 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
                         depth,
                         ...foldReveal(session.foldRibbon),
                         ...(children.length > 0 ? { collapsed: !session.expanded } : {}),
-                        ...(attaching ? { attachable: true } : {}),
                     },
                     ...children,
                 );
@@ -849,14 +845,6 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
                         ...foldReveal(item.foldRibbon),
                         ...(children.length > 0 ? { collapsed: !item.expanded } : {}),
                         ...(editable ? {} : { reorderable: false }),
-                        // Happy's row stays the window's own: it neither goes
-                        // under another row nor takes one under it.
-                        ...(attaching && !happy ? { attachable: true } : {}),
-                        ...(attaching &&
-                        !happy &&
-                        (space.target.kind === "task" || space.target.kind === "bot")
-                            ? { attachTarget: true }
-                            : {}),
                     },
                     ...children,
                 ];
@@ -879,9 +867,6 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
     const view = documentView ?? legacyViewOf(snapshot);
     const editable = documentView !== undefined && sidebarDoc !== undefined;
     const focused = happyAgentSpaceFocused(snapshot, props.focus);
-    // Rows carry other spaces in and out of rows only where the daemon keeps
-    // them there; a session always stays under the conversation it belongs to.
-    const attaching = editable && sidebarDoc.attachments;
     /** Whether a nested ID names one of the person's spaces rather than a session. */
     const attached = (id: string): boolean => snapshot.spaces.has(id as HappyAgentSpaceId);
     const { items, anchorOf } = happyAgentSpacesItems({
@@ -889,7 +874,6 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         snapshot,
         places,
         editable,
-        attaching,
         titleShimmerEnabled: props.titleShimmerEnabled,
         stemCellAnimation: props.stemCellAnimation,
         ...(props.search ? { search: props.search } : {}),
@@ -1201,28 +1185,20 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             }}
             // A move is an edit of the document: a node after one of its own
             // siblings, or first among them. A worktree is the window's, so a
-            // node landing after one lands after the session it follows. A
-            // space may change parents — set down under a row, taken back out,
-            // or moved to another row; a session never does.
+            // node landing after one lands after the session it follows. No
+            // drag changes a row's level: a top-level row stays at the top
+            // level, and a nested one stays under the row it stands under.
             {...(editable
                 ? {
                       onItemReorder: (
                           _list: string,
-                          move: { id: string; afterId: string | null; parentId?: string },
+                          move: { id: string; afterId: string | null },
                       ) => {
                           const key = anchorOf.get(move.id);
                           if (!key) return;
                           const afterKey =
                               move.afterId === null ? null : (anchorOf.get(move.afterId) ?? null);
-                          const parentKey =
-                              move.parentId === undefined
-                                  ? null
-                                  : (anchorOf.get(move.parentId) ?? undefined);
-                          documentEdit((current) =>
-                              attaching && spaceOf(move.id) !== undefined && parentKey !== undefined
-                                  ? sidebarDocumentPlace(current, key, parentKey, afterKey)
-                                  : sidebarDocumentMove(current, key, afterKey),
-                          );
+                          documentEdit((current) => sidebarDocumentMove(current, key, afterKey));
                       },
                   }
                 : {})}

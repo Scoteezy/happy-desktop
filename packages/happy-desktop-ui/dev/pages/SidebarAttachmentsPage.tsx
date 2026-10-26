@@ -7,15 +7,14 @@ export const componentNumber = "C-310";
 
 /*
  * Items attached under the task that owns them: a todo list, a document, a
- * chat, a chat with another person, another task. Each is `attachable`; a row
- * that takes them is an `attachTarget`. A session nested under a row is
- * neither, so it stays with its own row.
+ * chat, a chat with another person, another task. A drag never changes a
+ * row's level: an attachment moves among the rows under its own row, like the
+ * session beside it, and a top-level row only among top-level rows.
  */
 const ROWS: SidebarItem[] = [
     { emoji: "🙂", id: "happy", kind: "view", label: "Happy" },
     { collapsed: false, id: "releases", kind: "section", label: "Releases" },
     {
-        attachTarget: true,
         collapsed: false,
         emoji: "🪟",
         id: "signing",
@@ -24,7 +23,6 @@ const ROWS: SidebarItem[] = [
     },
     { depth: 1, icon: "chat", id: "review", kind: "agent", label: "Review the signing step" },
     {
-        attachable: true,
         depth: 1,
         icon: "list",
         id: "todos",
@@ -32,7 +30,6 @@ const ROWS: SidebarItem[] = [
         label: "Signing checklist",
     },
     {
-        attachable: true,
         depth: 1,
         icon: "doc",
         id: "notes",
@@ -40,17 +37,15 @@ const ROWS: SidebarItem[] = [
         label: "Certificate notes",
     },
     {
-        attachable: true,
         depth: 1,
         id: "steve",
         initials: "SV",
         kind: "person",
         label: "Steve",
     },
-    { attachTarget: true, emoji: "🤖", id: "android", kind: "view", label: "Android release 2.4" },
+    { emoji: "🤖", id: "android", kind: "view", label: "Android release 2.4" },
     { collapsed: false, id: "desktop", kind: "section", label: "Desktop" },
     {
-        attachTarget: true,
         collapsed: true,
         emoji: "⚡",
         id: "voice",
@@ -58,7 +53,6 @@ const ROWS: SidebarItem[] = [
         label: "Voice dictation latency",
     },
     {
-        attachable: true,
         depth: 1,
         icon: "chat",
         id: "latency-chat",
@@ -66,14 +60,12 @@ const ROWS: SidebarItem[] = [
         label: "Latency chat",
     },
     {
-        attachable: true,
-        attachTarget: true,
         emoji: "🔍",
         id: "zoom",
         kind: "view",
         label: "Artifact viewer zoom",
     },
-    { attachable: true, icon: "doc", id: "spec", kind: "view", label: "Zoom spec" },
+    { icon: "doc", id: "spec", kind: "view", label: "Zoom spec" },
 ];
 
 const depthOf = (item: SidebarItem | undefined) => item?.depth ?? 0;
@@ -81,7 +73,7 @@ const breaks = (item: SidebarItem) =>
     depthOf(item) === 0 && (item.kind === "section" || item.kind === "separator");
 
 /* The document's move: a section carries its run; any other row carries its
-   nested rows; a parent sets the row down under it and opens it. */
+   nested rows, among its own siblings under `parentId` or at the top level. */
 function moveApply(items: readonly SidebarItem[], move: SidebarReorder): SidebarItem[] {
     const runEnd = (list: readonly SidebarItem[], index: number) => {
         let end = index + 1;
@@ -120,12 +112,7 @@ function moveApply(items: readonly SidebarItem[], move: SidebarReorder): Sidebar
             rest.findIndex((item) => item.id === move.afterId),
         );
     }
-    // A row with rows under it says whether they are folded.
-    return [...rest.slice(0, at), ...moved, ...rest.slice(at)].map((item, index, list) =>
-        item.attachTarget && depthOf(list[index + 1]) > depthOf(item)
-            ? { ...item, collapsed: item.collapsed ?? false }
-            : item,
-    );
+    return [...rest.slice(0, at), ...moved, ...rest.slice(at)];
 }
 
 function Column(props: { children: ReactNode }) {
@@ -173,11 +160,11 @@ export function SidebarAttachmentsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Todo lists, documents, chats, people and other tasks attached under the task that owns them. They fold with it, and a drag carries one in, out or between rows: the hand's sideways position picks the level wherever both are open. A session under a row stays with its row."
+            summary="Todo lists, documents, chats, people and other tasks attached under the task that owns them. They fold with it. A drag never changes a row's level: an attachment moves only among the rows under its own row, like a session, and a top-level row only among top-level rows."
             title="Sidebar attachments"
         >
             <Specimen
-                detail="one indent level (16 px) · drag sideways to attach or detach · folds with its row"
+                detail="one indent level (16 px) · moves among its siblings · folds with its row"
                 label="Attachments under rows — live"
                 number="01"
                 stage="chrome"
