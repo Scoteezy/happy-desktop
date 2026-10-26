@@ -4,6 +4,10 @@ import { server, userEvent } from "vitest/browser";
 import "./theme.css";
 import "./styles/scrollbar.css";
 import "./styles/command-palette.css";
+import "./styles/command-palette-results.css";
+import "./styles/form-row.css";
+import "./styles/switch.css";
+import "./styles/avatar.css";
 import "./styles/search-results.css";
 import "./styles/badge.css";
 import "./styles/button.css";
@@ -11,6 +15,10 @@ import "./styles/icon.css";
 import "./styles/vector-icon.css";
 import { KeyCap } from "./Badge";
 import { CommandPalette } from "./CommandPalette";
+import { CommandPaletteResults, type CommandPaletteResultsSection } from "./CommandPaletteResults";
+import { FormRow } from "./FormRow";
+import { commandShortcut } from "./keyboardShortcut";
+import { Switch } from "./Switch";
 import { SearchResults, type SearchResultGroup } from "./SearchResults";
 import { createRenderer } from "./testing";
 
@@ -507,4 +515,97 @@ it("reports the close button through onClose", async () => {
     await view.ready();
     (view.$(".happy-command-palette__close").element as HTMLButtonElement).click();
     expect(closed).toEqual([1]);
+});
+
+const mixedSections: CommandPaletteResultsSection[] = [
+    {
+        id: "recent",
+        caption: "Recent",
+        rows: [
+            { kind: "command", id: "task", icon: "tasks", meta: "Task", title: "Fix Cmd K search" },
+        ],
+    },
+    {
+        id: "actions",
+        caption: "Actions",
+        rows: [
+            {
+                kind: "command",
+                id: "sidebar",
+                icon: "sidebar-collapse",
+                shortcut: commandShortcut("b"),
+                title: "Hide sidebar",
+            },
+        ],
+    },
+    {
+        id: "settings",
+        caption: "Settings",
+        rows: [
+            {
+                kind: "control",
+                id: "shimmer",
+                icon: "zap",
+                label: "Shimmer active titles",
+                description: "Animates running session, project, and workspace names",
+                control: (
+                    <FormRow
+                        control={
+                            <Switch
+                                aria-label="Shimmer active titles"
+                                checked
+                                onChange={() => {}}
+                                size="small"
+                            />
+                        }
+                        density="compact"
+                        description="Animates running session, project, and workspace names"
+                        label="Shimmer active titles"
+                    />
+                ),
+            },
+        ],
+    },
+];
+
+it("draws every result row as a compact settings row: one height, FormRow's type, one text column", async () => {
+    const view = createRenderer();
+    view.render(
+        () => (
+            <CommandPalette autoFocus={false} onClose={() => {}} onQueryChange={() => {}} query="">
+                <CommandPaletteResults activeIndex={0} sections={mixedSections} />
+            </CommandPalette>
+        ),
+        { width: 640, height: 461 },
+    );
+    await view.ready();
+
+    const rows = ["task", "sidebar", "shimmer"].map((id) =>
+        view.$(`[data-happy-desktop-ui="command-palette-results-row"][data-row-id="${id}"]`),
+    );
+    // A row with and without a second line, and a hosted settings row, stand alike.
+    expect(rows.map((row) => row.bounds().height)).toEqual([56, 56, 56]);
+
+    const title = view.$(
+        '[data-row-id="task"] [data-happy-desktop-ui="command-palette-results-title"]',
+    );
+    const meta = view.$(
+        '[data-row-id="task"] [data-happy-desktop-ui="command-palette-results-meta"]',
+    );
+    const label = view.$('[data-row-id="shimmer"] [data-happy-desktop-ui="form-row-label"]');
+    const description = view.$(
+        '[data-row-id="shimmer"] [data-happy-desktop-ui="form-row-description"]',
+    );
+    const type = ["color", "font-size", "font-weight", "line-height"];
+    expect(title.computedStyles(type)).toEqual(label.computedStyles(type));
+    expect(meta.computedStyles(type)).toEqual(description.computedStyles(type));
+    // The command row's words and the settings row's label start on one column.
+    expect(title.bounds().x).toBe(label.bounds().x);
+    expect(
+        view
+            .$('[data-row-id="shimmer"] [data-happy-desktop-ui="form-row"]')
+            .computedStyles(["border-bottom-width"]),
+    ).toEqual({ "border-bottom-width": "0px" });
+    // The action wears the chord that does the same outside the palette.
+    expect(rows[1]!.element.getAttribute("aria-keyshortcuts")).toBe(commandShortcut("b").aria);
 });

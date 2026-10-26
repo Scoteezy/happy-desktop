@@ -35,39 +35,41 @@ const suggestions: CommandPaletteResultsSection[] = [
         rows: [
             {
                 kind: "command",
-                id: "chat-relay",
-                avatar: { initials: "S", tone: "ocean" },
-                meta: "seville · main",
-                title: "Palette results list",
+                id: "task-cmdk",
+                icon: "tasks",
+                meta: "Task",
+                title: "Fix Cmd K search",
             },
             {
                 kind: "command",
-                id: "chat-updater",
+                id: "bot-happy",
                 avatar: { initials: "H", tone: "violet" },
-                meta: "happy-desktop · main",
-                title: "Updater restart phases",
+                meta: "Bot",
+                title: "Happy",
+            },
+            {
+                kind: "command",
+                id: "chat-rows",
+                icon: "chat",
+                meta: "happy-desktop / search-results",
+                title: "Palette result rows",
             },
         ],
     },
+];
+
+const actions: CommandPaletteResultsSection[] = [
     {
         id: "actions",
         caption: "Actions",
         rows: [
             {
                 kind: "command",
-                id: "chat-new",
-                icon: "plus",
-                shortcut: commandShortcut("t"),
-                title: "New chat",
+                id: "sidebar-toggle",
+                icon: "sidebar-collapse",
+                shortcut: commandShortcut("b"),
+                title: "Hide sidebar",
             },
-            {
-                kind: "command",
-                id: "workspace-new",
-                icon: "branch",
-                shortcut: commandShortcut("n", { shift: true }),
-                title: "New workspace",
-            },
-            { kind: "command", id: "settings-open", icon: "settings", title: "Open settings" },
         ],
     },
 ];
@@ -80,10 +82,12 @@ const typed: CommandPaletteResultsSection[] = [
             {
                 kind: "control",
                 id: "theme",
+                icon: "sun",
                 label: "Theme",
                 description: "Match the system appearance or pin one",
                 control: (
                     <FormRow
+                        density="compact"
                         control={
                             <SegmentedControl
                                 aria-label="Theme"
@@ -105,10 +109,12 @@ const typed: CommandPaletteResultsSection[] = [
             {
                 kind: "control",
                 id: "shimmer",
+                icon: "zap",
                 label: "Shimmer active titles",
                 description: "Animates running session, project, and workspace names",
                 control: (
                     <FormRow
+                        density="compact"
                         control={
                             <Switch
                                 aria-label="Shimmer active titles"
@@ -190,12 +196,23 @@ export function CommandPalettePage() {
         >
             <div className="specimen-grid">
                 <PaletteSpecimen
-                    detail="what ⌘K opens on: a waiting update, recents, and actions with their chords, first row highlighted"
+                    detail="what ⌘K opens on: a waiting update, then the tasks, bots, and chats worked in last, newest first"
                     label="Suggestions"
                     number="CP-06"
                     query=""
                 >
                     <CommandPaletteResults activeIndex={0} sections={suggestions} />
+                </PaletteSpecimen>
+            </div>
+
+            <div className="specimen-grid">
+                <PaletteSpecimen
+                    detail="a typed act finds the window's own action, wearing the chord that does the same"
+                    label="Actions"
+                    number="CP-08"
+                    query="fold sidebar"
+                >
+                    <CommandPaletteResults activeIndex={0} sections={actions} />
                 </PaletteSpecimen>
             </div>
 

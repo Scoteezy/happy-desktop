@@ -78,6 +78,13 @@ export function ConnectionShell(props: {
      * width and its own reveal control brings both back.
      */
     readonly collapsed?: boolean;
+    /**
+     * The active connection is showing a window-wide dialog — the command
+     * palette — on its own backdrop. That backdrop is fixed to the connection,
+     * never to the rail, so the rail lays the same dim over itself, and a click
+     * on it dismisses the dialog as a click anywhere else on the dim does.
+     */
+    readonly scrim?: { readonly onDismiss: () => void };
     readonly error?: string;
     /** The context menu one entry offers. Empty, or absent, means no menu. */
     readonly itemMenuItems?: (item: ConnectionShellItem) => MenuItem[];
@@ -233,6 +240,17 @@ export function ConnectionShell(props: {
                         </div>
                     </ScrollArea>
                     <div className="happy-connections__footer" aria-hidden="true" />
+                    {props.scrim ? (
+                        // Pointer-only, like the dim it continues: the dialog
+                        // above it owns focus and closes on Escape itself.
+                        // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- a decorative backdrop; the keyboard path is the dialog's Escape
+                        <div
+                            aria-hidden="true"
+                            className="happy-connections__scrim"
+                            data-happy-desktop-ui="connection-scrim"
+                            onClick={() => props.scrim?.onDismiss()}
+                        />
+                    ) : null}
                 </nav>
             ) : null}
             <div className="happy-connections__body">

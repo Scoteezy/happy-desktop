@@ -50,6 +50,11 @@ export type CommandPaletteCommandRow = {
 export type CommandPaletteControlRow = {
     kind: "control";
     id: string;
+    /**
+     * Leading glyph, in the same lane a command row's sits in, so the hosted
+     * row's words start on the column every other row's do.
+     */
+    icon?: IconName;
     control: ReactNode;
     /**
      * What this row is, in words. The row's visible text lives inside `control`
@@ -129,7 +134,7 @@ function commandRowContent(row: CommandPaletteCommandRow) {
                         tone={row.avatar.tone}
                     />
                 ) : row.icon ? (
-                    <Icon name={row.icon} size={18} />
+                    <Icon name={row.icon} size={16} />
                 ) : null}
             </span>
             <span
@@ -179,11 +184,15 @@ function commandRowContent(row: CommandPaletteCommandRow) {
  * their native roles, states, and tab stops, and the announcement carries what
  * `aria-selected` would have carried.
  *
- * Two kinds of row share one list. A command row is a 44px button — leading
- * glyph or avatar, title, muted second line, optional trailing cap. A control
- * row hosts the very FormRow + Switch/SegmentedControl the settings page
- * renders, at that row's own natural height, so a preference can be changed
- * where it was found instead of being navigated to.
+ * Two kinds of row share one list, and one look: the settings page's row. A
+ * command row is a button wearing FormRow's type — the 13px label over its
+ * 12px muted second line — after a leading glyph or avatar and before an
+ * optional trailing cap. A control row hosts the very FormRow +
+ * Switch/SegmentedControl the settings page renders, after the same leading
+ * lane, so a preference can be changed where it was found instead of being
+ * navigated to. Both stand 56px tall: the settings row's two lines with the
+ * compact density's 8px above and below, so a list mixing them keeps one
+ * rhythm. Hand the hosted FormRow `density="compact"` to keep it there.
  */
 export function CommandPaletteResults(props: CommandPaletteResultsProps) {
     const rows = commandPaletteResultsRows(props.sections);
@@ -264,7 +273,18 @@ export function CommandPaletteResults(props: CommandPaletteResultsProps) {
                                             onPointerMove={onPointerMove}
                                             ref={isActive ? activeRowRef : undefined}
                                         >
-                                            {row.control}
+                                            <span
+                                                aria-hidden="true"
+                                                className="happy-command-palette-results__leading"
+                                                data-happy-desktop-ui="command-palette-results-leading"
+                                            >
+                                                {row.icon ? (
+                                                    <Icon name={row.icon} size={16} />
+                                                ) : null}
+                                            </span>
+                                            <div className="happy-command-palette-results__control">
+                                                {row.control}
+                                            </div>
                                         </div>
                                     ) : (
                                         <button

@@ -17,7 +17,8 @@ export const componentNumber = "C-273";
 const BODY_WIDTH = 622;
 
 const SESSION_SHORTCUT = commandShortcut("t");
-const WORKSPACE_SHORTCUT = commandShortcut("n", { shift: true });
+const SIDEBAR_SHORTCUT = commandShortcut("b");
+const PANEL_SHORTCUT = commandShortcut("j");
 
 const suggestions: CommandPaletteResultsSection[] = [
     {
@@ -38,31 +39,56 @@ const suggestions: CommandPaletteResultsSection[] = [
         rows: [
             {
                 kind: "command",
-                id: "chat-relay",
-                avatar: { initials: "S", tone: "ocean" },
-                meta: "seville · main",
-                title: "Palette results list",
+                id: "task-cmdk",
+                icon: "tasks",
+                meta: "Task",
+                title: "Fix Cmd K search",
             },
             {
                 kind: "command",
-                id: "chat-gutter",
-                avatar: { initials: "S", tone: "ocean" },
-                meta: "seville · top-gutter",
-                title: "Overlay gutter discrepancy",
+                id: "chat-notes",
+                icon: "chat",
+                meta: "Release desktop",
+                title: "Write the release notes",
             },
             {
                 kind: "command",
-                id: "chat-updater",
+                id: "bot-happy",
                 avatar: { initials: "H", tone: "violet" },
-                meta: "happy-desktop · main",
-                title: "Updater restart phases",
+                meta: "Bot",
+                title: "Happy",
+            },
+            {
+                kind: "command",
+                id: "chat-rows",
+                icon: "chat",
+                meta: "happy-desktop / search-results",
+                title: "Palette result rows",
             },
         ],
     },
+];
+
+/** What a typed query finds among the window's acts: each row wears its chord. */
+const actions: CommandPaletteResultsSection[] = [
     {
         id: "actions",
         caption: "Actions",
         rows: [
+            {
+                kind: "command",
+                id: "sidebar-toggle",
+                icon: "sidebar-collapse",
+                shortcut: SIDEBAR_SHORTCUT,
+                title: "Hide sidebar",
+            },
+            {
+                kind: "command",
+                id: "panel-toggle",
+                icon: "panel-expand",
+                shortcut: PANEL_SHORTCUT,
+                title: "Show secondary pane",
+            },
             {
                 kind: "command",
                 id: "chat-new",
@@ -70,14 +96,6 @@ const suggestions: CommandPaletteResultsSection[] = [
                 shortcut: SESSION_SHORTCUT,
                 title: "New chat",
             },
-            {
-                kind: "command",
-                id: "workspace-new",
-                icon: "branch",
-                shortcut: WORKSPACE_SHORTCUT,
-                title: "New workspace",
-            },
-            { kind: "command", id: "settings-open", icon: "settings", title: "Open settings" },
         ],
     },
 ];
@@ -90,10 +108,12 @@ const settings: CommandPaletteResultsSection[] = [
             {
                 kind: "control",
                 id: "theme",
+                icon: "sun",
                 label: "Theme",
                 description: "Match the system appearance or pin one",
                 control: (
                     <FormRow
+                        density="compact"
                         control={
                             <SegmentedControl
                                 aria-label="Theme"
@@ -115,10 +135,12 @@ const settings: CommandPaletteResultsSection[] = [
             {
                 kind: "control",
                 id: "shimmer",
+                icon: "zap",
                 label: "Shimmer active titles",
                 description: "Animates running session, project, and workspace names",
                 control: (
                     <FormRow
+                        density="compact"
                         control={
                             <Switch
                                 aria-label="Shimmer active titles"
@@ -135,10 +157,12 @@ const settings: CommandPaletteResultsSection[] = [
             {
                 kind: "control",
                 id: "experiments",
+                icon: "settings",
                 label: "Enable experimental features",
                 description: "Unfinished surfaces, on your own recognizance",
                 control: (
                     <FormRow
+                        density="compact"
                         control={
                             <Switch
                                 aria-label="Enable experimental features"
@@ -197,15 +221,15 @@ export function CommandPaletteResultsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The ⌘K palette's body: captioned sections of 44px command rows and live settings rows, with one highlighted row that Enter commits. Props only — the owner holds the flat index and moves it."
+            summary="The ⌘K palette's body: captioned sections of command rows and live settings rows, all the settings page's FormRow at its compact 56px, with one highlighted row that Enter commits. Props only — the owner holds the flat index and moves it."
             title="Command palette results"
         >
             <div className="specimen-grid">
                 <BodySpecimen
-                    detail="empty query · update, recents, actions · highlight on the first row"
+                    detail="empty query · the waiting update, then what was worked in last across tasks, bots, and projects · highlight on the first row"
                     label="Suggestions"
                     number="PR-01"
-                    rule="622px body width · 44px rows · 28px captions"
+                    rule="622px body width · 56px rows · 28px captions"
                 >
                     <CommandPaletteResults activeIndex={0} sections={suggestions} />
                 </BodySpecimen>
@@ -213,12 +237,23 @@ export function CommandPaletteResultsPage() {
 
             <div className="specimen-grid">
                 <BodySpecimen
-                    detail="the flat index counts across sections: row 5 is the second action"
+                    detail="the flat index counts across sections: row 3 is the third recent chat"
                     label="Highlight across sections"
                     number="PR-02"
-                    rule="index 5 of 7 · captions are not rows"
+                    rule="index 3 of 5 · captions are not rows"
                 >
-                    <CommandPaletteResults activeIndex={5} sections={suggestions} />
+                    <CommandPaletteResults activeIndex={3} sections={suggestions} />
+                </BodySpecimen>
+            </div>
+
+            <div className="specimen-grid">
+                <BodySpecimen
+                    detail="a typed query such as “fold sidebar” finds the window's acts, each with the chord that does the same"
+                    label="Actions"
+                    number="PR-06"
+                    rule="56px rows · trailing cap"
+                >
+                    <CommandPaletteResults activeIndex={0} sections={actions} />
                 </BodySpecimen>
             </div>
 
@@ -227,7 +262,7 @@ export function CommandPaletteResultsPage() {
                     detail="the same FormRow + SegmentedControl the settings page renders · highlighted, the chosen segment still reads as chosen"
                     label="Settings in place"
                     number="PR-03"
-                    rule="control rows keep FormRow's own height · hairline dropped on the last one"
+                    rule="compact FormRow · 56px like every command row · no hairlines"
                 >
                     <CommandPaletteResults activeIndex={0} sections={settings} />
                 </BodySpecimen>

@@ -2,6 +2,13 @@ import { partitionComponentProps } from "./componentProps";
 import { type CSSProperties, type ReactNode } from "react";
 export type FormRowLayout = "inline" | "stacked";
 export type FormRowAlign = "start" | "center";
+/**
+ * `regular` is the settings page's own rhythm. `compact` keeps the same type,
+ * gaps, and divider with half the vertical padding, for a list that holds
+ * settings rows among others — the command palette — where a full settings row
+ * would stand taller than everything around it.
+ */
+export type FormRowDensity = "regular" | "compact";
 export type FormRowProps = {
     className?: string;
     "data-testid"?: string;
@@ -12,6 +19,7 @@ export type FormRowProps = {
     control: ReactNode;
     layout?: FormRowLayout;
     align?: FormRowAlign;
+    density?: FormRowDensity;
 };
 /**
  * C-029 FormRow — a settings row. A left-aligned label + optional muted
@@ -25,6 +33,7 @@ export function FormRow(props: FormRowProps) {
         "align",
         "className",
         "control",
+        "density",
         "description",
         "htmlFor",
         "label",
@@ -38,6 +47,7 @@ export function FormRow(props: FormRowProps) {
             {...rest}
             className={["happy-form-row", local.className].filter(Boolean).join(" ")}
             data-align={align()}
+            data-density={local.density === "compact" ? "compact" : undefined}
             data-layout={layout()}
             data-happy-desktop-ui="form-row"
             style={local.style}

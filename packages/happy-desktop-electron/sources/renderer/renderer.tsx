@@ -29,6 +29,7 @@ import {
     keepAwakeStoreOwnedCreate,
     type KeepAwakeStore,
     commandPaletteStoreCreate,
+    commandPaletteStoreNoop,
     experimentsStoreCreate,
     projectsVisibilityStoreCreate,
     stemCellAnimationStoreCreate,
@@ -710,6 +711,18 @@ function DesktopScreens(props: DesktopRendererProps) {
     );
     const main = props.connectionUis.get(LOCAL_HAPPY_AGENT_ID);
     const surfaceWindowState = props.surfaceWindowState;
+    // The palette of the connection on screen dims the whole window, the rail
+    // beside its surface included; each connection keeps its own palette.
+    const activeId = directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID;
+    const palette =
+        activeId === LOCAL_HAPPY_AGENT_ID
+            ? props.commandPalette
+            : (props.connectionUis.get(activeId)?.commandPalette ?? commandPaletteStoreNoop);
+    const paletteOpen = useSyncExternalStore(
+        palette.subscribe,
+        () => palette.get().open,
+        () => palette.get().open,
+    );
     // An update of the local daemon does not take the window: the shell stays
     // usable, and the update is told on a card in the local sidebar's footer.
     // A local Happy Agent that is broken does take it: every machine reaches
@@ -766,6 +779,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                 reorderError={directory.reorderError}
                 windowControls={props.platform === "desktop"}
                 collapsed={sidebarVisibility.hidden}
+                {...(paletteOpen ? { scrim: { onDismiss: palette.paletteClose } } : {})}
                 error={directory.error}
             >
                 <ConnectionSurface

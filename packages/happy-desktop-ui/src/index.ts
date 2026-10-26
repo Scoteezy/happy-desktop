@@ -103,6 +103,7 @@ export {
 export {
     AppShell,
     APP_SHELL_PANEL_DEFAULT_WIDTH,
+    APP_SHELL_SIDEBAR_SHORTCUT,
     type AppShellFocusedPane,
     type AppShellProps,
 } from "./AppShell";
@@ -629,7 +630,13 @@ export {
     type CommandPaletteResultsSection,
     type CommandPaletteRowEmphasis,
 } from "./CommandPaletteResults";
-export { FormRow, type FormRowAlign, type FormRowLayout, type FormRowProps } from "./FormRow";
+export {
+    FormRow,
+    type FormRowAlign,
+    type FormRowDensity,
+    type FormRowLayout,
+    type FormRowProps,
+} from "./FormRow";
 export {
     DocumentEditor,
     documentFragmentName,

@@ -23,7 +23,7 @@ import {
     projectsVisibilityStoreCreate,
 } from "happy-desktop-state";
 import { APP_SHORTCUTS } from "../../sources/appShortcuts";
-import { commandPaletteSuggestionRows } from "../../sources/commandPaletteResults";
+import { commandPaletteQuickActionRows } from "../../sources/commandPaletteResults";
 import {
     AppHappyAgentView,
     type AppHappyAgentDirectorySnapshot,
@@ -564,13 +564,15 @@ it("leaves Command-N alone on a Happy Agent that cannot make tasks", () => {
 it("offers New task in the command palette with its chord, only where a task can be made", () => {
     const context = {
         archivedSessions: [],
+        bots: [],
+        tasks: [],
         happyAgentId: "local",
         projects: [],
         sessionCreateAvailable: false,
         tabs: [],
         workspaceCreateAvailable: false,
     };
-    const rows = commandPaletteSuggestionRows({ ...context, taskCreateAvailable: true });
+    const rows = commandPaletteQuickActionRows({ ...context, taskCreateAvailable: true });
     const task = rows.find((candidate) => candidate.id === "action:task-create");
     expect(task).toMatchObject({
         title: "New task",
@@ -578,7 +580,7 @@ it("offers New task in the command palette with its chord, only where a task can
         command: { kind: "taskCreate" },
     });
     expect(
-        commandPaletteSuggestionRows({ ...context, taskCreateAvailable: false }).some(
+        commandPaletteQuickActionRows({ ...context, taskCreateAvailable: false }).some(
             (candidate) => candidate.id === "action:task-create",
         ),
     ).toBe(false);

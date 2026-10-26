@@ -1,4 +1,4 @@
-import { commandShortcut } from "happy-desktop-ui";
+import { APP_SHELL_SIDEBAR_SHORTCUT, commandShortcut } from "happy-desktop-ui";
 
 /**
  * The window's Command chords, in one place because two surfaces read them: the
@@ -12,6 +12,11 @@ export const APP_SHORTCUTS = {
     panelToggle: commandShortcut("j"),
     panelToggleAlternate: commandShortcut("b", { alt: true }),
     sessionCreate: commandShortcut("t"),
+    /**
+     * Folds the window's sidebar away and brings it back. The shell binds it
+     * itself; it is named here so the palette's row wears the shell's own cap.
+     */
+    sidebarToggle: APP_SHELL_SIDEBAR_SHORTCUT,
     tabClose: commandShortcut("w"),
     /** Opens the new-task surface on the active Happy Agent, as its Tasks heading's + does. */
     taskCreate: commandShortcut("n"),

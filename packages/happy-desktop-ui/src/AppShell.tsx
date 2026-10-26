@@ -237,6 +237,12 @@ function laneMaxWidthOf(
 }
 const SHORTCUT_HINT_DELAY_MS = 500;
 const SIDEBAR_SHORTCUT = commandShortcut("b");
+/**
+ * The chord this shell folds its sidebar on. Exported so a surface that offers
+ * the same fold elsewhere — the command palette's row — shows the cap the shell
+ * actually answers to rather than a copy of it.
+ */
+export const APP_SHELL_SIDEBAR_SHORTCUT = SIDEBAR_SHORTCUT;
 export const APP_SHELL_RESIZE_LAYOUT_EVENT = "happy-app-shell-resize-layout";
 function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));

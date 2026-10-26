@@ -357,7 +357,7 @@ import {
     commandPaletteIndexMove,
     commandPaletteResults,
     commandPaletteRowAt,
-    commandPaletteSuggestionRows,
+    commandPaletteQuickActionRows,
     type CommandPaletteCommand,
     type CommandPaletteContext,
     type CommandPaletteRow,
@@ -4567,6 +4567,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         workspace: active?.session?.workspace,
         workspaceCreateProjectId: workspaceCreateTarget?.projectId,
         taskCreateAvailable: taskCreateTarget !== undefined,
+        // A window that keeps no fold of its own leaves it to the shell, which
+        // nothing outside it can reach, so no row offers it.
+        ...(props.sidebarVisibility ? { sidebar: { hidden: sidebarVisibility.hidden } } : {}),
     };
     // The same suggestions the empty palette offers, on the gesture the reader
     // already has for discovering chords. The shell mounts it only while
@@ -4590,6 +4593,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         onTaskCreateOpen: props.onTaskCreateOpen,
         store: commandPaletteStore,
         settings: settingsStore,
+        sidebarVisibility: sidebarVisibilityStore,
         titleShimmer: titleShimmerStore,
     };
 
@@ -5050,6 +5054,8 @@ interface HappyAgentPaletteSubject {
     taskCreateAvailable: boolean;
     updateReady?: { readonly action: "refresh" | "restart"; readonly version?: string };
     workspace?: HappyAgentWorkspaceStore;
+    /** The window's own fold of its left side, when it keeps one. */
+    sidebar?: { readonly hidden: boolean };
 }
 
 /** The window acts the palette can commit to. */
@@ -5057,6 +5063,7 @@ interface HappyAgentPaletteActions {
     appearance: AppearanceStore;
     experiments: ExperimentsStore;
     settings: HappyAgentSettingsStore;
+    sidebarVisibility: HappyAgentSidebarVisibilityStore;
     titleShimmer: TitleShimmerStore;
     store: CommandPaletteStore;
     happyAgentOnline: () => boolean;
@@ -5084,6 +5091,8 @@ interface HappyAgentPaletteFacts {
     readonly tabs: readonly CommandPaletteTab[];
     readonly sessionCreateAvailable: boolean;
     readonly groupResume?: ReadonlyMap<HappyAgentGroupId, HappyAgentSessionId>;
+    /** The open workspace's secondary pane, when it has one to show. */
+    readonly panel?: { readonly open: boolean };
 }
 
 /**
@@ -5133,6 +5142,7 @@ function paletteTabs(
  */
 function paletteFacts(
     workspace: HappyAgentWorkspaceSnapshot,
+    panel: HappyAgentPanelSnapshot,
     groupId: string | undefined,
     online: boolean,
 ): HappyAgentPaletteFacts {
@@ -5155,6 +5165,11 @@ function paletteFacts(
             workspace.groupAccess.conversationRefusal === undefined &&
             workspaceLifecyclePhase(openGroup.lifecycle) !== "creating",
         tabs: paletteTabs(workspace, openGroup),
+        // The pane the workspace's own toggle shows, on the same condition:
+        // a checkout still being prepared has nothing to put in it.
+        ...(openGroup !== undefined && workspaceLifecyclePhase(openGroup.lifecycle) !== "creating"
+            ? { panel: { open: panel.open } }
+            : {}),
     };
 }
 
@@ -5173,10 +5188,15 @@ function HappyAgentCommandPaletteSurface(
         props.workspace.get,
         props.workspace.get,
     );
+    const panel = useSyncExternalStore(
+        props.workspace.panel.subscribe,
+        props.workspace.panel.get,
+        props.workspace.panel.get,
+    );
     return (
         <HappyAgentCommandPalette
             {...props}
-            facts={paletteFacts(workspace, props.groupId, props.online)}
+            facts={paletteFacts(workspace, panel, props.groupId, props.online)}
         />
     );
 }
@@ -5190,10 +5210,15 @@ function HappyAgentQuickActionsSurface(
         props.workspace.get,
         props.workspace.get,
     );
+    const panel = useSyncExternalStore(
+        props.workspace.panel.subscribe,
+        props.workspace.panel.get,
+        props.workspace.panel.get,
+    );
     return (
         <HappyAgentQuickActions
             {...props}
-            facts={paletteFacts(workspace, props.groupId, props.online)}
+            facts={paletteFacts(workspace, panel, props.groupId, props.online)}
         />
     );
 }
@@ -5205,6 +5230,9 @@ function paletteContext(
 ): CommandPaletteContext {
     return {
         archivedSessions: facts.archivedSessions,
+        bots: subject.bots,
+        tasks: subject.tasks,
+        chatId: subject.chatId,
         groupId: subject.groupId,
         happyAgentId: subject.happyAgentId,
         projects: subject.projects,
@@ -5216,25 +5244,27 @@ function paletteContext(
             subject.workspace !== undefined &&
             subject.workspaceCreateProjectId !== undefined,
         taskCreateAvailable: subject.taskCreateAvailable,
+        ...(subject.sidebar ? { sidebar: subject.sidebar } : {}),
+        ...(facts.panel ? { panel: facts.panel } : {}),
     };
 }
 
 /**
- * What holding Command puts in the middle of the window: the rows the empty
- * palette would offer, each wearing the chord that runs it.
+ * What holding Command puts in the middle of the window: the acts the palette
+ * answers a typed query with, each wearing the chord that runs it.
  *
- * It is the same list, from the same transform, so the card is a preview of the
- * palette rather than a second opinion about what matters. Rows the card cannot
- * draw — a workspace's picture, a live settings control — are left out rather
- * than approximated; suggestions produce none today.
+ * It is the same list, from the same transform, so the card never teaches a
+ * chord for something the palette would not run. Rows the card cannot draw —
+ * a picture, a live settings control — are left out rather than approximated;
+ * actions produce none today.
  */
 function HappyAgentQuickActions(
     props: HappyAgentPaletteSubject & { facts: HappyAgentPaletteFacts },
 ) {
-    const items = commandPaletteSuggestionRows(paletteContext(props, props.facts))
+    const items = commandPaletteQuickActionRows(paletteContext(props, props.facts))
         .slice(0, COMMAND_PALETTE_PREVIEW_LIMIT)
         .flatMap((row): QuickActionsCardItem[] =>
-            row.kind !== "command" || row.glyph.kind === "avatar"
+            row.glyph.kind === "avatar"
                 ? []
                 : [
                       {
@@ -5353,14 +5383,14 @@ function HappyAgentCommandPalette(
                     );
                     highlightIntent();
                 }}
-                placeholder="Search chats, workspaces, and settings…"
+                placeholder="Search tasks, chats, and workspaces…"
                 query={palette.query}
             >
                 <CommandPaletteResults
                     activeIndex={palette.activeIndex}
                     emptyDescription="Try a different search."
                     emptyLabel="No results"
-                    label="Command palette results"
+                    label="Search results"
                     onActiveIndexChange={(index) => {
                         props.store.activeIndexUpdate(index);
                         highlightIntent();
@@ -5382,6 +5412,7 @@ function paletteResultsRow(
         return {
             control: paletteSettingControl(row, actions),
             description: row.description,
+            icon: row.icon,
             id: row.id,
             kind: "control",
             // The control is opaque to the list, so what it is called has to be
@@ -5424,6 +5455,7 @@ function paletteSettingControl(
         case "themeMode":
             return (
                 <FormRow
+                    density="compact"
                     control={
                         <SegmentedControl
                             aria-label={row.label}
@@ -5442,6 +5474,7 @@ function paletteSettingControl(
         case "scrollbarVisibility":
             return (
                 <FormRow
+                    density="compact"
                     control={
                         <SegmentedControl
                             aria-label={row.label}
@@ -5462,6 +5495,7 @@ function paletteSettingControl(
         case "titleShimmer":
             return (
                 <FormRow
+                    density="compact"
                     control={
                         <Switch
                             aria-label={row.label}
@@ -5479,6 +5513,7 @@ function paletteSettingControl(
         case "linkOpenPlacement":
             return (
                 <FormRow
+                    density="compact"
                     control={
                         <SegmentedControl
                             aria-label={row.label}
@@ -5605,6 +5640,12 @@ function paletteCommandRun(
             return;
         case "updateApply":
             props.onUpdateApply?.();
+            return;
+        case "sidebarHiddenUpdate":
+            props.sidebarVisibility.sidebarHiddenUpdate(command.hidden);
+            return;
+        case "panelToggle":
+            props.workspace?.panel.panelToggle();
             return;
     }
 }

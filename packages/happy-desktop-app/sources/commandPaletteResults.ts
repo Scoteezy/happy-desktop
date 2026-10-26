@@ -1,7 +1,10 @@
 import type {
+    HappyAgentBot,
+    HappyAgentBotSubtask,
     HappyAgentFileTabKind,
     HappyAgentProjectGroup,
     HappyAgentSessionSummary,
+    HappyAgentTask,
     HappyAgentWorktreeGroup,
     HappyAgentLinkOpenPlacement,
     ScrollbarVisibility,
@@ -21,9 +24,9 @@ import { APP_SHORTCUTS } from "./appShortcuts";
  * is reflected without the palette asking anyone for fresh data.
  *
  * The transform is deliberately a plain function over explicit inputs rather
- * than a hook: the same rows fill the palette and the held-Command preview, and
- * neither of those two surfaces should be able to offer something the other
- * does not.
+ * than a hook: the same action rows fill the palette's answers and the
+ * held-Command preview, and neither of those two surfaces should be able to
+ * offer an act the other does not.
  */
 
 /**
@@ -66,7 +69,10 @@ export type CommandPaletteCommand =
     | { readonly kind: "taskCreate" }
     | { readonly kind: "settingsOpen" }
     | { readonly kind: "settingsSectionOpen"; readonly section: string }
-    | { readonly kind: "updateApply" };
+    | { readonly kind: "updateApply" }
+    /** Folds the window's sidebar away or brings it back, to the state the row names. */
+    | { readonly kind: "sidebarHiddenUpdate"; readonly hidden: boolean }
+    | { readonly kind: "panelToggle" };
 
 /** A row that goes somewhere or does something, and then closes the palette. */
 export interface CommandPaletteCommandRow {
@@ -135,6 +141,8 @@ export interface CommandPaletteSettingRowBase {
     readonly id: string;
     /** The settings surface's own wording, so the palette row is that row. */
     readonly label: string;
+    /** The glyph in the row's leading lane, beside every other row's. */
+    readonly icon: IconName;
     readonly description: string;
     /** The control's DOM id, which the row's label points at. */
     readonly controlId: string;
@@ -142,9 +150,10 @@ export interface CommandPaletteSettingRowBase {
 
 export type CommandPaletteRow = CommandPaletteCommandRow | CommandPaletteSettingRow;
 
-/** The sections a typed query offers, in the fixed order the palette lists them. */
+/** The sections the palette offers, in the fixed order it lists them. */
 export type CommandPaletteSectionId =
-    | "suggestions"
+    | "update"
+    | "recent"
     | "chats"
     | "workspaces"
     | "tabs"
@@ -153,7 +162,8 @@ export type CommandPaletteSectionId =
 
 export interface CommandPaletteSection {
     readonly id: CommandPaletteSectionId;
-    readonly label: string;
+    /** The caption over the rows; absent for a section that is one piece of news. */
+    readonly label?: string;
     readonly rows: readonly CommandPaletteRow[];
 }
 
@@ -183,7 +193,7 @@ export type CommandPaletteTab =
  * Where the reader is and what they could do from there.
  *
  * It is stated apart from the query and the settings values because the
- * held-Command preview offers the same suggestions without either: it is not a
+ * held-Command preview offers the same actions without either: it is not a
  * search, and it changes nothing, so it must not have to read the theme to say
  * what a reader could do next.
  */
@@ -191,8 +201,20 @@ export interface CommandPaletteContext {
     /** The machine whose work the palette lists: the one the address names. */
     readonly happyAgentId: string;
     readonly projects: readonly HappyAgentProjectGroup[];
+    /**
+     * The bots and tasks the sidebar lists. Their conversations are chats like
+     * any project's — the ones a reader is usually working in — so they are
+     * searched and suggested by their own names.
+     */
+    readonly bots: readonly HappyAgentBot[];
+    readonly tasks: readonly HappyAgentTask[];
     /** The addressed project or worktree, when the address names one. */
     readonly groupId?: string;
+    /**
+     * The chat on screen. It is the one chat a reader never needs offered back
+     * to them, so the empty palette leaves it out of what was worked on last.
+     */
+    readonly chatId?: string;
     /** Sessions the host still holds after taking them out of their strips. */
     readonly archivedSessions: readonly HappyAgentSessionSummary[];
     /** The open workspace's tabs, in the order its strip shows them. */
@@ -209,6 +231,16 @@ export interface CommandPaletteContext {
     readonly workspaceCreateAvailable: boolean;
     /** Whether a new task can be made on the addressed Happy Agent. */
     readonly taskCreateAvailable: boolean;
+    /**
+     * The window's fold of its left side, when this window owns one. Absent,
+     * nothing outside the shell can fold it, so no row offers to.
+     */
+    readonly sidebar?: { readonly hidden: boolean };
+    /**
+     * The open workspace's secondary pane, when it has one to show: a checkout
+     * still being prepared has nothing to put in it.
+     */
+    readonly panel?: { readonly open: boolean };
 }
 
 export interface CommandPaletteInput extends CommandPaletteContext {
@@ -223,8 +255,8 @@ export interface CommandPaletteInput extends CommandPaletteContext {
 /** How many rows a typed query's section shows before it stops. */
 const SECTION_LIMIT = 6;
 /** How many recent chats the empty palette suggests. */
-const RECENT_LIMIT = 5;
-/** How many suggestions the held-Command preview shows without a query. */
+const RECENT_LIMIT = 8;
+/** How many actions the held-Command preview shows. */
 export const COMMAND_PALETTE_PREVIEW_LIMIT = 6;
 
 const THEME_SEGMENTS: readonly { readonly value: ThemeMode; readonly label: string }[] = [
@@ -431,6 +463,22 @@ function textRank(text: string, query: string): number | undefined {
 }
 
 /**
+ * How well text answers a query of several words typed in any order: each word
+ * has to be found in it, and the text ranks as its weakest word does — never as
+ * a prefix, which only the whole query in its own order can be.
+ */
+function wordsRank(text: string, words: readonly string[]): number | undefined {
+    if (words.length < 2) return undefined;
+    let worst = 1;
+    for (const word of words) {
+        const rank = textRank(text, word);
+        if (rank === undefined) return undefined;
+        worst = Math.max(worst, rank);
+    }
+    return worst;
+}
+
+/**
  * A row's rank over its title and its supporting text. Anything that is not the
  * title is demoted below every title match, so a chat whose name contains the
  * query is never pushed under one whose folder happens to.
@@ -442,16 +490,21 @@ function rowRank(
     title: string,
     ...secondary: (string | undefined)[]
 ): number | undefined {
-    const primary = textRank(title, query);
+    const words = query.split(/\s+/u).filter((word) => word.length > 0);
+    const primary = textRank(title, query) ?? wordsRank(title, words);
     if (primary === 0) return 0;
     let best = primary;
-    for (const text of secondary) {
-        if (text === undefined) continue;
-        const rank = textRank(text, query);
-        if (rank === undefined) continue;
+    const demote = (rank: number | undefined) => {
+        if (rank === undefined) return;
         const demoted = rank + SECONDARY_PENALTY;
         if (best === undefined || demoted < best) best = demoted;
-    }
+    };
+    const supporting = secondary.filter((text): text is string => text !== undefined);
+    for (const text of supporting) demote(textRank(text, query));
+    // The words of one query may be split between the title and what the row
+    // answers to: "fold sidebar" is one keyword of Hide sidebar and one word of
+    // its title.
+    if (supporting.length > 0) demote(wordsRank([title, ...supporting].join(" "), words));
     return best;
 }
 
@@ -475,81 +528,181 @@ function ranked(rows: readonly Ranked[], limit: number): CommandPaletteRow[] {
         .map((entry) => entry.row);
 }
 
-/** Every session of every workspace on this machine, open ones and closed ones. */
-function chatRows(input: CommandPaletteInput): Ranked[] {
-    const query = input.query.trim().toLowerCase();
-    const rows: Ranked[] = [];
-    const openIds = new Set<string>();
-    const push = (
-        project: HappyAgentProjectGroup,
-        worktree: HappyAgentWorktreeGroup | undefined,
-        summary: { readonly id: string; readonly title: string; readonly updatedAt: number },
-    ) => {
-        const meta = groupMeta(project, worktree);
-        const rank = rowRank(query, summary.title, meta);
-        if (rank === undefined) return;
-        rows.push({
-            rank,
-            updatedAt: summary.updatedAt,
+/** Up to two initials from a name, the way the sidebar marks a face without a picture. */
+function initialsOf(name: string): string {
+    return name
+        .trim()
+        .split(/\s+/u)
+        .filter((word) => word.length > 0)
+        .slice(0, 2)
+        .map((word) => word.slice(0, 1).toUpperCase())
+        .join("");
+}
+
+/** A task's face, as its sidebar row wears it: the owner's, or the tasks glyph. */
+function taskGlyph(task: HappyAgentTask): CommandPaletteGlyph {
+    const owner = task.owner;
+    const initials = owner?.name === undefined ? "" : initialsOf(owner.name);
+    if (owner === null || (initials === "" && owner.avatar === undefined))
+        return { kind: "icon", name: "tasks" };
+    return {
+        kind: "avatar",
+        initials,
+        ...(owner.avatar ? { imageUrl: owner.avatar.url } : {}),
+    };
+}
+
+/**
+ * One chat the palette can open, wherever it is listed, with the moment it last
+ * changed. Closed sessions are marked: they are found by name, but the reader
+ * closed them, so they are never suggested.
+ */
+interface ChatOffer {
+    readonly row: CommandPaletteCommandRow;
+    readonly updatedAt: number;
+    readonly archived: boolean;
+}
+
+/**
+ * Every chat on this machine, as the sidebar lists them: each bot's one
+ * conversation, each task's, every subtask under either, the projects' and
+ * their worktrees' chats, and then the sessions the host still holds after
+ * they were closed. A chat is offered once, under the first of those it is
+ * found in.
+ *
+ * Recency is the conversation's own `updatedAt`: the newest content in the
+ * session, as the host reports it. Happy Agent states no separate moment for
+ * the reader's own last message, so this is the closest signal there is. It
+ * also moves when an agent replies, which is when a chat needs looking at again.
+ */
+function chatOffers(context: CommandPaletteContext): ChatOffer[] {
+    const offers: ChatOffer[] = [];
+    const offered = new Set<string>();
+    const push = (offer: {
+        readonly chatId: string;
+        readonly groupId: string;
+        readonly title: string;
+        readonly meta: string;
+        readonly glyph: CommandPaletteGlyph;
+        readonly updatedAt: number;
+        readonly archived?: boolean;
+    }) => {
+        if (offered.has(offer.chatId)) return;
+        offered.add(offer.chatId);
+        const archived = offer.archived === true;
+        offers.push({
+            archived,
+            updatedAt: offer.updatedAt,
             row: {
                 kind: "command",
-                id: `chat:${summary.id}`,
-                title: summary.title,
-                meta,
-                glyph: { kind: "icon", name: "chat" },
+                id: `chat:${offer.chatId}`,
+                title: offer.title,
+                meta: offer.meta,
+                glyph: offer.glyph,
                 command: {
                     kind: "chatOpen",
-                    happyAgentId: input.happyAgentId,
-                    groupId: worktree ? worktree.id : project.id,
-                    chatId: summary.id,
-                    archived: false,
+                    happyAgentId: context.happyAgentId,
+                    groupId: offer.groupId,
+                    chatId: offer.chatId,
+                    archived,
                 },
             },
         });
     };
-    for (const project of input.projects) {
-        for (const summary of project.conversations) {
-            openIds.add(summary.id);
-            push(project, undefined, summary);
+    // A subtask names the work it was split from, the way it nests under it.
+    const subtasksPush = (subtasks: readonly HappyAgentBotSubtask[], parent: string) => {
+        for (const subtask of subtasks) {
+            push({
+                chatId: subtask.conversation.id,
+                groupId: subtask.workspaceId,
+                title: subtask.conversation.title,
+                meta: parent,
+                glyph: { kind: "icon", name: "chat" },
+                updatedAt: subtask.conversation.updatedAt,
+            });
+            subtasksPush(subtask.subtasks, subtask.conversation.title);
         }
-        for (const worktree of project.worktrees)
-            for (const summary of worktree.conversations) {
-                openIds.add(summary.id);
-                push(project, worktree, summary);
-            }
+    };
+    for (const bot of context.bots) {
+        push({
+            chatId: bot.conversation.id,
+            groupId: bot.workspaceId,
+            title: bot.name,
+            meta: "Bot",
+            glyph: {
+                kind: "avatar",
+                initials: initialsOf(bot.name),
+                ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
+            },
+            updatedAt: bot.conversation.updatedAt,
+        });
+        subtasksPush(bot.subtasks, bot.name);
     }
-    for (const session of input.archivedSessions) {
+    for (const task of context.tasks) {
+        push({
+            chatId: task.conversation.id,
+            groupId: task.workspaceId,
+            title: task.name,
+            meta: task.owner?.name ? `Task · ${task.owner.name}` : "Task",
+            glyph: taskGlyph(task),
+            updatedAt: task.conversation.updatedAt,
+        });
+        subtasksPush(task.subtasks, task.name);
+    }
+    for (const project of context.projects) {
+        for (const summary of project.conversations)
+            push({
+                chatId: summary.id,
+                groupId: project.id,
+                title: summary.title,
+                meta: groupMeta(project),
+                glyph: { kind: "icon", name: "chat" },
+                updatedAt: summary.updatedAt,
+            });
+        for (const worktree of project.worktrees)
+            for (const summary of worktree.conversations)
+                push({
+                    chatId: summary.id,
+                    groupId: worktree.id,
+                    title: summary.title,
+                    meta: groupMeta(project, worktree),
+                    glyph: { kind: "icon", name: "chat" },
+                    updatedAt: summary.updatedAt,
+                });
+    }
+    for (const session of context.archivedSessions) {
         // A delegated chat has no row of its own anywhere else in the product;
         // it is opened by the session that runs it, so it is not offered here.
-        if (session.parentSessionId !== undefined || openIds.has(session.id)) continue;
-        const owner = groupFind(input.projects, happyAgentSessionGroupIdOf(session));
+        if (session.parentSessionId !== undefined) continue;
+        const groupId = happyAgentSessionGroupIdOf(session);
+        const owner = groupFind(context.projects, groupId);
         if (!owner) continue;
-        const title = session.title?.trim() || `Session ${session.id.slice(0, 8)}`;
-        const meta = groupMeta(owner.project, owner.worktree);
-        const rank = rowRank(query, title, meta);
-        if (rank === undefined) continue;
-        rows.push({
-            rank,
+        push({
+            chatId: session.id,
+            groupId,
+            title: session.title?.trim() || `Session ${session.id.slice(0, 8)}`,
+            meta: groupMeta(owner.project, owner.worktree),
+            // Closed sessions wear the recents glyph, exactly as the
+            // workspace's own history menu marks them.
+            glyph: { kind: "icon", name: "history" },
             updatedAt: session.lastMessageAt ?? session.updatedAt,
-            row: {
-                kind: "command",
-                id: `chat:${session.id}`,
-                title,
-                meta,
-                // Closed sessions wear the recents glyph, exactly as the
-                // workspace's own history menu marks them.
-                glyph: { kind: "icon", name: "history" },
-                command: {
-                    kind: "chatOpen",
-                    happyAgentId: input.happyAgentId,
-                    groupId: happyAgentSessionGroupIdOf(session),
-                    chatId: session.id,
-                    archived: true,
-                },
-            },
+            archived: true,
         });
     }
-    return rows;
+    return offers;
+}
+
+/**
+ * Every chat whose name answers the query. Only the name is searched: where a
+ * chat lives is a workspace, and the workspace answers for itself in its own
+ * section, so a folder's name never fills this one with every chat inside it.
+ */
+function chatRows(input: CommandPaletteInput, offers: readonly ChatOffer[]): Ranked[] {
+    const query = input.query.trim().toLowerCase();
+    return offers.flatMap((offer) => {
+        const rank = rowRank(query, offer.row.title);
+        return rank === undefined ? [] : [{ rank, updatedAt: offer.updatedAt, row: offer.row }];
+    });
 }
 
 /** Every project and worktree, named the way the sidebar names them. */
@@ -566,6 +719,7 @@ function workspaceRows(input: CommandPaletteInput): Ranked[] {
                     kind: "command",
                     id: `workspace:${project.id}`,
                     title: project.name,
+                    meta: project.displayPath,
                     glyph:
                         // The catch-all project has no remote to draw a picture
                         // from and an "H" plaque would read as one more
@@ -608,14 +762,19 @@ function workspaceRows(input: CommandPaletteInput): Ranked[] {
     return rows;
 }
 
-/** The open workspace's own strip, so a tab already open is one keystroke away. */
-function tabRows(input: CommandPaletteInput): Ranked[] {
+/**
+ * The open workspace's own strip, so a file already open is one keystroke away.
+ * A chat tab is already offered under Chats by its name, and offering the same
+ * chat twice would only push the files down.
+ */
+function tabRows(input: CommandPaletteInput, chats: ReadonlySet<string>): Ranked[] {
     const query = input.query.trim().toLowerCase();
     const groupId = input.groupId;
     if (groupId === undefined) return [];
     const rows: Ranked[] = [];
     for (const tab of input.tabs) {
         if (tab.kind === "session") {
+            if (chats.has(`chat:${tab.id}`)) continue;
             const rank = rowRank(query, tab.title);
             if (rank === undefined) continue;
             rows.push({
@@ -625,6 +784,7 @@ function tabRows(input: CommandPaletteInput): Ranked[] {
                     kind: "command",
                     id: `tab:${tab.id}`,
                     title: tab.title,
+                    meta: "Open tab",
                     glyph: { kind: "icon", name: "chat" },
                     command: {
                         kind: "chatOpen",
@@ -679,6 +839,7 @@ function settingRows(input: CommandPaletteInput): CommandPaletteSettingRow[] {
             kind: "setting",
             setting: "themeMode",
             id: "setting:theme",
+            icon: "sun",
             label: "Theme",
             description: "Applies to this window immediately",
             controlId: "happy-agent-palette-theme",
@@ -693,6 +854,7 @@ function settingRows(input: CommandPaletteInput): CommandPaletteSettingRow[] {
             kind: "setting",
             setting: "scrollbarVisibility",
             id: "setting:scrollbars",
+            icon: "settings",
             label: "Scrollbars",
             description: "Automatic hides two seconds after user scrolling stops",
             controlId: "happy-agent-palette-scrollbars",
@@ -707,6 +869,7 @@ function settingRows(input: CommandPaletteInput): CommandPaletteSettingRow[] {
             kind: "setting",
             setting: "linkOpenPlacement",
             id: "setting:link-open",
+            icon: "globe",
             label: "Open links in",
             description:
                 "Side panel keeps the page beside the conversation; Browser hands it to the machine's own",
@@ -722,6 +885,7 @@ function settingRows(input: CommandPaletteInput): CommandPaletteSettingRow[] {
             kind: "setting",
             setting: "titleShimmer",
             id: "setting:title-shimmer",
+            icon: "zap",
             label: "Shimmer active titles",
             description: "Animates running session, project, and workspace names",
             controlId: "happy-agent-palette-title-shimmer",
@@ -803,153 +967,184 @@ function updateRow(context: CommandPaletteContext): CommandPaletteCommandRow | u
     };
 }
 
+/** One thing the window can do, with the words it answers to beyond its title. */
+interface ActionOffer {
+    readonly row: CommandPaletteCommandRow;
+    /** What a reader might call the act instead: "fold" for hiding the sidebar. */
+    readonly keywords?: string;
+}
+
 /**
- * The things the window can do from anywhere, each with its own chord. The
- * update joins them only under a typed query: without one it already has the
- * top row, and offering it twice would be the palette shouting.
+ * The things the window can do from anywhere, each with the chord that does
+ * the same outside the palette. They are found by typing rather than listed on
+ * an empty palette: the palette is a search, and its actions are answers to it.
+ * The update joins them only under a typed query or on the held-Command card:
+ * the empty palette already gives it the top row, and offering it twice would
+ * be the palette shouting.
  */
-function actionRows(
+function actionOffers(
     context: CommandPaletteContext,
     update?: CommandPaletteCommandRow,
-): CommandPaletteCommandRow[] {
-    return [
-        ...(context.sessionCreateAvailable
-            ? [
-                  {
-                      kind: "command" as const,
-                      id: "action:session-create",
-                      title: "New chat",
-                      glyph: { kind: "icon" as const, name: "plus" as const },
-                      shortcut: APP_SHORTCUTS.sessionCreate,
-                      command: { kind: "sessionCreate" as const },
-                  },
-              ]
-            : []),
-        ...(context.taskCreateAvailable
-            ? [
-                  {
-                      kind: "command" as const,
-                      id: "action:task-create",
-                      title: "New task",
-                      glyph: { kind: "icon" as const, name: "tasks" as const },
-                      shortcut: APP_SHORTCUTS.taskCreate,
-                      command: { kind: "taskCreate" as const },
-                  },
-              ]
-            : []),
-        ...(context.workspaceCreateAvailable
-            ? [
-                  {
-                      kind: "command" as const,
-                      id: "action:workspace-create",
-                      title: "New workspace",
-                      glyph: { kind: "icon" as const, name: "branch" as const },
-                      command: { kind: "workspaceCreate" as const },
-                  },
-              ]
-            : []),
-        {
-            kind: "command" as const,
+): ActionOffer[] {
+    const offers: ActionOffer[] = [];
+    if (context.sessionCreateAvailable)
+        offers.push({
+            row: {
+                kind: "command",
+                id: "action:session-create",
+                title: "New chat",
+                glyph: { kind: "icon", name: "plus" },
+                shortcut: APP_SHORTCUTS.sessionCreate,
+                command: { kind: "sessionCreate" },
+            },
+            keywords: "session conversation start",
+        });
+    if (context.taskCreateAvailable)
+        offers.push({
+            row: {
+                kind: "command",
+                id: "action:task-create",
+                title: "New task",
+                glyph: { kind: "icon", name: "tasks" },
+                shortcut: APP_SHORTCUTS.taskCreate,
+                command: { kind: "taskCreate" },
+            },
+            keywords: "create start work",
+        });
+    if (context.workspaceCreateAvailable)
+        offers.push({
+            row: {
+                kind: "command",
+                id: "action:workspace-create",
+                title: "New workspace",
+                glyph: { kind: "icon", name: "branch" },
+                command: { kind: "workspaceCreate" },
+            },
+            keywords: "worktree branch checkout",
+        });
+    // The shell's own words for its toggles, so the row reads as the button.
+    const sidebar = context.sidebar;
+    if (sidebar)
+        offers.push({
+            row: {
+                kind: "command",
+                id: "action:sidebar-toggle",
+                title: sidebar.hidden ? "Show sidebar" : "Hide sidebar",
+                glyph: {
+                    kind: "icon",
+                    name: sidebar.hidden ? "sidebar-expand" : "sidebar-collapse",
+                },
+                shortcut: APP_SHORTCUTS.sidebarToggle,
+                command: { kind: "sidebarHiddenUpdate", hidden: !sidebar.hidden },
+            },
+            keywords: "fold unfold collapse expand toggle navigation left",
+        });
+    const panel = context.panel;
+    if (panel)
+        offers.push({
+            row: {
+                kind: "command",
+                id: "action:panel-toggle",
+                title: panel.open ? "Hide secondary pane" : "Show secondary pane",
+                glyph: { kind: "icon", name: panel.open ? "panel-collapse" : "panel-expand" },
+                shortcut: APP_SHORTCUTS.panelToggle,
+                command: { kind: "panelToggle" },
+            },
+            keywords: "fold unfold collapse expand toggle side panel right files terminal changes",
+        });
+    offers.push({
+        row: {
+            kind: "command",
             id: "action:settings",
             title: "Open settings",
-            glyph: { kind: "icon" as const, name: "settings" as const },
-            command: { kind: "settingsOpen" as const },
+            glyph: { kind: "icon", name: "settings" },
+            command: { kind: "settingsOpen" },
         },
-        ...(update ? [update] : []),
+        keywords: "preferences",
+    });
+    if (update) offers.push({ row: update, keywords: "upgrade restart reload version" });
+    return offers;
+}
+
+/**
+ * What the empty palette offers: the update if one is waiting, then the chats
+ * this machine was last working in, newest first, wherever they are listed —
+ * tasks and bots as much as projects. The chat on screen is left out: it is
+ * already where the reader is, and the row Enter would run should go somewhere.
+ *
+ * A machine with nothing worked on yet would leave the palette blank, so it
+ * offers the window's actions instead.
+ */
+export function commandPaletteSuggestionSections(
+    context: CommandPaletteContext,
+): CommandPaletteSection[] {
+    const recent = chatOffers(context)
+        .filter((offer) => !offer.archived && offer.row.id !== `chat:${context.chatId}`)
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+        .slice(0, RECENT_LIMIT)
+        .map((offer) => offer.row);
+    const update = updateRow(context);
+    return [
+        ...(update ? [{ id: "update" as const, rows: [update] }] : []),
+        recent.length > 0
+            ? { id: "recent" as const, label: "Recent", rows: recent }
+            : {
+                  id: "actions" as const,
+                  label: "Actions",
+                  rows: actionOffers(context).map((offer) => offer.row),
+              },
     ];
 }
 
 /**
- * What the palette offers before anything is typed, and what the held-Command
- * preview shows: the update if one is waiting, the chats this workspace was
- * last working on, and the things the window can always do.
- *
- * Recency is `updatedAt` rather than a record of local clicks, so the palette
- * and the workspace's own history menu answer "what was I just working on here"
- * with the same list in the same order.
+ * What holding Command shows: the waiting update and the window's actions,
+ * each wearing the chord that runs it. Discovering chords is that card's whole
+ * purpose, so it offers the same acts a typed query finds, in the same words,
+ * and none of the chats, which have no chord to teach.
  */
-export function commandPaletteSuggestionRows(context: CommandPaletteContext): CommandPaletteRow[] {
-    const groupId = context.groupId;
-    const owner = groupFind(context.projects, groupId);
-    const recent: Ranked[] = [];
-    if (owner && groupId !== undefined) {
-        const conversations = owner.worktree
-            ? owner.worktree.conversations
-            : owner.project.conversations;
-        const openIds = new Set(conversations.map((summary) => summary.id));
-        for (const summary of conversations)
-            recent.push({
-                rank: 0,
-                updatedAt: summary.updatedAt,
-                row: {
-                    kind: "command",
-                    id: `chat:${summary.id}`,
-                    title: summary.title,
-                    meta: groupMeta(owner.project, owner.worktree),
-                    glyph: { kind: "icon", name: "chat" },
-                    command: {
-                        kind: "chatOpen",
-                        happyAgentId: context.happyAgentId,
-                        groupId,
-                        chatId: summary.id,
-                        archived: false,
-                    },
-                },
-            });
-        for (const session of context.archivedSessions) {
-            if (
-                session.parentSessionId !== undefined ||
-                happyAgentSessionGroupIdOf(session) !== context.groupId ||
-                openIds.has(session.id)
-            )
-                continue;
-            recent.push({
-                rank: 0,
-                updatedAt: session.lastMessageAt ?? session.updatedAt,
-                row: {
-                    kind: "command",
-                    id: `chat:${session.id}`,
-                    title: session.title?.trim() || `Session ${session.id.slice(0, 8)}`,
-                    meta: groupMeta(owner.project, owner.worktree),
-                    glyph: { kind: "icon", name: "history" },
-                    command: {
-                        kind: "chatOpen",
-                        happyAgentId: context.happyAgentId,
-                        groupId,
-                        chatId: session.id,
-                        archived: true,
-                    },
-                },
-            });
-        }
-    }
+export function commandPaletteQuickActionRows(
+    context: CommandPaletteContext,
+): CommandPaletteCommandRow[] {
     const update = updateRow(context);
-    return [...(update ? [update] : []), ...ranked(recent, RECENT_LIMIT), ...actionRows(context)];
+    return [...(update ? [update] : []), ...actionOffers(context).map((offer) => offer.row)];
 }
 
 /**
  * Everything the palette is currently offering, as the flat list its highlight
  * addresses and as the sections it draws.
  *
- * An empty query answers with suggestions; anything typed searches the whole
- * machine, because the moment a reader types they are looking for something
- * they know the name of rather than something near where they are standing.
+ * An empty query answers with what was worked on last; anything typed searches
+ * the whole machine, because the moment a reader types they are looking for
+ * something they know the name of rather than something near where they are
+ * standing.
  */
 export function commandPaletteResults(input: CommandPaletteInput): CommandPaletteResults {
     const query = input.query.trim().toLowerCase();
     const sections: CommandPaletteSection[] = [];
     if (query.length === 0) {
-        const rows = commandPaletteSuggestionRows(input);
-        if (rows.length > 0) sections.push({ id: "suggestions", label: "Suggestions", rows });
+        for (const section of commandPaletteSuggestionSections(input))
+            if (section.rows.length > 0) sections.push(section);
     } else {
+        const chats = chatOffers(input);
         const offered: readonly {
             readonly id: CommandPaletteSectionId;
             readonly label: string;
-            readonly rows: readonly Ranked[];
+            readonly rows: readonly CommandPaletteRow[];
         }[] = [
-            { id: "chats", label: "Chats", rows: chatRows(input) },
-            { id: "workspaces", label: "Workspaces", rows: workspaceRows(input) },
-            { id: "tabs", label: "Tabs", rows: tabRows(input) },
+            { id: "chats", label: "Chats", rows: ranked(chatRows(input, chats), SECTION_LIMIT) },
+            {
+                id: "workspaces",
+                label: "Workspaces",
+                rows: ranked(workspaceRows(input), SECTION_LIMIT),
+            },
+            {
+                id: "tabs",
+                label: "Tabs",
+                rows: ranked(
+                    tabRows(input, new Set(chats.map((offer) => offer.row.id))),
+                    SECTION_LIMIT,
+                ),
+            },
             // Actions come before settings because they are few and each one is
             // something a reader meant to do, while settings are the long tail:
             // typing "new" is someone asking for a new chat, not for the page
@@ -957,17 +1152,28 @@ export function commandPaletteResults(input: CommandPaletteInput): CommandPalett
             {
                 id: "actions",
                 label: "Actions",
-                rows: actionRows(input, updateRow(input)).flatMap((row) => {
-                    const rank = rowRank(query, row.title, row.meta);
-                    return rank === undefined ? [] : [{ rank, updatedAt: 0, row }];
-                }),
+                rows: ranked(
+                    actionOffers(input, updateRow(input)).flatMap((offer) => {
+                        const rank = rowRank(
+                            query,
+                            offer.row.title,
+                            offer.row.meta,
+                            offer.keywords,
+                        );
+                        return rank === undefined ? [] : [{ rank, updatedAt: 0, row: offer.row }];
+                    }),
+                    SECTION_LIMIT,
+                ),
             },
-            { id: "settings", label: "Settings", rows: settingsSectionRows(input) },
+            {
+                id: "settings",
+                label: "Settings",
+                rows: ranked(settingsSectionRows(input), SECTION_LIMIT),
+            },
         ];
-        for (const section of offered) {
-            const rows = ranked(section.rows, SECTION_LIMIT);
-            if (rows.length > 0) sections.push({ id: section.id, label: section.label, rows });
-        }
+        for (const section of offered)
+            if (section.rows.length > 0)
+                sections.push({ id: section.id, label: section.label, rows: section.rows });
     }
     return { sections, rows: sections.flatMap((section) => section.rows) };
 }

@@ -16,6 +16,11 @@
     font-family: var(--happy-font-ui);
 }
 
+/* Half the vertical padding, same type and gaps: a settings row among others. */
+.happy-form-row[data-density="compact"] {
+    padding: 8px 0;
+}
+
 .happy-form-row[data-layout="inline"] {
     flex-direction: row;
     gap: 24px;

@@ -3,12 +3,14 @@
  *
  * Sections stack with an 8px breath and a 28px mono uppercase caption; captions
  * name a section and nothing else, so there are no rules or stripes between
- * them. A command row is 44px on the 4px grid: a 28px leading lane (avatar or
- * glyph), a 12px gutter, the title over a muted second line, then an optional
- * cap. A control row states no height — it wears the one the settings page
- * gives its FormRow, which is the whole point of showing it here. The
- * highlighted row carries the selected fill, so keyboard travel is visible
- * while focus stays in the palette input.
+ * them. Every row is the settings page's row (C-029 FormRow) at its compact
+ * density: 56px on the 4px grid, a 28px leading lane (avatar or glyph), a 12px
+ * gutter, then FormRow's 13px semibold label over its 12px muted second line,
+ * 4px apart, and an optional trailing cap or the hosted control. A row with
+ * more to say may grow past 56px; none is shorter. The highlighted row carries
+ * the selected fill, so keyboard travel is visible while focus stays in the
+ * palette input — which is also why the settings list's hairlines are left out
+ * here: a list read by its highlight has no use for rules between its rows.
  */
 
 .happy-command-palette-results,
@@ -73,6 +75,7 @@
     align-items: center;
     gap: 12px;
     width: 100%;
+    min-height: 56px;
     margin: 0;
     padding: 0 10px;
     border: none;
@@ -87,22 +90,26 @@
 }
 
 .happy-command-palette-results__row[data-kind="command"] {
-    height: 44px;
+    padding-top: 8px;
+    padding-bottom: 8px;
     cursor: pointer;
 }
 
-/* The hosted settings row spans the row it was given, and keeps its own
-   vertical rhythm — this row deliberately states no height of its own. */
-.happy-command-palette-results__row[data-kind="control"] > * {
+/* The hosted settings row spans what is left of the row after the leading
+   lane, and keeps its own vertical rhythm: at the compact density it is the
+   same 56px a command row is. */
+.happy-command-palette-results__control {
+    display: flex;
     flex: 1 1 auto;
+    flex-direction: column;
     min-width: 0;
 }
 
-/* A FormRow carries the divider it wears where rows tile into a settings list.
-   The last row of a section has nothing under it to be divided from, so the
-   hairline is taken back without changing the height it reserved. */
-.happy-command-palette-results__row[data-kind="control"]:last-child .happy-form-row {
-    border-bottom-color: transparent;
+/* The FormRow's divider is how rows tile into a settings list; this list is
+   told apart by its highlight instead, so the hairline and the pixel it holds
+   are left out, on every row alike. */
+.happy-command-palette-results__control > .happy-form-row {
+    border-bottom: none;
 }
 
 .happy-command-palette-results__row:hover {
@@ -160,12 +167,15 @@
     color: var(--box-warning-text);
 }
 
+/* The two lines are FormRow's label and description (styles/form-row.css):
+   the same sizes, weights, line boxes, and 4px gap, so a command row reads as
+   the settings row hosted beside it. */
 .happy-command-palette-results__body {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
     justify-content: center;
-    gap: 2px;
+    gap: 4px;
     min-width: 0;
 }
 
@@ -173,8 +183,8 @@
     display: block;
     overflow: hidden;
     color: var(--text);
-    font-size: 15px;
-    font-weight: 500;
+    font-size: 13px;
+    font-weight: 600;
     line-height: 20px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -184,7 +194,7 @@
     display: block;
     overflow: hidden;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 400;
     line-height: 16px;
     text-overflow: ellipsis;
