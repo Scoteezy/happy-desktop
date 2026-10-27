@@ -169,14 +169,13 @@ export class BrowserLoginOnePassword implements BrowserLoginSource, BrowserLogin
     /**
      * Whether 1Password already keeps this login. Item overviews carry no
      * account name, so only a single item for exactly this origin is opened
-     * to compare it; several mean the person already manages this site there.
+     * to compare it. With several, none is opened and the save is offered.
      */
     async has(origin: string, username: string): Promise<boolean> {
         const exact = (await this.logins()).filter(
             (item) => itemMatch(item, origin)?.relation === "exact",
         );
-        if (exact.length === 0) return false;
-        if (exact.length > 1) return true;
+        if (exact.length !== 1) return false;
         const client = await this.clientGet();
         const item = await client.items.get(exact[0]!.vaultId, exact[0]!.id);
         return field(item.fields, "username") === username;
