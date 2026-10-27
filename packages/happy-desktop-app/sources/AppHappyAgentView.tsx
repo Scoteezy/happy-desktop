@@ -383,7 +383,11 @@ import type {
     AppHappyAgentDaemonSnapshot,
     AppHappyAgentDaemonStore,
 } from "./views/AppHappyAgentSettingsView";
-import type { AppHappyAgentUpdateSnapshot, AppHappyAgentUpdateStore } from "./agentUpdate";
+import type {
+    AppHappyAgentReleaseNotesStore,
+    AppHappyAgentUpdateSnapshot,
+    AppHappyAgentUpdateStore,
+} from "./agentUpdate";
 import { agentUpdateCardView, type AgentUpdateCatalog } from "./agentUpdateCardView";
 
 const sidebarDaemonUnavailable: AppHappyAgentDaemonSnapshot = {
@@ -425,6 +429,11 @@ const agentUpdateStoreNoop: AppHappyAgentUpdateStore = {
     restartNow: () => undefined,
     subscribe: () => () => undefined,
     updateRetry: () => undefined,
+};
+
+const agentReleaseNotesStoreNoop: AppHappyAgentReleaseNotesStore = {
+    get: () => undefined,
+    subscribe: () => () => undefined,
 };
 
 /**
@@ -801,6 +810,8 @@ export interface AppHappyAgentViewProps {
      * runs, the footer shows its card instead of the update offer.
      */
     agentUpdate?: AppHappyAgentUpdateStore;
+    /** Compact notes for the local Happy Agent update on offer. */
+    agentReleaseNotes?: AppHappyAgentReleaseNotesStore;
     /** Native page renderer supplied only by the packaged Electron host. */
     browserContent?: BrowserContentRenderer;
     /**
@@ -3539,6 +3550,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // once there is nothing bigger waiting.
     const applicationUpdate = props.update?.status === "downloaded" ? props.update : undefined;
     const agentUpdate = applicationUpdate ? undefined : agentUpdateOffer(daemon);
+    const releaseNotesStore = props.agentReleaseNotes ?? agentReleaseNotesStoreNoop;
+    const releaseNotes = useSyncExternalStore(
+        releaseNotesStore.subscribe,
+        releaseNotesStore.get,
+        releaseNotesStore.get,
+    );
     const updateStore = props.agentUpdate ?? agentUpdateStoreNoop;
     const updateProgress = useSyncExternalStore(
         updateStore.subscribe,
@@ -3572,6 +3589,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     ) : agentUpdate ? (
         <SidebarUpdateAction
             action="install"
+            {...(releaseNotes?.to === agentUpdate.version ? { notes: releaseNotes } : {})}
             onAction={daemonStore.daemonInstall}
             status={agentUpdate.status}
             subject="happyAgent"

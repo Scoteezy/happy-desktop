@@ -15,6 +15,7 @@ import {
     happyAgentRouterCreate,
     type AppHappyAgentDaemonStore,
     type AppHappyAgentUpdateStore,
+    type AppHappyAgentReleaseNotesStore,
     type AppHappyAgentUpdate,
     type AppHappyAgentDebugStore,
     type AppHappyAgentProfilerStore,
@@ -141,6 +142,7 @@ import { desktopRowHeightCheckInstall } from "./desktopRowHeightCheck";
 import { desktopProfilerStoreCreate } from "./desktopProfilerStore";
 import { desktopMetricsStoreCreate } from "./desktopMetricsStore";
 import { desktopDaemonStoreCreate } from "./desktopDaemonStore";
+import { desktopAgentReleaseNotesStoreCreate } from "./desktopAgentReleaseNotesStore";
 import { desktopExperimentsPersistence } from "./desktopExperiments";
 import { desktopProjectsVisibilityPersistence } from "./desktopProjectsVisibility";
 import { desktopStemCellAnimationPersistence } from "./desktopStemCellAnimation";
@@ -370,6 +372,8 @@ function HappyAgentBoundary(props: {
     daemon?: AppHappyAgentDaemonStore;
     /** The local agent's update card; supplied with `daemon`, to the local surface only. */
     agentUpdate?: AppHappyAgentUpdateStore;
+    /** What is new in the local agent's offered version; supplied with `daemon`. */
+    agentReleaseNotes?: AppHappyAgentReleaseNotesStore;
     debug?: AppHappyAgentDebugStore;
     performance?: LivePerformanceStore;
     profiler?: AppHappyAgentProfilerStore;
@@ -412,6 +416,7 @@ function HappyAgentBoundary(props: {
                 connectionOnboarding: props.connectionOnboarding,
                 ...(props.daemon ? { daemon: props.daemon } : {}),
                 ...(props.agentUpdate ? { agentUpdate: props.agentUpdate } : {}),
+                ...(props.agentReleaseNotes ? { agentReleaseNotes: props.agentReleaseNotes } : {}),
                 debug: props.debug,
                 ...(props.performance ? { performance: props.performance } : {}),
                 profiler: props.profiler,
@@ -628,6 +633,8 @@ interface DesktopRendererProps {
     surfaceWindowState: HappyAgentWindowStore;
     /** The local agent's update as the footer card tells it, held until it is connected again. */
     agentUpdate: AppHappyAgentUpdateStore;
+    /** What is new in the local agent's offered version, read once a newer one is known. */
+    agentReleaseNotes: AppHappyAgentReleaseNotesStore;
     /** Whether the local Happy Agent is broken badly enough to own the whole window. */
     agentBroken: DesktopAgentBrokenStore;
 }
@@ -1031,7 +1038,13 @@ function DesktopRuntimeContent(
             appearance={props.appearance}
             bridge={props.bridge}
             commandPalette={props.commandPalette}
-            {...(props.daemon ? { agentUpdate: props.agentUpdate, daemon: props.daemon } : {})}
+            {...(props.daemon
+                ? {
+                      agentReleaseNotes: props.agentReleaseNotes,
+                      agentUpdate: props.agentUpdate,
+                      daemon: props.daemon,
+                  }
+                : {})}
             debug={props.debug}
             {...(props.performance ? { performance: props.performance } : {})}
             profiler={props.profiler}
@@ -1485,6 +1498,10 @@ if (mediaPreviewBridge) {
             daemon: daemon ?? unavailableDaemonStore,
             happyAgents,
         });
+        const agentReleaseNotes = desktopAgentReleaseNotesStoreCreate({
+            daemon: daemon ?? unavailableDaemonStore,
+            fetch: (url, init) => fetch(url, init),
+        });
         const agentBroken = desktopAgentBrokenStoreCreate({
             daemon: daemon ?? unavailableDaemonStore,
             happyAgents,
@@ -1689,6 +1706,7 @@ if (mediaPreviewBridge) {
                         windowState={windowState}
                         surfaceWindowState={surfaceWindowState}
                         agentUpdate={agentUpdate}
+                        agentReleaseNotes={agentReleaseNotes}
                         agentBroken={agentBroken}
                     />
                 </CodeHighlightWorkers>

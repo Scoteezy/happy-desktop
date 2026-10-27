@@ -25,6 +25,7 @@ export {
     type HappyAgentVersionProviderProps,
 } from "./HappyAgentVersionProvider";
 export {
+    type AppHappyAgentReleaseNotesStore,
     type AppHappyAgentUpdateProgress,
     type AppHappyAgentUpdateReason,
     type AppHappyAgentUpdateSnapshot,

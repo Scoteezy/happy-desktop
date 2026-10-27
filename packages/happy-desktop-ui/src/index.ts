@@ -376,7 +376,12 @@ export {
     type SidebarSpace,
     type SidebarSpacesProps,
 } from "./SidebarSpaces";
-export { SidebarUpdateAction, type SidebarUpdateActionProps } from "./SidebarUpdateAction";
+export {
+    SidebarUpdateAction,
+    type SidebarUpdateActionProps,
+    type SidebarUpdateNotes,
+    type SidebarUpdateNotesList,
+} from "./SidebarUpdateAction";
 export {
     DesktopStartupScreen,
     type DesktopStartupPhase,

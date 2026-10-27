@@ -12,7 +12,11 @@ import {
     type SidebarSection,
 } from "../../src/Sidebar";
 import { SidebarFooter } from "../../src/SidebarFooter";
-import { SidebarUpdateAction, type SidebarUpdateActionProps } from "../../src/SidebarUpdateAction";
+import {
+    SidebarUpdateAction,
+    type SidebarUpdateActionProps,
+    type SidebarUpdateNotes,
+} from "../../src/SidebarUpdateAction";
 import { Spinner } from "../../src/Spinner";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
@@ -1277,6 +1281,130 @@ const UPDATE_STATES: readonly {
     },
 ];
 
+const CHANGELOG_URL = "https://happy.engineering/changelog/";
+
+/*
+ * Real Happy Agent notes, merged the way the desktop host merges them: every
+ * release in range, newest first, each bullet kept where it first appears.
+ */
+const UPDATE_NOTES: readonly {
+    readonly label: string;
+    readonly detail: string;
+    readonly version: string;
+    readonly notes?: SidebarUpdateNotes;
+}[] = [
+    {
+        detail: "stable 0.4.105 → 0.4.106",
+        label: "One release",
+        notes: {
+            changelogUrl: CHANGELOG_URL,
+            features: {
+                items: ["Sidebar sorts work by topic", "New work appears instantly"],
+                total: 2,
+            },
+            fixes: { items: ["Reliable task and bot names"], total: 1 },
+            from: "0.4.105",
+            kind: "list",
+            releaseCount: 1,
+            to: "0.4.106",
+        },
+        version: "0.4.106",
+    },
+    {
+        detail: "stable 0.4.102 → 0.4.106",
+        label: "Several releases",
+        notes: {
+            changelogUrl: CHANGELOG_URL,
+            features: {
+                items: [
+                    "Sidebar sorts work by topic",
+                    "New work appears instantly",
+                    "MCP servers can ask approval",
+                    "Sidebar keeps your manual changes",
+                    "Self-organizing Spaces sidebar",
+                ],
+                total: 7,
+            },
+            fixes: {
+                items: [
+                    "Reliable task and bot names",
+                    "No freezes with many MCP tools",
+                    "Failure switch menu stays current",
+                ],
+                total: 3,
+            },
+            from: "0.4.102",
+            kind: "list",
+            releaseCount: 4,
+            to: "0.4.106",
+        },
+        version: "0.4.106",
+    },
+    {
+        detail: "preview 0.4.102 → 0.4.106",
+        label: "Long gap",
+        notes: {
+            changelogUrl: CHANGELOG_URL,
+            features: {
+                items: [
+                    "Sidebar sorts work by topic",
+                    "New work appears instantly",
+                    "Distractions fold out of sight",
+                    "Widgets in the sidebar",
+                    "Agent messages explain themselves",
+                ],
+                total: 16,
+            },
+            fixes: {
+                items: [
+                    "Reliable task and bot names",
+                    "Sidebar edits no longer collide",
+                    "Hostile replies cannot freeze chat",
+                    "No freezes with many MCP tools",
+                    "No crash loop after downgrade",
+                ],
+                total: 12,
+            },
+            from: "0.4.102",
+            kind: "list",
+            releaseCount: 15,
+            to: "0.4.106",
+        },
+        version: "0.4.106",
+    },
+    {
+        detail: "past 20 releases",
+        label: "Way out of date",
+        notes: {
+            changelogUrl: CHANGELOG_URL,
+            from: "0.3.17",
+            kind: "overflow",
+            releaseCount: 108,
+            to: "0.4.106",
+        },
+        version: "0.4.106",
+    },
+    {
+        detail: "opens on Fixes",
+        label: "Fixes only",
+        notes: {
+            changelogUrl: CHANGELOG_URL,
+            features: { items: [], total: 0 },
+            fixes: { items: ["Updated bundled Bun runtime"], total: 1 },
+            from: "0.4.105-preview.1",
+            kind: "list",
+            releaseCount: 1,
+            to: "0.4.105-preview.2",
+        },
+        version: "0.4.105-preview.2",
+    },
+    {
+        detail: "today's card",
+        label: "No notes",
+        version: "0.4.107",
+    },
+];
+
 const SHORTCUT_ACTIONS: SidebarItem[] = [
     { icon: "braces", id: "blueprint", kind: "action", label: "Blueprint" },
 ];
@@ -1464,6 +1592,49 @@ export function SidebarPage() {
                             <DimensionRule
                                 label={`${label} · panel 236 px · 8 px above the mark`}
                             />
+                        </div>
+                    ))}
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="A ready Happy Agent update lists what is new since the installed version above the panel, inside the same 236px card: Features and Fixes tabs with counts, the range, at most five bullets, then the changelog. Past 20 releases it lists nothing and points at the changelog. Install folds the notes away first."
+                label="Update notes"
+                number="01f"
+                stage="app"
+            >
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "16px" }}>
+                    {UPDATE_NOTES.map(({ detail, label, notes, version }) => (
+                        <div
+                            key={label}
+                            data-happy-desktop-ui-blueprint-update-notes={label}
+                            style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+                        >
+                            <Frame height={440}>
+                                <Sidebar
+                                    activeItemId=""
+                                    footer={
+                                        <SidebarFooter
+                                            actions={
+                                                <SidebarUpdateAction
+                                                    action="install"
+                                                    defaultOpen
+                                                    {...(notes ? { notes } : {})}
+                                                    onAction={() => {}}
+                                                    status="downloaded"
+                                                    subject="happyAgent"
+                                                    version={version}
+                                                />
+                                            }
+                                            onSettingsOpen={() => {}}
+                                        />
+                                    }
+                                    onItemSelect={() => {}}
+                                    sections={[]}
+                                    title={label}
+                                />
+                            </Frame>
+                            <DimensionRule label={`${label} · ${detail}`} />
                         </div>
                     ))}
                 </div>
