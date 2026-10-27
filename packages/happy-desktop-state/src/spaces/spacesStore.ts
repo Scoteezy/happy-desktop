@@ -543,6 +543,14 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             })
             .then((answer) => {
                 if (disposed) return;
+                // The document and the rows it names are one authoritative answer.
+                const spaces = new Map(snapshot.spaces);
+                let spacesChanged = false;
+                for (const space of answer.spaces.map(spaceRead)) {
+                    // A row already held at this version is the same row; keep its identity.
+                    if ((spaces.get(space.id)?.version ?? -1) >= space.version) continue;
+                    spacesChanged = spaceAdopt(spaces, space) || spacesChanged;
+                }
                 // A mark beside a row moves nothing, so it follows the daemon even mid-drag.
                 const open =
                     answer.proposal?.status === "open"
@@ -553,10 +561,11 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                         : null;
                 const proposal = proposalPatch(open);
                 if (
+                    spacesChanged ||
                     proposal.proposal !== snapshot.proposal ||
                     proposal.proposalSeen !== snapshot.proposalSeen
                 )
-                    publish(proposal);
+                    publish({ ...proposal, ...(spacesChanged ? { spaces } : {}) });
                 if (sidebarWrites > 0 || sidebarDragging || creating.size > 0) {
                     sidebarStale = true;
                     return;
