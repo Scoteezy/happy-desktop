@@ -321,6 +321,7 @@ import {
     WindowShortcuts,
     WorkspaceLifecycleLane,
     WorkspaceLifecycleNotice,
+    workspaceLifecycleNoticeLines,
     WorkFloaty,
     type WorkFloatyRow,
     WorkTabControls,
@@ -6767,6 +6768,18 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         openGroup.conversations.length === 0 &&
         openGroupPhase !== undefined &&
         !access.canConverse;
+    const workspaceComposerNotice =
+        openGroup !== undefined && openGroupPhase !== undefined && openGroupPhase !== "creating"
+            ? workspaceLifecycleNoticeLines({
+                  name: openGroup.name,
+                  phase: openGroupPhase,
+                  ...(openGroup.lifecycle?.phase === "failed" &&
+                  openGroup.lifecycle.reason !== undefined
+                      ? { detail: openGroup.lifecycle.reason }
+                      : {}),
+                  ...(openGroup.path ? { path: openGroup.path } : {}),
+              })
+            : undefined;
     // The one phase that takes the body of the first chat rather than a strip
     // above it. A workspace is addressed the instant it is asked for, so this is
     // the screen the reader lands on straight after clicking: the checkout being
@@ -7174,6 +7187,17 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         openGroup !== undefined &&
         activeMainTool === undefined &&
         activeFile === undefined;
+    // Follow the displayed pane, not the selected file that may still be loading.
+    // A disabled chat input still owns its notice; a file, tool, or loading chat
+    // has no dock, so the workspace lane remains its fallback.
+    const workspaceNoticeInComposer =
+        workspaceComposerNotice !== undefined &&
+        !openGroupNotice &&
+        displayedMainTool === undefined &&
+        activeReview === undefined &&
+        displayedFile === undefined &&
+        (conversation.type === "ready" ||
+            (openGroup?.conversations.length === 0 && workspace.groupComposer !== undefined));
     const mainFileBody = (file: HappyAgentFileTabSnapshot): ReactNode => (
         <HappyAgentFileBody
             appearance={appearance.appearance}
@@ -7372,6 +7396,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             // under the strip is the same composer that starts the first one.
             <HappyAgentGroupComposer
                 composer={workspace.groupComposer}
+                composerNotice={workspaceComposerNotice}
                 modelUsageWatch={modelUsageWatch}
                 {...(workspace.groupSessionDraft
                     ? { draftMenus: workspace.groupSessionDraft.menus }
@@ -7386,6 +7411,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             />
         ) : (
             <HappyAgentConversationBody
+                composerNotice={workspaceComposerNotice}
                 modelUsageWatch={modelUsageWatch}
                 {...(props.artifacts ? { artifacts: props.artifacts } : {})}
                 inlineEngines={{
@@ -7779,19 +7805,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 : []),
                         ]}
                     />
-                    {/* A worktree with work already in it keeps its tab strip and
-                        its transcripts, so its phase is stated in the lane above
-                        them rather than in place of them: the reader can still
-                        read what ran there before the checkout went away. The
-                        lane is mounted in every phase, including the ready one,
-                        so arriving at or leaving a phase never rebuilds the
-                        strip and transcripts underneath it.
-
-                        A checkout being prepared is the exception, whenever its
-                        own chat is the thing on screen: that phase is stated
-                        inside the chat instead, above its messages and where the
-                        reader is already looking, so the lane stays empty rather
-                        than saying the same thing twice. */}
+                    {/* Chats say workspace errors above their input. Keep the
+                        lane mounted but empty there, preserving the tab strip
+                        and transcript identities. Views without a composer use
+                        it as their fallback. Preparation stays in the sidebar
+                        while the chat is on screen. */}
                     <WorkspaceLifecycleLane
                         {...(openGroup.lifecycle?.phase === "failed" &&
                         openGroup.lifecycle.reason !== undefined
@@ -7801,7 +7819,8 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         {...(openGroup.path ? { path: openGroup.path } : {})}
                         {...(openGroupPhase !== undefined &&
                         !openGroupNotice &&
-                        !preparingChatOnScreen
+                        !preparingChatOnScreen &&
+                        !workspaceNoticeInComposer
                             ? { phase: openGroupPhase }
                             : {})}
                     />
@@ -8758,6 +8777,7 @@ function HappyAgentComposerDock(
  */
 function HappyAgentGroupComposer(props: {
     composer: ComposerSource;
+    composerNotice?: readonly string[];
     modelUsageWatch?: ComposerModelUsageWatch;
     /**
      * How that first conversation will be configured, and the options behind
@@ -8804,7 +8824,10 @@ function HappyAgentGroupComposer(props: {
                             : composerPlaceholder(props.groupName)
                     }
                     submitDisabled={props.unavailable !== undefined || props.restarting === true}
-                    {...(props.restarting === true ? { notice: AGENT_RESTARTING_NOTICE } : {})}
+                    notice={[
+                        ...(props.composerNotice ?? []),
+                        ...(props.restarting === true ? AGENT_RESTARTING_NOTICE : []),
+                    ]}
                     // The first message is what creates the session, so its model,
                     // effort, and access mode have to be choosable before it is sent
                     // rather than corrected afterwards. These are the same pickers an
@@ -8912,6 +8935,8 @@ function HappyAgentConversationBody(props: {
      * composer underneath all behave exactly as they otherwise would.
      */
     notice?: ReactNode;
+    /** Workspace context kept directly above the input, including when it is disabled. */
+    composerNotice?: readonly string[];
     /** Starts a session here, when this workspace can host one. */
     onCreate?: () => void;
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
@@ -8965,6 +8990,7 @@ function HappyAgentConversationBody(props: {
                 focusOnType={props.focusOnType}
                 groupId={props.groupId}
                 groupName={props.groupName}
+                composerNotice={props.composerNotice}
                 {...(props.notice === undefined ? {} : { notice: props.notice })}
                 now={props.now}
                 {...(props.onCreate === undefined ? {} : { onNewChat: props.onCreate })}
@@ -9366,6 +9392,8 @@ function HappyAgentConversationSurface(props: {
     groupName: string;
     /** What to say above every message here; see `HappyAgentConversationBody`. */
     notice?: ReactNode;
+    /** Workspace context kept directly above the input, including when it is disabled. */
+    composerNotice?: readonly string[];
     now: number;
     /** Starts a fresh session here, offered by a conversation too long to continue. */
     onNewChat?: () => void;
@@ -9562,9 +9590,12 @@ function HappyAgentConversationSurface(props: {
                     submitDisabled={sendRefusal !== undefined || props.restarting === true}
                     // A restarting agent is said in two plain lines above the input,
                     // and only while the input is open: a locked chat already says why.
-                    {...(props.restarting === true && !composerDisabled
-                        ? { notice: AGENT_RESTARTING_NOTICE }
-                        : {})}
+                    notice={[
+                        ...(props.composerNotice ?? []),
+                        ...(props.restarting === true && !composerDisabled
+                            ? AGENT_RESTARTING_NOTICE
+                            : []),
+                    ]}
                     composerFocusOnType={!composerDisabled && props.focusOnType}
                     // The open conversation is what this composer writes into, so moving
                     // to another one — or landing in the one a new workspace was made

@@ -519,6 +519,7 @@ export { WaitRing, type WaitRingProps, waitFinishDateLabel, waitRemainingLabel }
 export { WorkspaceLifecycleLane, type WorkspaceLifecycleLaneProps } from "./WorkspaceLifecycleLane";
 export {
     WorkspaceLifecycleNotice,
+    workspaceLifecycleNoticeLines,
     type WorkspaceLifecycleNoticeProps,
     type WorkspaceLifecycleNoticeSize,
     type WorkspaceLifecyclePhase,

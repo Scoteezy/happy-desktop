@@ -10,10 +10,8 @@ import { ShimmerText } from "./ShimmerText";
 export type HappyAgentUserInputAnswerMap = Record<string, string[]>;
 
 /**
- * Whether the prompt follows transcript or inbox spacing. `card` uses the
- * conversation's full composer measure; `flat` inherits the inbox row around it;
- * `dock` sits directly above the conversation's input, which is also where any
- * question without options is answered.
+ * Whether the prompt follows transcript or inbox spacing. `card` frames the
+ * question in the transcript's text column; `flat` inherits the inbox row around it.
  */
 export type { HappyAgentUserInputPromptVariant };
 
@@ -24,11 +22,8 @@ export type HappyAgentUserInputPromptProps = {
     /** Absent when this surface can display choices but cannot submit them. */
     onAnswer?: (requestId: string, answers: HappyAgentUserInputAnswerMap) => void;
     /**
-     * What is ticked right now, for an owner that keeps the selection. Supplying
-     * it with `onSelectionChange` is what lets something outside this card act on
-     * a half-made choice — sending a message that answers the question has to
-     * carry the options already ticked into it. Left out, the card keeps its own
-     * selection and stays a self-contained prompt.
+     * What is ticked right now, for an owner that keeps the selection across
+     * view changes. Left out, the card keeps its own selection.
      */
     selection?: Readonly<Record<string, readonly string[]>>;
     /** Reports the whole selection after each tick, for an owner that keeps it. */
@@ -74,9 +69,8 @@ function toggleValue(current: readonly string[], value: string, multiSelect: boo
  * the one actually holding the submit, without trying an option to find out.
  *
  * The selection is the card's own state unless the owner keeps it through
- * `selection`/`onSelectionChange`, which an owner does when something outside the
- * card — a composer whose message answers this question — must be able to read a
- * choice that has been made but not yet submitted.
+ * `selection`/`onSelectionChange`, so choices can survive view changes before
+ * they are submitted through the card.
  */
 export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps) {
     const { request } = props;
@@ -270,10 +264,8 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
                     {props.error.message}
                 </Banner>
             ) : null}
-            {/* A question with no options is answered in words, and words are
-                written in the message box the reader already has: sending there
-                answers every question left unticked. A Submit beside it could
-                only ever send nothing. */}
+            {/* Free-form replies are normal chat messages from the composer.
+                A Submit on a question with no options could only send nothing. */}
             {resolved ||
             request.questions.some((question) => question.options.length === 0) ? null : (
                 <div className="happy-agent-input__footer">

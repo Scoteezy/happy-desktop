@@ -1451,30 +1451,6 @@ export function happyAgentChatStoreCreate(
             output({ type: "inputAnswered", sessionId, requestId: input.requestId });
         });
 
-    const pendingQuestionAnswer = async (text: string): Promise<{ textUsed: boolean }> => {
-        const request = store.getState().pendingUserInputs[0];
-        const message = text.trim();
-        if (
-            request === undefined ||
-            message.length === 0 ||
-            requestSubmissions.get(request.requestId)?.status === "pending"
-        )
-            return { textUsed: false };
-        const ticked = requestSelections.get(request.requestId) ?? {};
-        const answers: Record<string, readonly string[]> = {};
-        let textUsed = false;
-        for (const question of request.questions) {
-            const chosen = ticked[question.id] ?? [];
-            if (chosen.length > 0) answers[question.id] = [...chosen];
-            else {
-                answers[question.id] = [message];
-                textUsed = true;
-            }
-        }
-        await answerInputRun({ requestId: request.requestId, answers });
-        return { textUsed };
-    };
-
     const imageStep = (direction: 1 | -1): void => {
         if (openImageRef === undefined) return;
         const gallery = imageGalleryOf(store.getState().entries);
@@ -1560,7 +1536,7 @@ export function happyAgentChatStoreCreate(
         messageSend: (text, images, refused) =>
             rejecting(async () => {
                 if (!arrived()) await arrivalWait();
-                if ((await pendingQuestionAnswer(text)).textUsed) return;
+                const pendingQuestion = store.getState().pendingUserInputs[0];
                 const steered = runStatus === "running";
                 const mutationId = deps.connectActions.sendMessage(
                     sessionId,
@@ -1581,6 +1557,40 @@ export function happyAgentChatStoreCreate(
                 if (images && images.length > 0) sentImagesRemember(mutationId, images);
                 sentMessageIds = new Set([...sentMessageIds, mutationId]);
                 connectMutationTrack(mutationId);
+                // A composer reply is always a real message, including its images
+                // and attachment references. Only release the question after that
+                // message is accepted, so the agent cannot resume before it exists.
+                // Steering may already have settled the request in the meantime.
+                if (pendingQuestion !== undefined)
+                    void deps.connectActions.sendAcceptanceWait(mutationId).then(
+                        () => {
+                            if (
+                                !store
+                                    .getState()
+                                    .pendingUserInputs.some(
+                                        (request) =>
+                                            request.requestId === pendingQuestion.requestId,
+                                    ) ||
+                                requestSubmissions.get(pendingQuestion.requestId)?.status ===
+                                    "pending"
+                            )
+                                return;
+                            // Failure belongs to the card's existing Retry action,
+                            // not the composer: its message has already been sent.
+                            void answerInputRun({
+                                requestId: pendingQuestion.requestId,
+                                answers: Object.fromEntries(
+                                    pendingQuestion.questions.map((question) => [
+                                        question.id,
+                                        [
+                                            "Replied in chat. Read the user's message and attachments.",
+                                        ],
+                                    ]),
+                                ),
+                            }).catch(() => undefined);
+                        },
+                        () => undefined,
+                    );
                 if (refused !== undefined)
                     void deps.connectActions.sendAcceptanceWait(mutationId).catch((error) => {
                         if (error instanceof MessageRefusedError)

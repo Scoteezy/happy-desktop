@@ -132,7 +132,7 @@ const questions = [
     },
 ] as const;
 
-it("pins a pending Ask User request to the end of the transcript, leaving no tool row", () => {
+it("keeps a pending Ask User request inside its turn, replacing the tool row", () => {
     const entries = happyAgentConversationProject({
         elements: [askTool],
         sessionId: "s1",
@@ -149,6 +149,7 @@ it("pins a pending Ask User request to the end of the transcript, leaving no too
             kind: "request",
             id: "request:ask-1",
             sequence: "00000001",
+            traceFoldTargetId: "g1",
             request: {
                 kind: "userInput",
                 requestId: "ask-1",

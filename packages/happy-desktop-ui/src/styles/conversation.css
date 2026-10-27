@@ -309,7 +309,9 @@
 .happy-conversation__notice > .happy-system-notice__text {
     font-size: 14px;
     font-weight: 500;
+    overflow-wrap: anywhere;
     text-align: left;
+    white-space: pre-wrap;
 }
 
 /*

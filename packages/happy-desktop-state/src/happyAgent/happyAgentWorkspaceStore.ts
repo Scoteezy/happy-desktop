@@ -1914,8 +1914,7 @@ export interface HappyAgentWorkspaceStore {
     answerInput(input: HappyAgentUserInputAnswers): Promise<void>;
     /**
      * Records the options ticked into the open conversation's pending question
-     * before it is submitted, so a message sent instead of pressing Submit still
-     * carries them.
+     * before it is submitted, so switching views preserves the card's choices.
      */
     requestSelectionUpdate(
         requestId: string,

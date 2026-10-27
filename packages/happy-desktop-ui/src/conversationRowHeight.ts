@@ -976,7 +976,7 @@ function userInputRequestHeight(
     const submitVisible =
         request.status === "pending" &&
         request.questions.every((question) => question.options.length > 0);
-    return total + (submitVisible ? USER_INPUT_FOOTER_HEIGHT : 0);
+    return 2 * CHAT_FRAME_TEXT_INSET + total + (submitVisible ? USER_INPUT_FOOTER_HEIGHT : 0);
 }
 
 /** Pending permission gate in its default collapsed transcript state. */

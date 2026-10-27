@@ -77,6 +77,17 @@ const presentations: Record<WorkspaceLifecyclePhase, PhasePresentation> = {
         body: "Happy Agent prepared this workspace's checkout and its directory is not there any more. It was removed outside Happy.",
     },
 };
+
+/** The same phase in the composer's service-line voice, retaining the host's details. */
+export function workspaceLifecycleNoticeLines(
+    props: Pick<WorkspaceLifecycleNoticeProps, "name" | "phase" | "detail" | "path">,
+): readonly string[] {
+    return [
+        presentations[props.phase].title(props.name),
+        ...(props.detail === undefined ? [] : [props.detail]),
+        ...(props.path === undefined ? [] : [props.path]),
+    ];
+}
 /**
  * C-241 WorkspaceLifecycleNotice — what one workspace's own phase is, said in
  * full: being prepared, failed, refused outright, or prepared and since gone.
