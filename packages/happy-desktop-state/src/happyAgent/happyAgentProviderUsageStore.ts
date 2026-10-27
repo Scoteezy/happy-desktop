@@ -126,6 +126,13 @@ export interface HappyAgentProviderUsageSource {
      * never as an answer here.
      */
     refresh(providerIds?: readonly string[]): void;
+    /**
+     * A surface shows token counts until the returned release. They move with
+     * every finished run, which no account event carries, so only while one is
+     * followed does a finished run make the source read the whole list again;
+     * counts already older than a few seconds are read again at once.
+     */
+    tokensFollow(): () => void;
 }
 
 export interface HappyAgentProviderUsageSnapshot {
@@ -148,9 +155,17 @@ export interface HappyAgentProviderUsageStore {
      * claims they are already on the way.
      */
     usageRefresh(providerIds?: readonly string[]): void;
+    /**
+     * Someone shows token counts until the returned release, so finished runs
+     * read them again. Account readings are followed without it.
+     */
+    tokensFollow(): () => void;
     subscribe(listener: () => void): () => void;
     [Symbol.dispose](): void;
 }
+
+/** How long the source keeps following after its last subscriber leaves. */
+const SOURCE_LINGER_MS = 30_000;
 
 export interface HappyAgentProviderUsageStoreDeps {
     readonly source: HappyAgentProviderUsageSource;
@@ -159,19 +174,23 @@ export interface HappyAgentProviderUsageStoreDeps {
 /**
  * How much of each provider account's plan this Happy Agent has spent, as one surface.
  *
- * The store owns no schedule of its own: the source reads the daemon and
- * follows its change events while anything is subscribed, and every reading it
- * reports replaces the list wholesale.
+ * The source reads the daemon and follows its change events while anything is
+ * subscribed, and every reading it reports replaces the list wholesale.
  *
- * The last successful reading outlives its subscribers for the life of the
- * store, so a surface that reopens shows it at once while the source reads
+ * The source outlives its last subscriber by `SOURCE_LINGER_MS`. A surface
+ * that is remounted, like the model pill of every conversation opened in turn,
+ * takes the source over still following, rather than making it read every
+ * account again; only a source nobody came back to stops.
+ *
+ * The last successful reading outlives the source for the life of the store,
+ * so a surface that reopens later shows it at once while the source reads
  * again. A new source cycle does not blank it: its opening "loading" report
  * says nothing about the accounts, so only a successful reading replaces them.
  * The source starts with the first subscriber however recent the held reading
  * is: a refresh asked for on opening reports its progress and result only as
  * events, which a source that is not following would miss. Usage is read,
- * never changed, so the one action only asks the daemon to read again and
- * emits no output.
+ * never changed, so the actions only ask the daemon to read again and emit no
+ * output.
  */
 export function happyAgentProviderUsageStoreCreate(
     deps: HappyAgentProviderUsageStoreDeps,
@@ -183,9 +202,12 @@ export function happyAgentProviderUsageStoreCreate(
 
     const listeners = new Set<() => void>();
     let unsubscribeSource: (() => void) | undefined;
+    let stopTimer: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
 
     const start = (): void => {
+        clearTimeout(stopTimer);
+        stopTimer = undefined;
         if (disposed || unsubscribeSource) return;
         unsubscribeSource = deps.source.subscribe(
             (incoming) => {
@@ -235,6 +257,8 @@ export function happyAgentProviderUsageStoreCreate(
     };
 
     const stop = (): void => {
+        clearTimeout(stopTimer);
+        stopTimer = undefined;
         unsubscribeSource?.();
         unsubscribeSource = undefined;
     };
@@ -244,6 +268,10 @@ export function happyAgentProviderUsageStoreCreate(
         usageRefresh(providerIds) {
             if (disposed || providerIds?.length === 0) return;
             deps.source.refresh(providerIds);
+        },
+        tokensFollow() {
+            if (disposed) return () => undefined;
+            return deps.source.tokensFollow();
         },
         subscribe(listener) {
             if (disposed) return () => undefined;
@@ -256,7 +284,8 @@ export function happyAgentProviderUsageStoreCreate(
                 released = true;
                 unsubscribe();
                 listeners.delete(listener);
-                if (listeners.size === 0) stop();
+                if (listeners.size === 0 && !disposed)
+                    stopTimer ??= setTimeout(stop, SOURCE_LINGER_MS);
             };
         },
         [Symbol.dispose]() {
@@ -278,6 +307,7 @@ const INERT_SNAPSHOT: HappyAgentProviderUsageSnapshot = { providers: [], loading
 export const happyAgentProviderUsageStoreNoop: HappyAgentProviderUsageStore = {
     get: () => INERT_SNAPSHOT,
     usageRefresh: () => undefined,
+    tokensFollow: () => () => undefined,
     subscribe: () => () => undefined,
     [Symbol.dispose]: () => undefined,
 };

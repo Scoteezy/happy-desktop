@@ -103,6 +103,7 @@ export {
 export {
     AppShell,
     APP_SHELL_PANEL_DEFAULT_WIDTH,
+    APP_SHELL_SIDEBAR_SHORTCUT,
     type AppShellFocusedPane,
     type AppShellProps,
 } from "./AppShell";
@@ -375,7 +376,12 @@ export {
     type SidebarSpace,
     type SidebarSpacesProps,
 } from "./SidebarSpaces";
-export { SidebarUpdateAction, type SidebarUpdateActionProps } from "./SidebarUpdateAction";
+export {
+    SidebarUpdateAction,
+    type SidebarUpdateActionProps,
+    type SidebarUpdateNotes,
+    type SidebarUpdateNotesList,
+} from "./SidebarUpdateAction";
 export {
     DesktopStartupScreen,
     type DesktopStartupPhase,
@@ -519,6 +525,7 @@ export { WaitRing, type WaitRingProps, waitFinishDateLabel, waitRemainingLabel }
 export { WorkspaceLifecycleLane, type WorkspaceLifecycleLaneProps } from "./WorkspaceLifecycleLane";
 export {
     WorkspaceLifecycleNotice,
+    workspaceLifecycleNoticeLines,
     type WorkspaceLifecycleNoticeProps,
     type WorkspaceLifecycleNoticeSize,
     type WorkspaceLifecyclePhase,
@@ -628,7 +635,13 @@ export {
     type CommandPaletteResultsSection,
     type CommandPaletteRowEmphasis,
 } from "./CommandPaletteResults";
-export { FormRow, type FormRowAlign, type FormRowLayout, type FormRowProps } from "./FormRow";
+export {
+    FormRow,
+    type FormRowAlign,
+    type FormRowDensity,
+    type FormRowLayout,
+    type FormRowProps,
+} from "./FormRow";
 export {
     DocumentEditor,
     documentFragmentName,

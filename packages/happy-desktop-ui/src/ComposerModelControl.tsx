@@ -363,17 +363,13 @@ type UsageWindowKind = "week" | "session";
 
 const USAGE_WINDOW_NAMES: Record<UsageWindowKind, string> = { week: "Weekly", session: "Session" };
 
-/** A ring's hover label: which window it reads and when that starts over, "Weekly · resets Thu 6:00 PM". */
-function usageWindowResetsLabel(kind: UsageWindowKind, window: ComposerModelUsageWindow) {
-    return [USAGE_WINDOW_NAMES[kind], window.resets].filter(Boolean).join(" · ");
-}
-
 /**
- * The one window the pill warns about, once the selected account runs low:
- * the week when it is low, otherwise the session. A window holding a spent
- * account back is critical whatever its number says.
+ * The one window an account warns about, on the closed pill and on its
+ * service's header alike: the week when it is low, otherwise the session, and
+ * none while both have room. A window holding a spent account back is critical
+ * whatever its number says.
  */
-function pillWarning(usage: ComposerModelAccountUsage | undefined) {
+function usageWarning(usage: ComposerModelAccountUsage | undefined) {
     const candidates = (["week", "session"] as const).flatMap((kind) => {
         const window = usage?.[kind];
         if (window === undefined) return [];
@@ -528,36 +524,28 @@ function UsageLine(props: { window: ComposerModelUsageWindow; primary?: boolean 
     );
 }
 
-/** An account's windows that have a reading, week first. */
-function usageWindows(usage: ComposerModelAccountUsage | undefined) {
-    const windows: { kind: UsageWindowKind; window: ComposerModelUsageWindow }[] = [];
-    if (usage?.week) windows.push({ kind: "week", window: usage.week });
-    if (usage?.session) windows.push({ kind: "session", window: usage.session });
-    return windows;
-}
-
 /**
- * A service header's glance at its account: what is left of the week, then of
- * the session, each naming its window and reset time on hover. The rings sit
- * inside the header's button, so pointing at one still opens the accounts.
+ * A service header's glance at its account: the one window running low, as
+ * the pill would warn of it, naming the window, what is left and its reset on
+ * hover; nothing while the account has room. The ring sits inside the header's
+ * button, so pointing at it still opens the accounts.
  */
 function HeaderUsage(props: { usage: ComposerModelAccountUsage | undefined }) {
-    const windows = usageWindows(props.usage);
-    if (windows.length === 0) return null;
+    const warning = usageWarning(props.usage);
+    if (warning === undefined) return null;
     return (
         <span
             className="happy-composer-model-control__header-usage"
             data-happy-desktop-ui="composer-model-control-header-usage"
+            data-window={warning.kind}
         >
-            {windows.map(({ kind, window }) => (
-                <Tooltip key={kind} label={usageWindowResetsLabel(kind, window)} placement="bottom">
-                    <UsageGauge
-                        blocked={window.blocking === true}
-                        text={`${String(usageLeft(window))}%`}
-                        window={window}
-                    />
-                </Tooltip>
-            ))}
+            <Tooltip label={warning.label} placement="bottom">
+                <UsageGauge
+                    blocked={warning.window.blocking === true}
+                    text={`${String(warning.left)}%`}
+                    window={warning.window}
+                />
+            </Tooltip>
         </span>
     );
 }
@@ -895,7 +883,9 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         : (selectedModel?.label ?? selection?.model ?? "");
     const effortCurrent = selectedRow ? effortIndex(selectedRow) : -1;
     const effortLabel = selectedRow?.model.efforts[effortCurrent]?.label;
-    const warning = selection ? pillWarning(liveUsage?.accounts.get(selection.account)) : undefined;
+    const warning = selection
+        ? usageWarning(liveUsage?.accounts.get(selection.account))
+        : undefined;
 
     const close = () => {
         setPanel(null);
@@ -1027,14 +1017,12 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         if (account === undefined) return accountOf(service);
         return account.default ? "default account" : account.label;
     };
-    /** What the header's button is called: its account, then each window it shows. */
-    const headerLabel = (service: ComposerModelService) =>
-        [
-            `${service.label} account: ${accountSummary(service)}`,
-            ...usageWindows(liveUsage?.accounts.get(accountOf(service))).map(
-                ({ kind, window }) => `${kind} ${String(usageLeft(window))}% left`,
-            ),
-        ].join(", ");
+    /** What the header's button is called: its account, then the window it warns of. */
+    const headerLabel = (service: ComposerModelService) => {
+        const warning = usageWarning(liveUsage?.accounts.get(accountOf(service)));
+        const account = `${service.label} account: ${accountSummary(service)}`;
+        return warning ? `${account}, ${warning.label}` : account;
+    };
 
     const renderRow = (row: Row) => (
         <button

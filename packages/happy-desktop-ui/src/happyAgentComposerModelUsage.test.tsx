@@ -273,3 +273,108 @@ it("asks for fresh usage on opening and on switching account, and dates what it 
     expect(fake.refresh).toHaveBeenLastCalledWith(["claude_extra"]);
     expect(fake.refresh).toHaveBeenCalledTimes(2);
 }, 60000);
+
+/* The closed pill and its service's header warn of the same one window: the
+ * week while it is low, otherwise the session while that is, and nothing while
+ * both have room. Low is under 25% left, in yellow; under 10%, in red. */
+it("warns of at most one window, week first, on the pill and the header alike", async () => {
+    const fake = watchCreate(new Map());
+    const view = createRenderer().render(() => <Fixture usageWatch={fake.watch} />, {
+        width: 940,
+        height: 520,
+        padding: 20,
+    });
+    await view.ready();
+    const trigger = view.$('[data-happy-desktop-ui="composer-model-control-trigger"]');
+    await userEvent.click(trigger.element);
+    await userEvent.click(
+        view.$('[data-happy-desktop-ui="composer-model-control-model-setting"]').element,
+    );
+
+    const week = (usedPercent: number) => ({
+        label: "Week",
+        usedPercent,
+        resets: "resets Thu 6:00 PM",
+    });
+    const session = (usedPercent: number) => ({
+        label: "Session",
+        usedPercent,
+        resets: "resets 4:10 PM",
+    });
+    const cases: {
+        name: string;
+        usage: ComposerModelAccountUsage;
+        shown?: { window: "week" | "session"; tone: "low" | "critical"; left: number };
+    }[] = [
+        { name: "both with room", usage: { week: week(50), session: session(60) } },
+        {
+            name: "week yellow",
+            usage: { week: week(80), session: session(10) },
+            shown: { window: "week", tone: "low", left: 20 },
+        },
+        {
+            name: "week red",
+            usage: { week: week(95), session: session(10) },
+            shown: { window: "week", tone: "critical", left: 5 },
+        },
+        {
+            name: "session yellow",
+            usage: { week: week(50), session: session(80) },
+            shown: { window: "session", tone: "low", left: 20 },
+        },
+        {
+            name: "session red",
+            usage: { week: week(50), session: session(95) },
+            shown: { window: "session", tone: "critical", left: 5 },
+        },
+        {
+            name: "both low",
+            usage: { week: week(80), session: session(95) },
+            shown: { window: "week", tone: "low", left: 20 },
+        },
+    ];
+    for (const { name, usage, shown } of cases) {
+        fake.emit({ accounts: new Map([["claude", usage]]), now: NOW });
+        await vi.waitFor(() => {
+            const pillRings = view.container.querySelectorAll(
+                '[data-happy-desktop-ui="composer-model-control-trigger"] [data-happy-desktop-ui="usage-ring"]',
+            );
+            const headers = view.container.querySelectorAll<HTMLElement>(
+                '[data-happy-desktop-ui="composer-model-control-header-usage"]',
+            );
+            const pillLabel = trigger.element.getAttribute("aria-label") ?? "";
+            const claudeHeader = Array.from(
+                view.container.querySelectorAll(
+                    '[data-happy-desktop-ui="composer-model-control-account-label"]',
+                ),
+            ).find((header) => header.textContent?.includes("Claude"));
+            const headerLabel = claudeHeader?.getAttribute("aria-label") ?? "";
+            if (shown === undefined) {
+                expect(pillRings, name).toHaveLength(0);
+                expect(headers, name).toHaveLength(0);
+                expect(pillLabel, name).not.toContain("limit");
+                expect(headerLabel, name).toBe("Claude account: default account");
+                return;
+            }
+            const label =
+                shown.window === "week"
+                    ? `Weekly limit · ${String(shown.left)}% left · resets Thu 6:00 PM`
+                    : `Session limit · ${String(shown.left)}% left · resets 4:10 PM`;
+            expect(pillRings, name).toHaveLength(1);
+            expect(pillRings[0]?.getAttribute("data-tone"), name).toBe(shown.tone);
+            expect(pillRings[0]?.getAttribute("data-left"), name).toBe(String(shown.left));
+            expect(pillLabel, name).toContain(label);
+            // Only Claude's account has a reading, and its header shows one window.
+            expect(headers, name).toHaveLength(1);
+            expect(headers[0]?.dataset.window, name).toBe(shown.window);
+            const gauges = headers[0]!.querySelectorAll(
+                '[data-happy-desktop-ui="composer-model-control-usage-gauge"]',
+            );
+            expect(gauges, name).toHaveLength(1);
+            expect(gauges[0]?.getAttribute("data-tone"), name).toBe(shown.tone);
+            expect(gauges[0]?.textContent, name).toBe(`${String(shown.left)}%`);
+            expect(headers[0]?.textContent, name).toContain(label);
+            expect(headerLabel, name).toBe(`Claude account: default account, ${label}`);
+        });
+    }
+}, 60000);

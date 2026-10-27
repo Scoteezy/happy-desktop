@@ -801,7 +801,13 @@ const SETTLE_WAIT_MS = 500;
 
 interface SidebarDrag {
     readonly pointerId: number;
+    /**
+     * Where the pointer took hold, in the window, and how far the body was
+     * scrolled then. Travel counts both, so a list scrolled under a still
+     * pointer carries the held row along with the rows around it.
+     */
     readonly startY: number;
+    readonly startScrollTop: number;
     readonly deltaY: number;
     /** Index into `units`, not into `items`. */
     readonly from: number;
@@ -841,6 +847,8 @@ interface SidebarDrag {
         readonly target?: SidebarDropSlot;
         /** The slot the row already stands in; landing there moves nothing. */
         readonly home?: SidebarDropSlot;
+        /** Where the pointer took hold, in the body content's coordinates. */
+        readonly startY: number;
     };
 }
 
@@ -2751,6 +2759,10 @@ export function Sidebar(props: SidebarProps) {
     // Set by a drag that actually moved, so the click the browser fires on
     // release rearranges rather than also opening what was dragged.
     const dragClick = useRef(false);
+    // The body's scrollport, and the pointer and scroll position a live drag
+    // last saw, so either one moving can place the held row again.
+    const bodyViewport = useRef<HTMLDivElement>(null);
+    const dragPointer = useRef({ clientY: 0, scrollTop: 0 });
     const intentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const [dragPaint, setDragPaint] = useState<{ listId: SidebarListId; drag: SidebarDrag }>();
     const dragSet = (next: { listId: SidebarListId; drag: SidebarDrag } | undefined): void => {
@@ -3002,6 +3014,7 @@ export function Sidebar(props: SidebarProps) {
         row: HTMLElement,
         listId: string,
         heldId: string,
+        pointerY: number,
     ): NonNullable<SidebarDrag["across"]> | undefined => {
         const content = row.closest<HTMLElement>('[data-happy-desktop-ui="sidebar-body-content"]');
         if (!content) return undefined;
@@ -3068,7 +3081,7 @@ export function Sidebar(props: SidebarProps) {
                       : undefined;
             if (end !== undefined) slots.push({ sectionId: section.id, afterId, y: end });
         }
-        return { slots, ...(home ? { home } : {}) };
+        return { slots, ...(home ? { home } : {}), startY: pointerY - origin };
     };
 
     const dragStart = (
@@ -3119,7 +3132,7 @@ export function Sidebar(props: SidebarProps) {
         );
         const across =
             local.itemDragAcrossSections && listId !== ACTIONS_LIST && parentId === undefined
-                ? dropSlotsOf(event.currentTarget, listId, items[rowIndex]!.id)
+                ? dropSlotsOf(event.currentTarget, listId, items[rowIndex]!.id, event.clientY)
                 : undefined;
         previewHeldTops.current.clear();
         if (across) {
@@ -3141,6 +3154,8 @@ export function Sidebar(props: SidebarProps) {
                 : undefined;
         const held = blocks[blockIndex]!;
         const heldFirst = bounds[held[0]!];
+        const scrollTop = bodyViewport.current?.scrollTop ?? 0;
+        dragPointer.current = { clientY: event.clientY, scrollTop };
         dragSet({
             listId,
             drag: {
@@ -3163,6 +3178,7 @@ export function Sidebar(props: SidebarProps) {
                 ...(blocked?.some(Boolean) ? { blocked } : {}),
                 pointerId: event.pointerId,
                 startY: event.clientY,
+                startScrollTop: scrollTop,
                 to: blockIndex,
                 units,
                 ...(parentId !== undefined ? { parentId } : {}),
@@ -3173,22 +3189,44 @@ export function Sidebar(props: SidebarProps) {
     const dragMove = (event: ReactPointerEvent<HTMLElement>): void => {
         const current = dragRef.current;
         if (!current || event.pointerId !== current.drag.pointerId) return;
-        const pointerDeltaY = event.clientY - current.drag.startY;
-        if (!current.drag.moved && Math.abs(pointerDeltaY) < DRAG_THRESHOLD) return;
-        const across = current.drag.across;
-        if (across) {
+        dragPointer.current = { ...dragPointer.current, clientY: event.clientY };
+        if (!current.drag.moved) {
+            if (Math.abs(dragTravel(current.drag)) < DRAG_THRESHOLD) return;
             // Keep ordinary clicks on their row. Only a real drag transfers its
             // capture to the parent that survives moving the row between sections.
-            if (!current.drag.moved && event.isTrusted)
+            if (current.drag.across && event.isTrusted)
                 previewRoot.current?.setPointerCapture(event.pointerId);
+        }
+        dragFollow(current);
+    };
+
+    /**
+     * A wheel turned mid-drag scrolls the rows under a pointer that has not
+     * moved, and no pointer event says so. The held row is carried along by the
+     * scroll as well, so it stays where the hand has it. Only a drag already
+     * under way follows: a scroll never turns a press into one.
+     */
+    const dragScroll = (scrollTop: number): void => {
+        const current = dragRef.current;
+        if (!current) return;
+        dragPointer.current = { ...dragPointer.current, scrollTop };
+        if (current.drag.moved) dragFollow(current);
+    };
+
+    /** How far the hand has carried the held row through the list, scrolling included. */
+    const dragTravel = (drag: SidebarDrag): number =>
+        dragPointer.current.clientY -
+        drag.startY +
+        (dragPointer.current.scrollTop - drag.startScrollTop);
+
+    const dragFollow = (current: { listId: SidebarListId; drag: SidebarDrag }): void => {
+        const pointerDeltaY = dragTravel(current.drag);
+        const across = current.drag.across;
+        if (across) {
             // The row follows the hand wherever it goes; the line says where it lands.
-            const content = event.currentTarget.closest<HTMLElement>(
-                '[data-happy-desktop-ui="sidebar-body-content"]',
-            );
-            const y = content ? event.clientY - content.getBoundingClientRect().top : 0;
             let target = dropSlotNearest(
                 [...across.slots, ...(across.home ? [across.home] : [])],
-                y,
+                across.startY + pointerDeltaY,
             );
             let to = current.drag.to;
             if (target?.sectionId === current.listId) {
@@ -3201,10 +3239,11 @@ export function Sidebar(props: SidebarProps) {
                 );
                 target = { ...target, afterId: to === 0 ? null : (remaining[to - 1] ?? null) };
             }
-            if (
+            const retargeted =
                 target?.sectionId !== across.target?.sectionId ||
-                target?.afterId !== across.target?.afterId
-            ) {
+                target?.afterId !== across.target?.afterId;
+            if (current.drag.moved && !retargeted && pointerDeltaY === current.drag.deltaY) return;
+            if (retargeted) {
                 haptic("selection");
                 if (
                     (target && target.sectionId !== current.listId) ||
@@ -3226,6 +3265,9 @@ export function Sidebar(props: SidebarProps) {
         }
         const deltaY = dragDeltaWithinPeers(current.drag, pointerDeltaY);
         const to = dragSlotOpen(current.drag, dragTargetIndex(current.drag, deltaY));
+        // Nothing to paint when the row stands where it did: a sideways move, or
+        // a scroll that carries it on past either end of its peers.
+        if (current.drag.moved && deltaY === current.drag.deltaY && to === current.drag.to) return;
         // A tick each time the row crosses into a new slot, so the arrangement
         // can be felt without watching it.
         if (to !== current.drag.to) haptic("selection");
@@ -3882,7 +3924,9 @@ export function Sidebar(props: SidebarProps) {
           )
         : [];
     const tabStop =
-        tabStopFocus?.activeItemId === local.activeItemId && walkedIds.includes(tabStopFocus.id)
+        tabStopFocus !== undefined &&
+        tabStopFocus.activeItemId === local.activeItemId &&
+        walkedIds.includes(tabStopFocus.id)
             ? tabStopFocus.id
             : walkedIds.includes(local.activeItemId)
               ? local.activeItemId
@@ -4032,8 +4076,13 @@ export function Sidebar(props: SidebarProps) {
                 data-happy-desktop-ui="sidebar-body"
                 data-scrollbar-rows=""
                 viewportClassName="happy-sidebar__body-viewport"
+                viewportRef={bodyViewport}
                 viewportProps={{
-                    onScroll: (event) => setScrolled(event.currentTarget.scrollTop > 0),
+                    onScroll: (event) => {
+                        const scrollTop = event.currentTarget.scrollTop;
+                        setScrolled(scrollTop > 0);
+                        dragScroll(scrollTop);
+                    },
                     // Only a mostly vertical turn: a sideways trackpad swipe folds nothing.
                     onWheel: (event) => {
                         if (Math.abs(event.deltaY) > Math.abs(event.deltaX))

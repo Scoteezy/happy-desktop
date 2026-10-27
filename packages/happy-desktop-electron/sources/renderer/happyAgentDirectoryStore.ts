@@ -14,6 +14,7 @@ import type {
     HappyAgentBot,
     HappyAgentBotCreating,
     HappyAgentConnectionSnapshot,
+    HappyAgentDrain,
     HappyAgentHost,
     HappyAgentModelPreferencePersistence,
     HappyAgentCloudHost,
@@ -86,6 +87,11 @@ export interface HappyAgentDirectoryEntry {
     readonly protocolMismatch?: HappyAgentProtocolMismatch;
     readonly message?: string;
     readonly version?: string;
+    /**
+     * Why this Happy Agent's daemon stopped admitting work, in its own words,
+     * from its drain until a replacement admits work again.
+     */
+    readonly drain?: HappyAgentDrain;
     readonly projects: readonly HappyAgentProjectGroup[];
     /** This Happy Agent's bots, shown under their own heading above its projects. */
     readonly bots: readonly HappyAgentBot[];
@@ -247,30 +253,36 @@ function projectsMatch(
 function connectionRead(
     happyAgent: LocalHappyAgent,
     connection: HappyAgentConnectionSnapshot,
-): Pick<HappyAgentDirectoryEntry, "message" | "status" | "version"> {
+): Pick<HappyAgentDirectoryEntry, "drain" | "message" | "status" | "version"> {
+    // Assigned on every read, absent included, so a drain that ended is cleared.
+    const drain = connection.drain;
     if (connection.connection === "connecting")
         return {
             status: "connecting",
             message: "Connecting to this Happy Agent.",
             version: connection.version ?? happyAgent.entry.version,
+            drain,
         };
     if (connection.connection === "disconnected")
         return {
             status: "disconnected",
             message: connection.message ?? "This Happy Agent is disconnected.",
             version: connection.version ?? happyAgent.entry.version,
+            drain,
         };
     if (connection.daemon === "starting")
         return {
             status: "connecting",
             message: "This Happy Agent is starting.",
             version: connection.version ?? happyAgent.entry.version,
+            drain,
         };
     if (connection.daemon === "error")
         return {
             status: "error",
             message: connection.message ?? "This Happy Agent reported an error.",
             version: connection.version ?? happyAgent.entry.version,
+            drain,
         };
     return {
         status: connection.daemon === "ready" ? "connected" : "connecting",
@@ -279,6 +291,7 @@ function connectionRead(
                 ? happyAgent.protocolMismatch?.message
                 : "Waiting for this Happy Agent to become ready.",
         version: connection.version ?? happyAgent.entry.version,
+        drain,
     };
 }
 

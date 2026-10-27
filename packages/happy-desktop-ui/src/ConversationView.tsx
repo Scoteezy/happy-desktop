@@ -24,8 +24,6 @@ import {
     type AgentWorkingPhase,
 } from "./AgentWorkingStatus";
 import { ChannelHeader } from "./ChannelHeader";
-import { ConversationDockQuestionContext, type ConversationDockQuestion } from "./ConversationDock";
-import { ConversationRequestView } from "./ConversationRequestView";
 import {
     ConversationEntryView,
     type ConversationEntryFailureProps,
@@ -324,8 +322,8 @@ export type ConversationViewProps = {
     requestSubmissions?: readonly ConversationRequestSubmission[];
     /**
      * Options ticked into each pending question but not yet submitted, by
-     * request id. The owner keeps them because sending a message answers the
-     * question, and that answer must carry a choice already made.
+     * request id. The owner keeps them across view changes until the card's
+     * Submit action sends them.
      */
     requestSelections?: ReadonlyMap<string, Readonly<Record<string, readonly string[]>>>;
     /** Reports each tick to the owner that keeps the selections. */
@@ -589,15 +587,6 @@ function conversationCurrentFailure(transcript: readonly ConversationEntry[]): s
     return undefined;
 }
 
-/** A question still waiting on the reader, which the dock asks above the input. */
-function conversationQuestionDocked(entry: ConversationEntry): boolean {
-    return (
-        entry.kind === "request" &&
-        entry.request.kind === "userInput" &&
-        entry.request.status !== "answered"
-    );
-}
-
 /** The reader's newest send from this view, while it is still the newest message. */
 function conversationSentHereKey(entries: readonly ConversationEntry[]): string | undefined {
     for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -689,17 +678,7 @@ export function ConversationView(props: ConversationViewProps) {
             ? conversationPendingSteering(props.entries)
             : { transcript: props.entries, queued: [] };
     const queued = steering.queued;
-    /* A question the agent is waiting on is asked at the input that answers it,
-       not in the transcript. Arriving, it grows the dock, which carries a
-       follower's newest lines up with it like a growing draft; answered, it
-       leaves space that holds them where they are. A read-only view has no
-       input, so there it stays in the transcript. */
-    const dockedQuestions =
-        props.dock !== undefined ? steering.transcript.filter(conversationQuestionDocked) : [];
-    const transcript =
-        dockedQuestions.length === 0
-            ? steering.transcript
-            : steering.transcript.filter((entry) => !conversationQuestionDocked(entry));
+    const transcript = steering.transcript;
     // A queued message keeps its entity key and virtual row when Stop ends
     // the turn and when the daemon accepts it into the next one.
     const listEntries = queued.length === 0 ? transcript : [...transcript, ...queued];
@@ -710,48 +689,6 @@ export function ConversationView(props: ConversationViewProps) {
     const [traceViewer] = useState(() => ({
         live: () => traceList.current?.isConnected === true,
     }));
-    /* The owner's dock is an opaque slot, so the questions reach it through
-       context; with none waiting the value stays undefined and the dock keeps
-       the owner's placeholder. */
-    const dockQuestion: ConversationDockQuestion | undefined =
-        dockedQuestions.length === 0
-            ? undefined
-            : {
-                  placeholder: dockedQuestions.some(
-                      (entry) =>
-                          entry.kind === "request" &&
-                          entry.request.kind === "userInput" &&
-                          entry.request.questions.some((question) => question.options.length === 0),
-                  )
-                      ? "Type your answer…"
-                      : "Or type your own answer…",
-                  question: dockedQuestions.map((entry) => {
-                      if (entry.kind !== "request") return null;
-                      const submission = props.requestSubmissions?.find(
-                          (candidate) => candidate.requestId === entry.request.requestId,
-                      );
-                      return (
-                          <ConversationRequestView
-                              key={entry.id}
-                              {...(submission?.status === "failed"
-                                  ? { error: submission.error, retryAnswers: submission.answers }
-                                  : {})}
-                              {...(props.onRequestAnswer
-                                  ? { onAnswer: props.onRequestAnswer }
-                                  : {})}
-                              {...(props.onRequestSelectionChange
-                                  ? { onSelectionChange: props.onRequestSelectionChange }
-                                  : {})}
-                              pending={submission?.status === "pending"}
-                              request={entry.request}
-                              {...((selection) => (selection ? { selection } : {}))(
-                                  props.requestSelections?.get(entry.request.requestId),
-                              )}
-                              variant="dock"
-                          />
-                      );
-                  }),
-              };
     /* Every change to an inline page's collapse or height is one generation,
        which re-sizes the rows; the values themselves live in module memory. */
     const [inlinePageGeneration, setInlinePageGeneration] = useState(0);
@@ -867,7 +804,12 @@ export function ConversationView(props: ConversationViewProps) {
                 }),
         };
     };
-    const awaitingInput = steering.transcript.some(conversationQuestionDocked);
+    const awaitingInput = transcript.some(
+        (entry) =>
+            entry.kind === "request" &&
+            entry.request.kind === "userInput" &&
+            entry.request.status !== "answered",
+    );
     /* The reader's message is on its way and nothing has answered it yet. The
        status line arrives with the message, in the same commit, rather than a
        beat later when the run is reported started. */
@@ -1260,6 +1202,14 @@ export function ConversationView(props: ConversationViewProps) {
                               }
                             : {})}
                         jumpToEnd
+                        /* Shimmers exactly while the status line spins: not on
+                           a question or a wait, and on through delegation. */
+                        jumpToEndWorking={
+                            statusVisible &&
+                            !awaitingInput &&
+                            !scheduledWait &&
+                            (delegating || props.workingWait === undefined)
+                        }
                         paddingEnd={24}
                         virtualize
                     >
@@ -1387,9 +1337,7 @@ export function ConversationView(props: ConversationViewProps) {
                 </MarkdownLayoutCacheContext.Provider>
             )}
 
-            <ConversationDockQuestionContext.Provider value={dockQuestion}>
-                {props.dock}
-            </ConversationDockQuestionContext.Provider>
+            {props.dock}
 
             {props.overlay ? <WindowOverlay>{props.overlay}</WindowOverlay> : null}
         </section>

@@ -369,6 +369,23 @@ const MarkdownLink = ({
                 className={["happy-message__md-link", className].filter(Boolean).join(" ")}
                 data-happy-desktop-ui="message-md-link"
                 href={safe}
+                // Cmd-click (Ctrl-click off macOS) opens the link in the other
+                // place: the browser when links default to the side panel, and
+                // the side panel when they default to the browser.
+                onClick={
+                    menuOffered && linkOpenDefault !== undefined
+                        ? (event) => {
+                              if (!event.metaKey && !event.ctrlKey) return;
+                              event.preventDefault();
+                              onLinkOpen(
+                                  webUrl,
+                                  linkOpenDefault === LINK_MENU_BROWSER
+                                      ? LINK_MENU_PANEL
+                                      : LINK_MENU_BROWSER,
+                              );
+                          }
+                        : undefined
+                }
                 onContextMenu={
                     menuOffered
                         ? (event) => {

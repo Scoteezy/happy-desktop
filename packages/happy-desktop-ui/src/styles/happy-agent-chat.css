@@ -16,29 +16,27 @@
     font-synthesis: none;
 }
 
-/* A question in a transcript is a quiet inline response block. It follows the
-   same measure as the composer without introducing another card or table. */
+/* The warning frame's geometry, with a neutral border and unchanged background. */
 .happy-agent-input[data-variant="card"] {
-    padding: 0;
+    padding: calc(var(--happy-chat-frame-text-inset) - 1px)
+        calc(var(--happy-chat-frame-outset) - 1px);
     background: transparent;
-    border: 0;
+    border: 1px solid var(--divider);
+    border-radius: 12px;
 }
 
-/* An interactive conversation asks pending questions in the dock; read-only
-   panels also keep pending questions in the transcript. Both keep the agent
-   column — the same edges as the prose and activity rows around it — rather
-   than the composer's wider measure. */
+/* The frame stands outside the text column; its contents align with prose. */
 .happy-conversation .happy-agent-input[data-variant="card"] {
     width: auto;
-    margin-right: 64px;
-    margin-left: 30px;
+    margin-right: calc(64px - var(--happy-chat-frame-outset));
+    margin-left: calc(30px - var(--happy-chat-frame-outset));
 }
 
 /* Opening its turn, the question sits in the Message that carries the agent's
    identity line, which already supplies the agent column. */
 .happy-message--activity-lead .happy-agent-input[data-variant="card"] {
-    margin-right: 0;
-    margin-left: 0;
+    margin-right: calc(-1 * var(--happy-chat-frame-outset));
+    margin-left: calc(-1 * var(--happy-chat-frame-outset));
 }
 
 .happy-conversation .happy-agent-input[data-variant="card"] .happy-agent-input__context,
@@ -67,11 +65,11 @@
     overflow-wrap: break-word;
 }
 
-/* Fenced code keeps the Markdown model's 16px inset; the inline-code rule's
+/* Fenced code keeps the Markdown model's frame inset; the inline-code rule's
    :not() specificity must not reduce this block to a single inline line. */
 .happy-agent-input__context.happy-message__body--markdown pre code {
     display: block;
-    padding: 16px;
+    padding: var(--happy-chat-frame-text-inset) var(--happy-chat-frame-outset);
     line-height: 20px;
     background: transparent;
     border-radius: 0;
@@ -585,66 +583,4 @@
 
 .happy-agent-input__options:empty {
     display: none;
-}
-
-/*
- * A docked question keeps the transcript's text measure. The dock itself starts
- * at 12px and ends at 20px. Leave 8px outside the prose column for option
- * hover fills; the viewport's padding restores the 30px and 64px text edges.
- */
-.happy-agent-input[data-variant="dock"] {
-    padding: 0;
-    background: transparent;
-}
-
-/* Bounded to half the window: the reader must still see what the question is
-   about. Anything longer scrolls inside the region, Submit staying in reach.
- *
- * It is part of the conversation held at its foot, so it wears the chat's own
- * surface and only a frame, the input's box exactly: the same edges and
- * corners as the card below it. The frame's padding is the margin it used to
- * keep, so the question's text column is where it always was. */
-.happy-conversation__question {
-    display: flex;
-    flex: 0 1 auto;
-    flex-direction: column;
-    box-sizing: border-box;
-    min-height: 0;
-    max-height: 50cqh;
-    padding: 8px 35px 8px 9px;
-    overflow: hidden;
-    border: 1px solid var(--divider);
-    border-radius: 16px;
-    background: var(--surface);
-}
-
-.happy-conversation__question-scroll {
-    flex: 1 1 auto;
-    min-height: 0;
-    margin: 0;
-    padding: 0;
-}
-
-.happy-conversation__question-viewport {
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-}
-
-/* The scrollport stays edge to edge, so the option hover fills reach its
-   edges; its content carries the 8px back to the text column. */
-.happy-conversation__question-content {
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    gap: 8px;
-    box-sizing: border-box;
-    padding-inline: 8px;
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__footer {
-    position: sticky;
-    bottom: 0;
-    padding: 4px 0;
-    background: var(--surface);
 }

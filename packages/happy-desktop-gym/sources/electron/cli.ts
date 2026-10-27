@@ -31,6 +31,7 @@ const workloads: readonly GymWorkloadName[] = [
     "nested-row-menus",
     "section-create",
     "mobile-direct-experiment",
+    "jump-shimmer",
     "window-zoom",
     "all",
 ];
@@ -196,7 +197,7 @@ Commands:
 Workloads:
   hidden-window, boot, catalog-switch, long-transcript, file-switch-warm,
   long-chat-scroll, session-switch-load, highlight-warm, changed-files-warm,
-  streaming, mixed-replay, memory-idle, window-edge-resize, archive-reconcile, sidebar-drag, stop-shimmer, nested-row-menus, section-create, mobile-direct-experiment, window-zoom, public-repository,
+  streaming, mixed-replay, memory-idle, window-edge-resize, archive-reconcile, sidebar-drag, stop-shimmer, nested-row-menus, section-create, mobile-direct-experiment, jump-shimmer, window-zoom, public-repository,
   background-drafts, all
 
 The default root is ${gymRunsRootResolve()}/g-<run-id>.

@@ -297,8 +297,9 @@ it("renders the shared Markdown context above the first question, pending and an
         expect(bounds.bottom, `${id}: context sits above the questions`).toBeLessThanOrEqual(
             question.top,
         );
-        expect(bounds.width, `${id}: context spans the prompt`).toBe(
-            root.getBoundingClientRect().width,
+        expect(bounds.width, `${id}: context spans the prompt inside its frame`).toBe(
+            root.getBoundingClientRect().width -
+                (root.getAttribute("data-variant") === "card" ? 24 : 0),
         );
         expect(
             bounds.left + Number.parseFloat(bodyStyle.paddingLeft),

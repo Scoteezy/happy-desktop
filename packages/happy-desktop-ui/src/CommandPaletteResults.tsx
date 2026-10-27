@@ -4,6 +4,8 @@ import { KeyCap } from "./Badge";
 import { EmptyState } from "./EmptyState";
 import { Icon, type IconName } from "./Icon";
 import type { KeyboardShortcut } from "./keyboardShortcut";
+import type { StemCellMark } from "./StemCell";
+import { StemCellGrowth, type ImageMark } from "./StemCellGrowth";
 import { Ionicon } from "./vectorIcons/VectorIcon";
 /**
  * A row whose leading lane is the product's own mark for one kind of news
@@ -13,10 +15,19 @@ import { Ionicon } from "./vectorIcons/VectorIcon";
  * takes the lane from `icon` and `avatar`.
  */
 export type CommandPaletteRowEmphasis = "update";
+/**
+ * A face in the leading lane, drawn by the same Avatar at the same 20px the
+ * sidebar draws its rows' faces at. `agent` is the rounded tile a bot, a task,
+ * or a project wears there; `human` the round one a person wears. A tile with
+ * no picture may hold a glyph instead of initials, as a task or the home
+ * project's does.
+ */
 export type CommandPaletteResultsAvatar = {
     initials: string;
     imageUrl?: string;
+    icon?: IconName;
     tone?: ToneName;
+    type?: "agent" | "human";
 };
 /**
  * A row that runs something — open a chat, create a workspace, jump to a
@@ -31,6 +42,12 @@ export type CommandPaletteCommandRow = {
     /** Leading glyph. An `avatar` takes the lane instead when both are given. */
     icon?: IconName;
     avatar?: CommandPaletteResultsAvatar;
+    /**
+     * The artwork a sidebar row wears — a clay icon, or the stem cell of work
+     * still taking shape — at the sidebar's own 20px. It outranks `avatar`.
+     */
+    imageMark?: ImageMark;
+    stemCell?: StemCellMark;
     /** The product's own mark for this row's kind of news; it wins the lane. */
     emphasis?: CommandPaletteRowEmphasis;
     /** Trailing cap. The chord is announced on the row and drawn decoratively. */
@@ -50,6 +67,11 @@ export type CommandPaletteCommandRow = {
 export type CommandPaletteControlRow = {
     kind: "control";
     id: string;
+    /**
+     * Leading glyph, in the same lane a command row's sits in, so the hosted
+     * row's words start on the column every other row's do.
+     */
+    icon?: IconName;
     control: ReactNode;
     /**
      * What this row is, in words. The row's visible text lives inside `control`
@@ -109,7 +131,7 @@ function rowAnnouncement(row: CommandPaletteResultsRow, index: number, total: nu
     const words = row.kind === "control" ? [row.label, row.description] : [row.title, row.meta];
     return `${words.filter(Boolean).join(" — ")}, ${index + 1} of ${total}`;
 }
-/** The inside of a command row: leading lane, the two lines, then its cap. */
+/** The inside of a command row: leading lane, its one line, then its cap. */
 function commandRowContent(row: CommandPaletteCommandRow) {
     return (
         <>
@@ -121,15 +143,24 @@ function commandRowContent(row: CommandPaletteCommandRow) {
             >
                 {row.emphasis === "update" ? (
                     <Ionicon name="arrow-up-circle" size={18} />
+                ) : row.imageMark || row.stemCell ? (
+                    <StemCellGrowth
+                        imageClassName="happy-command-palette-results__image-mark"
+                        imageMark={row.imageMark}
+                        size={20}
+                        stemCell={row.stemCell}
+                    />
                 ) : row.avatar ? (
                     <Avatar
+                        icon={row.avatar.icon}
                         imageUrl={row.avatar.imageUrl}
                         initials={row.avatar.initials}
-                        size="sm"
+                        size="xs"
                         tone={row.avatar.tone}
+                        type={row.avatar.type}
                     />
                 ) : row.icon ? (
-                    <Icon name={row.icon} size={18} />
+                    <Icon name={row.icon} size={16} />
                 ) : null}
             </span>
             <span
@@ -179,11 +210,13 @@ function commandRowContent(row: CommandPaletteCommandRow) {
  * their native roles, states, and tab stops, and the announcement carries what
  * `aria-selected` would have carried.
  *
- * Two kinds of row share one list. A command row is a 44px button — leading
- * glyph or avatar, title, muted second line, optional trailing cap. A control
+ * Two kinds of row share one list. A command row is a button on one 44px
+ * line, command-bar style — a leading glyph or avatar, the title, its muted
+ * secondary text after an em dash, and an optional trailing cap. A control
  * row hosts the very FormRow + Switch/SegmentedControl the settings page
- * renders, at that row's own natural height, so a preference can be changed
- * where it was found instead of being navigated to.
+ * renders, after the same leading lane, so a preference can be changed where
+ * it was found instead of being navigated to; it keeps the settings row's two
+ * lines at 56px. Hand the hosted FormRow `density="compact"` to keep it there.
  */
 export function CommandPaletteResults(props: CommandPaletteResultsProps) {
     const rows = commandPaletteResultsRows(props.sections);
@@ -264,7 +297,18 @@ export function CommandPaletteResults(props: CommandPaletteResultsProps) {
                                             onPointerMove={onPointerMove}
                                             ref={isActive ? activeRowRef : undefined}
                                         >
-                                            {row.control}
+                                            <span
+                                                aria-hidden="true"
+                                                className="happy-command-palette-results__leading"
+                                                data-happy-desktop-ui="command-palette-results-leading"
+                                            >
+                                                {row.icon ? (
+                                                    <Icon name={row.icon} size={16} />
+                                                ) : null}
+                                            </span>
+                                            <div className="happy-command-palette-results__control">
+                                                {row.control}
+                                            </div>
                                         </div>
                                     ) : (
                                         <button

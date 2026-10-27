@@ -267,6 +267,11 @@ sampled every 50ms after Stop, before/after screenshots, and a video. Prepare
 a fresh root for it: a daemon restart resumes a turn that was stopped
 mid-stream.
 
+`jump-shimmer` starts the same slow turn in the seeded long chat, scrolls the
+transcript up, and requires the jump-to-latest button to shimmer while the
+agent works and to show the plain arrow, on the same pixels, after Stop. It
+writes `jump-shimmer.json`, working/idle screenshots, and a video.
+
 `window-zoom` sweeps the window's zoom over 80, 90, 100, 110, 125 and 150%,
 each reached as the View menu does it and again after a reload (which keeps the
 zoom but not the menu's report of it), with the sidebar open and folded, in a

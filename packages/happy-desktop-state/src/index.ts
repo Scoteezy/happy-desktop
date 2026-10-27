@@ -1,7 +1,11 @@
 export * from "./types.js";
 export * from "./transport.js";
 export { HappyAgentApiError, HappyAgentClient } from "@slopus/happy-agent-client";
-export type { ApiErrorBody, HappyAgentClientOptions } from "@slopus/happy-agent-client";
+export type {
+    ApiErrorBody,
+    DaemonDrain,
+    HappyAgentClientOptions,
+} from "@slopus/happy-agent-client";
 export * as happyAgentProtocol from "@slopus/happy-agent-client";
 export * from "./happyAgentConnection/index.js";
 export { type DeepReadonly } from "./deepReadonly.js";

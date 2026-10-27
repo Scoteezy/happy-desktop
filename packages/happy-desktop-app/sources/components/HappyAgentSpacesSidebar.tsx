@@ -165,6 +165,25 @@ function targetBot(target: HappyAgentSpaceTarget, places: HappyAgentSpacesPlaces
     return target.kind === "bot" ? places.bots.find((bot) => bot.id === target.id) : undefined;
 }
 
+/**
+ * Where a space opens: its Surface, or its conversation in the workspace that
+ * runs it. Nothing for work whose conversation is not listed anywhere yet.
+ */
+export function happyAgentSpaceDestination(
+    space: HappyAgentSpace,
+    places: HappyAgentSpacesPlaces,
+    snapshot: HappyAgentSpacesSnapshot,
+):
+    | { readonly kind: "surface"; readonly surfaceId: string }
+    | { readonly kind: "chat"; readonly groupId: string; readonly chatId: string }
+    | undefined {
+    if (space.target.kind === "surface") return { kind: "surface", surfaceId: space.target.id };
+    const agentId = spaceAgentId(space);
+    if (agentId === undefined) return undefined;
+    const groupId = space.target.workspaceId ?? agentGroupOf(agentId, places, snapshot);
+    return groupId === undefined ? undefined : { kind: "chat", groupId, chatId: agentId };
+}
+
 /** Opens what a space holds where it always opens. */
 export function happyAgentSpaceOpen(
     space: HappyAgentSpace,
@@ -172,14 +191,9 @@ export function happyAgentSpaceOpen(
     snapshot: HappyAgentSpacesSnapshot,
     navigation: HappyAgentSpacesNavigation,
 ): void {
-    if (space.target.kind === "surface") {
-        navigation.onSurfaceOpen?.(space.target.id);
-        return;
-    }
-    const agentId = spaceAgentId(space);
-    if (agentId === undefined) return;
-    const groupId = space.target.workspaceId ?? agentGroupOf(agentId, places, snapshot);
-    if (groupId !== undefined) navigation.onChatSelect(groupId, agentId);
+    const destination = happyAgentSpaceDestination(space, places, snapshot);
+    if (destination?.kind === "surface") navigation.onSurfaceOpen?.(destination.surfaceId);
+    else if (destination) navigation.onChatSelect(destination.groupId, destination.chatId);
 }
 
 /** The space the window is showing, if a row stands for it. */

@@ -2012,11 +2012,9 @@
     z-index: 30;
     display: flex;
     flex-direction: column;
-    gap: 8px;
     box-sizing: border-box;
     width: 100%;
     max-width: 236px;
-    padding: 10px 12px 12px;
     border: 1px solid var(--modal-border);
     border-radius: var(--happy-radius-md);
     background: var(--surface);
@@ -2028,6 +2026,193 @@
        opening rather than as a card that was already there. */
     transform-origin: 100% 100%;
     user-select: none;
+}
+
+.happy-sidebar-update__main {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px 12px;
+}
+
+/* What is new, above the panel in the same card. The measured height collapses
+   to zero when Install is pressed, so the card shrinks back to the panel's
+   own size in one glide; the hairline under the notes is where the panel's top
+   border was, and it folds away with them. */
+.happy-sidebar-update__notes {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    height: var(--notes-height, auto);
+    overflow: hidden;
+    transition:
+        height 240ms ease,
+        opacity 180ms ease;
+}
+
+.happy-sidebar-update__notes[data-applying] {
+    height: 0;
+    opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-sidebar-update__notes {
+        transition: none;
+    }
+}
+
+.happy-sidebar-update__notes-clip {
+    flex: none;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.happy-sidebar-update__notes-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--divider);
+}
+
+.happy-sidebar-update__notes-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 18px;
+}
+
+.happy-sidebar-update__tabs {
+    display: flex;
+    flex: none;
+    gap: 2px;
+}
+
+.happy-sidebar-update__tab {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    margin: 0;
+    padding: 1px 6px;
+    border: 0;
+    border-radius: var(--happy-hover-radius);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 16px;
+    cursor: pointer;
+    appearance: none;
+}
+
+.happy-sidebar-update__tab:hover:not(:disabled) {
+    color: var(--text);
+}
+
+.happy-sidebar-update__tab[aria-selected="true"] {
+    background: var(--happy-hover-fill);
+    color: var(--text);
+}
+
+.happy-sidebar-update__tab:disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+
+.happy-sidebar-update__tab:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 1px;
+}
+
+.happy-sidebar-update__tab-count {
+    font-family: var(--happy-font-mono);
+    font-size: 10px;
+}
+
+.happy-sidebar-update__notes-meta {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 10.5px;
+    line-height: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-sidebar-update__notes-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* A bullet is release copy of a few words; one that is still too long for the
+   card ends in an ellipsis with the whole line in its title. */
+.happy-sidebar-update__notes-item {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    padding-left: 11px;
+    font-size: 12.5px;
+    line-height: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-sidebar-update__notes-item::before {
+    position: absolute;
+    top: 7px;
+    left: 1px;
+    width: 4px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--text-secondary);
+    content: "";
+}
+
+.happy-sidebar-update__notes-overflow {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 2px 0;
+}
+
+.happy-sidebar-update__notes-headline {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 18px;
+}
+
+.happy-sidebar-update__notes-line {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 17px;
+}
+
+.happy-sidebar-update__notes-link {
+    color: var(--text);
+    font-weight: 500;
+    text-decoration: underline;
+    text-decoration-color: var(--divider);
+    text-underline-offset: 2px;
+    user-select: none;
+}
+
+.happy-sidebar-update__notes-link:hover {
+    text-decoration-color: currentColor;
+}
+
+.happy-sidebar-update__notes-link:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid var(--radio-active);
+    outline-offset: 1px;
 }
 
 .happy-sidebar-update__copy {

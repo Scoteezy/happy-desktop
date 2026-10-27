@@ -79,6 +79,7 @@ import type {
     HappyAgentBotAttention,
     HappyAgentPanelArtifactView,
     HappyAgentPanelSnapshot,
+    HappyAgentRecentTabMemory,
     HappyAgentProjectAddSnapshot,
     HappyAgentPanelStore,
     HappyAgentPanelTabId,
@@ -321,6 +322,7 @@ import {
     WindowShortcuts,
     WorkspaceLifecycleLane,
     WorkspaceLifecycleNotice,
+    workspaceLifecycleNoticeLines,
     WorkFloaty,
     type WorkFloatyRow,
     WorkTabControls,
@@ -340,6 +342,7 @@ import {
 import {
     happyAgentSpaceFocused,
     happyAgentSpaceHappyIs,
+    happyAgentSpaceDestination,
     happyAgentSpaceLabel,
     happyAgentSpaceMark,
     happyAgentSpacesNotes,
@@ -356,10 +359,12 @@ import {
     commandPaletteIndexMove,
     commandPaletteResults,
     commandPaletteRowAt,
-    commandPaletteSuggestionRows,
+    commandPaletteQuickActionRows,
     type CommandPaletteCommand,
     type CommandPaletteContext,
+    type CommandPaletteGlyph,
     type CommandPaletteRow,
+    type CommandPaletteSpace,
     type CommandPaletteSettingRow,
     type CommandPaletteTab,
 } from "./commandPaletteResults";
@@ -378,7 +383,11 @@ import type {
     AppHappyAgentDaemonSnapshot,
     AppHappyAgentDaemonStore,
 } from "./views/AppHappyAgentSettingsView";
-import type { AppHappyAgentUpdateSnapshot, AppHappyAgentUpdateStore } from "./agentUpdate";
+import type {
+    AppHappyAgentReleaseNotesStore,
+    AppHappyAgentUpdateSnapshot,
+    AppHappyAgentUpdateStore,
+} from "./agentUpdate";
 import { agentUpdateCardView, type AgentUpdateCatalog } from "./agentUpdateCardView";
 
 const sidebarDaemonUnavailable: AppHappyAgentDaemonSnapshot = {
@@ -420,6 +429,11 @@ const agentUpdateStoreNoop: AppHappyAgentUpdateStore = {
     restartNow: () => undefined,
     subscribe: () => () => undefined,
     updateRetry: () => undefined,
+};
+
+const agentReleaseNotesStoreNoop: AppHappyAgentReleaseNotesStore = {
+    get: () => undefined,
+    subscribe: () => () => undefined,
 };
 
 /**
@@ -464,7 +478,7 @@ function AgentUpdateSidebar(props: {
                 : {})}
             {...(progress.kind === "failed"
                 ? {
-                      onRetry: store.updateRetry,
+                      ...(progress.retryable ? { onRetry: store.updateRetry } : {}),
                       ...(snapshot.chiefOfStaff === "unavailable"
                           ? {}
                           : { onChiefOfStaffAsk: store.chiefOfStaffAsk }),
@@ -477,27 +491,19 @@ function AgentUpdateSidebar(props: {
 /**
  * What the sidebar has to say about the agent, if anything.
  *
- * Only two things are worth a row: a version being fetched, and one already
- * fetched and waiting to be installed. A check finding nothing, or an agent
- * managed outside Happy, is not news and takes no space.
+ * Only a downloaded version waiting to be installed gets a footer action.
+ * Download status stays in Settings, and an agent managed outside Happy takes
+ * no space here.
  */
 function agentUpdateOffer(daemon: AppHappyAgentDaemonSnapshot):
     | {
-          readonly detail?: string;
-          readonly status: "downloading" | "downloaded";
+          readonly status: "downloaded";
           readonly version: string;
       }
     | undefined {
     if (!daemon.managed || daemon.install.phase !== "idle") return undefined;
     if (daemon.readyVersion !== undefined)
         return { status: "downloaded", version: daemon.readyVersion };
-    if (daemon.operation === "downloading" && daemon.availableVersion !== undefined) {
-        return {
-            ...(daemon.message ? { detail: daemon.message } : {}),
-            status: "downloading",
-            version: daemon.availableVersion,
-        };
-    }
     return undefined;
 }
 
@@ -804,6 +810,8 @@ export interface AppHappyAgentViewProps {
      * runs, the footer shows its card instead of the update offer.
      */
     agentUpdate?: AppHappyAgentUpdateStore;
+    /** Compact notes for the local Happy Agent update on offer. */
+    agentReleaseNotes?: AppHappyAgentReleaseNotesStore;
     /** Native page renderer supplied only by the packaged Electron host. */
     browserContent?: BrowserContentRenderer;
     /**
@@ -3540,7 +3548,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // Happy's own update wins the row. Restarting the app is the larger event of
     // the two, and it carries the agent with it, so the agent states its case
     // once there is nothing bigger waiting.
-    const agentUpdate = props.update ? undefined : agentUpdateOffer(daemon);
+    const applicationUpdate = props.update?.status === "downloaded" ? props.update : undefined;
+    const agentUpdate = applicationUpdate ? undefined : agentUpdateOffer(daemon);
+    const releaseNotesStore = props.agentReleaseNotes ?? agentReleaseNotesStoreNoop;
+    const releaseNotes = useSyncExternalStore(
+        releaseNotesStore.subscribe,
+        releaseNotesStore.get,
+        releaseNotesStore.get,
+    );
     const updateStore = props.agentUpdate ?? agentUpdateStoreNoop;
     const updateProgress = useSyncExternalStore(
         updateStore.subscribe,
@@ -3562,20 +3577,20 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             snapshot={updateProgress}
             store={updateStore}
         />
-    ) : props.update ? (
+    ) : applicationUpdate ? (
         <SidebarUpdateAction
-            action={props.update.action}
-            detail={props.update.detail}
-            onAction={props.update.status === "downloaded" ? props.onUpdateApply : undefined}
-            status={props.update.status}
+            action={applicationUpdate.action}
+            detail={applicationUpdate.detail}
+            onAction={props.onUpdateApply}
+            status={applicationUpdate.status}
             subject="application"
-            version={props.update.version}
+            version={applicationUpdate.version}
         />
     ) : agentUpdate ? (
         <SidebarUpdateAction
             action="install"
-            detail={agentUpdate.detail}
-            onAction={agentUpdate.status === "downloaded" ? daemonStore.daemonInstall : undefined}
+            {...(releaseNotes?.to === agentUpdate.version ? { notes: releaseNotes } : {})}
+            onAction={daemonStore.daemonInstall}
             status={agentUpdate.status}
             subject="happyAgent"
             version={agentUpdate.version}
@@ -4574,6 +4589,49 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         workspace: active?.session?.workspace,
         workspaceCreateProjectId: workspaceCreateTarget?.projectId,
         taskCreateAvailable: taskCreateTarget !== undefined,
+        // A window that keeps no fold of its own leaves it to the shell, which
+        // nothing outside it can reach, so no row offers it.
+        ...(props.sidebarVisibility ? { sidebar: { hidden: sidebarVisibility.hidden } } : {}),
+        // What the sidebar on screen lists at its top level, so the palette
+        // offers those rows first and wears their marks.
+        sidebarMode: spacesSidebar
+            ? {
+                  kind: "spaces",
+                  spaces: [...spaces.spaces.values()].flatMap((space): CommandPaletteSpace[] => {
+                      const destination = happyAgentSpaceDestination(space, spacesPlaces, spaces);
+                      if (!destination) return [];
+                      const title = happyAgentSpaceLabel(space);
+                      const target = space.target;
+                      return [
+                          {
+                              id: space.id,
+                              title,
+                              glyph: paletteMarkGlyph(
+                                  happyAgentSpaceMark(space, spacesPlaces, false),
+                                  title,
+                              ),
+                              target:
+                                  target.kind === "task" || target.kind === "bot"
+                                      ? { kind: target.kind, id: target.id }
+                                      : { kind: target.kind === "surface" ? "surface" : "agent" },
+                              destination,
+                          },
+                      ];
+                  }),
+              }
+            : {
+                  kind: "classic",
+                  botsHidden: new Set(
+                      (active?.bots ?? [])
+                          .filter(
+                              (bot) =>
+                                  happyAgentBotAttention(attention, active!.id, bot.id) ===
+                                  "hidden",
+                          )
+                          .map((bot) => bot.id as string),
+                  ),
+                  projectsHidden,
+              },
     };
     // The same suggestions the empty palette offers, on the gesture the reader
     // already has for discovering chords. The shell mounts it only while
@@ -4595,8 +4653,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         onSettingsSectionOpen: props.onSettingsSectionOpen,
         onUpdateApply: props.onUpdateApply,
         onTaskCreateOpen: props.onTaskCreateOpen,
+        onSurfaceOpen: props.onSurfaceOpen,
         store: commandPaletteStore,
         settings: settingsStore,
+        sidebarVisibility: sidebarVisibilityStore,
         titleShimmer: titleShimmerStore,
     };
 
@@ -5057,6 +5117,10 @@ interface HappyAgentPaletteSubject {
     taskCreateAvailable: boolean;
     updateReady?: { readonly action: "refresh" | "restart"; readonly version?: string };
     workspace?: HappyAgentWorkspaceStore;
+    /** The window's own fold of its left side, when it keeps one. */
+    sidebar?: { readonly hidden: boolean };
+    /** What the sidebar on screen lists at its top level. */
+    sidebarMode: CommandPaletteContext["sidebarMode"];
 }
 
 /** The window acts the palette can commit to. */
@@ -5064,6 +5128,7 @@ interface HappyAgentPaletteActions {
     appearance: AppearanceStore;
     experiments: ExperimentsStore;
     settings: HappyAgentSettingsStore;
+    sidebarVisibility: HappyAgentSidebarVisibilityStore;
     titleShimmer: TitleShimmerStore;
     store: CommandPaletteStore;
     happyAgentOnline: () => boolean;
@@ -5079,6 +5144,7 @@ interface HappyAgentPaletteActions {
     onSettingsSectionOpen?(section: string): void;
     onUpdateApply?(): void;
     onTaskCreateOpen?(happyAgentId: string): void;
+    onSurfaceOpen?(happyAgentId: string, surfaceId: string): void;
 }
 
 /**
@@ -5091,6 +5157,12 @@ interface HappyAgentPaletteFacts {
     readonly tabs: readonly CommandPaletteTab[];
     readonly sessionCreateAvailable: boolean;
     readonly groupResume?: ReadonlyMap<HappyAgentGroupId, HappyAgentSessionId>;
+    /** The open workspace's secondary pane, when it has one to show. */
+    readonly panel?: { readonly open: boolean };
+    /** Every task the machine lists, joined or not, archived or not. */
+    readonly taskDirectory?: readonly HappyAgentTask[];
+    /** The sessions this window opened, most recently first. */
+    readonly visits: readonly HappyAgentRecentTabMemory[];
 }
 
 /**
@@ -5102,6 +5174,7 @@ const PALETTE_WORKSPACE_ABSENT: HappyAgentPaletteFacts = {
     archivedSessions: [],
     sessionCreateAvailable: false,
     tabs: [],
+    visits: [],
 };
 
 /** The open workspace's strip, sessions and files together in the reader's order. */
@@ -5140,6 +5213,7 @@ function paletteTabs(
  */
 function paletteFacts(
     workspace: HappyAgentWorkspaceSnapshot,
+    panel: HappyAgentPanelSnapshot,
     groupId: string | undefined,
     online: boolean,
 ): HappyAgentPaletteFacts {
@@ -5162,6 +5236,13 @@ function paletteFacts(
             workspace.groupAccess.conversationRefusal === undefined &&
             workspaceLifecyclePhase(openGroup.lifecycle) !== "creating",
         tabs: paletteTabs(workspace, openGroup),
+        taskDirectory: workspace.list.taskDirectory,
+        visits: workspace.recentTabs,
+        // The pane the workspace's own toggle shows, on the same condition:
+        // a checkout still being prepared has nothing to put in it.
+        ...(openGroup !== undefined && workspaceLifecyclePhase(openGroup.lifecycle) !== "creating"
+            ? { panel: { open: panel.open } }
+            : {}),
     };
 }
 
@@ -5180,10 +5261,15 @@ function HappyAgentCommandPaletteSurface(
         props.workspace.get,
         props.workspace.get,
     );
+    const panel = useSyncExternalStore(
+        props.workspace.panel.subscribe,
+        props.workspace.panel.get,
+        props.workspace.panel.get,
+    );
     return (
         <HappyAgentCommandPalette
             {...props}
-            facts={paletteFacts(workspace, props.groupId, props.online)}
+            facts={paletteFacts(workspace, panel, props.groupId, props.online)}
         />
     );
 }
@@ -5197,10 +5283,15 @@ function HappyAgentQuickActionsSurface(
         props.workspace.get,
         props.workspace.get,
     );
+    const panel = useSyncExternalStore(
+        props.workspace.panel.subscribe,
+        props.workspace.panel.get,
+        props.workspace.panel.get,
+    );
     return (
         <HappyAgentQuickActions
             {...props}
-            facts={paletteFacts(workspace, props.groupId, props.online)}
+            facts={paletteFacts(workspace, panel, props.groupId, props.online)}
         />
     );
 }
@@ -5212,6 +5303,9 @@ function paletteContext(
 ): CommandPaletteContext {
     return {
         archivedSessions: facts.archivedSessions,
+        bots: subject.bots,
+        tasks: subject.tasks,
+        chatId: subject.chatId,
         groupId: subject.groupId,
         happyAgentId: subject.happyAgentId,
         projects: subject.projects,
@@ -5223,25 +5317,53 @@ function paletteContext(
             subject.workspace !== undefined &&
             subject.workspaceCreateProjectId !== undefined,
         taskCreateAvailable: subject.taskCreateAvailable,
+        ...(subject.sidebar ? { sidebar: subject.sidebar } : {}),
+        ...(facts.panel ? { panel: facts.panel } : {}),
+        ...(facts.taskDirectory ? { taskDirectory: facts.taskDirectory } : {}),
+        sidebarMode: subject.sidebarMode,
+        visits: facts.visits,
     };
 }
 
 /**
- * What holding Command puts in the middle of the window: the rows the empty
- * palette would offer, each wearing the chord that runs it.
+ * A spaces row's mark as the palette draws it: its clay icon or stem cell as
+ * drawn, and otherwise the same rounded tile the row's own Avatar is — its
+ * picture, else its glyph, else its initial.
+ */
+function paletteMarkGlyph(
+    mark: Pick<SidebarItem, "icon" | "imageMark" | "imageUrl" | "stemCell">,
+    title: string,
+): CommandPaletteGlyph {
+    if (mark.imageMark || mark.stemCell)
+        return {
+            kind: "mark",
+            ...(mark.imageMark ? { imageMark: mark.imageMark } : {}),
+            ...(mark.stemCell ? { stemCell: mark.stemCell } : {}),
+        };
+    return {
+        kind: "avatar",
+        initials: title.slice(0, 1).toUpperCase(),
+        ...(mark.imageUrl ? { imageUrl: mark.imageUrl } : {}),
+        ...(mark.icon ? { icon: mark.icon } : {}),
+    };
+}
+
+/**
+ * What holding Command puts in the middle of the window: the acts the palette
+ * answers a typed query with, each wearing the chord that runs it.
  *
- * It is the same list, from the same transform, so the card is a preview of the
- * palette rather than a second opinion about what matters. Rows the card cannot
- * draw — a workspace's picture, a live settings control — are left out rather
- * than approximated; suggestions produce none today.
+ * It is the same list, from the same transform, so the card never teaches a
+ * chord for something the palette would not run. Rows the card cannot draw —
+ * a picture, a live settings control — are left out rather than approximated;
+ * actions produce none today.
  */
 function HappyAgentQuickActions(
     props: HappyAgentPaletteSubject & { facts: HappyAgentPaletteFacts },
 ) {
-    const items = commandPaletteSuggestionRows(paletteContext(props, props.facts))
+    const items = commandPaletteQuickActionRows(paletteContext(props, props.facts))
         .slice(0, COMMAND_PALETTE_PREVIEW_LIMIT)
         .flatMap((row): QuickActionsCardItem[] =>
-            row.kind !== "command" || row.glyph.kind === "avatar"
+            row.glyph.kind === "avatar" || row.glyph.kind === "mark"
                 ? []
                 : [
                       {
@@ -5346,7 +5468,13 @@ function HappyAgentCommandPalette(
     };
 
     return (
-        <ModalOverlay onDismiss={() => props.store.paletteClose()} placement="center">
+        // No dim: the window stays as it is behind the card, and a press
+        // anywhere outside it — the connection rail included — closes it.
+        <ModalOverlay
+            backdrop="clear"
+            onDismiss={() => props.store.paletteClose()}
+            placement="center"
+        >
             <CommandPalette
                 onClose={() => props.store.paletteClose()}
                 onQueryChange={(value) => {
@@ -5354,20 +5482,24 @@ function HappyAgentCommandPalette(
                     highlightIntent();
                 }}
                 onSelectionCommit={() => rowCommit(palette.activeIndex)}
+                onNumberCommit={(number) => {
+                    const index = results.numbered[number - 1];
+                    if (index !== undefined) rowCommit(index);
+                }}
                 onSelectionMove={(direction) => {
                     props.store.activeIndexUpdate(
                         commandPaletteIndexMove(palette.activeIndex, direction, length),
                     );
                     highlightIntent();
                 }}
-                placeholder="Search chats, workspaces, and settings…"
+                placeholder="Search tasks and chats…"
                 query={palette.query}
             >
                 <CommandPaletteResults
                     activeIndex={palette.activeIndex}
                     emptyDescription="Try a different search."
                     emptyLabel="No results"
-                    label="Command palette results"
+                    label="Search results"
                     onActiveIndexChange={(index) => {
                         props.store.activeIndexUpdate(index);
                         highlightIntent();
@@ -5389,6 +5521,7 @@ function paletteResultsRow(
         return {
             control: paletteSettingControl(row, actions),
             description: row.description,
+            icon: row.icon,
             id: row.id,
             kind: "control",
             // The control is opaque to the list, so what it is called has to be
@@ -5406,14 +5539,22 @@ function paletteResultsRow(
             ? { icon: row.glyph.name }
             : row.glyph.kind === "emphasis"
               ? { emphasis: row.glyph.emphasis }
-              : {
-                    avatar: {
-                        initials: row.glyph.initials,
-                        ...(row.glyph.imageUrl === undefined
-                            ? {}
-                            : { imageUrl: row.glyph.imageUrl }),
-                    },
-                }),
+              : row.glyph.kind === "mark"
+                ? {
+                      ...(row.glyph.imageMark ? { imageMark: row.glyph.imageMark } : {}),
+                      ...(row.glyph.stemCell ? { stemCell: row.glyph.stemCell } : {}),
+                  }
+                : {
+                      // The rounded tile the sidebar gives the same row.
+                      avatar: {
+                          initials: row.glyph.initials,
+                          type: "agent" as const,
+                          ...(row.glyph.imageUrl === undefined
+                              ? {}
+                              : { imageUrl: row.glyph.imageUrl }),
+                          ...(row.glyph.icon === undefined ? {} : { icon: row.glyph.icon }),
+                      },
+                  }),
         ...(row.shortcut ? { shortcut: row.shortcut } : {}),
     };
 }
@@ -5431,6 +5572,7 @@ function paletteSettingControl(
         case "themeMode":
             return (
                 <FormRow
+                    density="compact"
                     control={
                         <SegmentedControl
                             aria-label={row.label}
@@ -5449,6 +5591,7 @@ function paletteSettingControl(
         case "scrollbarVisibility":
             return (
                 <FormRow
+                    density="compact"
                     control={
                         <SegmentedControl
                             aria-label={row.label}
@@ -5469,6 +5612,7 @@ function paletteSettingControl(
         case "titleShimmer":
             return (
                 <FormRow
+                    density="compact"
                     control={
                         <Switch
                             aria-label={row.label}
@@ -5486,6 +5630,7 @@ function paletteSettingControl(
         case "linkOpenPlacement":
             return (
                 <FormRow
+                    density="compact"
                     control={
                         <SegmentedControl
                             aria-label={row.label}
@@ -5612,6 +5757,15 @@ function paletteCommandRun(
             return;
         case "updateApply":
             props.onUpdateApply?.();
+            return;
+        case "sidebarHiddenUpdate":
+            props.sidebarVisibility.sidebarHiddenUpdate(command.hidden);
+            return;
+        case "surfaceOpen":
+            props.onSurfaceOpen?.(command.happyAgentId, command.surfaceId);
+            return;
+        case "panelToggle":
+            props.workspace?.panel.panelToggle();
             return;
     }
 }
@@ -6775,6 +6929,18 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         openGroup.conversations.length === 0 &&
         openGroupPhase !== undefined &&
         !access.canConverse;
+    const workspaceComposerNotice =
+        openGroup !== undefined && openGroupPhase !== undefined && openGroupPhase !== "creating"
+            ? workspaceLifecycleNoticeLines({
+                  name: openGroup.name,
+                  phase: openGroupPhase,
+                  ...(openGroup.lifecycle?.phase === "failed" &&
+                  openGroup.lifecycle.reason !== undefined
+                      ? { detail: openGroup.lifecycle.reason }
+                      : {}),
+                  ...(openGroup.path ? { path: openGroup.path } : {}),
+              })
+            : undefined;
     // The one phase that takes the body of the first chat rather than a strip
     // above it. A workspace is addressed the instant it is asked for, so this is
     // the screen the reader lands on straight after clicking: the checkout being
@@ -7182,6 +7348,17 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         openGroup !== undefined &&
         activeMainTool === undefined &&
         activeFile === undefined;
+    // Follow the displayed pane, not the selected file that may still be loading.
+    // A disabled chat input still owns its notice; a file, tool, or loading chat
+    // has no dock, so the workspace lane remains its fallback.
+    const workspaceNoticeInComposer =
+        workspaceComposerNotice !== undefined &&
+        !openGroupNotice &&
+        displayedMainTool === undefined &&
+        activeReview === undefined &&
+        displayedFile === undefined &&
+        (conversation.type === "ready" ||
+            (openGroup?.conversations.length === 0 && workspace.groupComposer !== undefined));
     const mainFileBody = (file: HappyAgentFileTabSnapshot): ReactNode => (
         <HappyAgentFileBody
             appearance={appearance.appearance}
@@ -7380,6 +7557,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             // under the strip is the same composer that starts the first one.
             <HappyAgentGroupComposer
                 composer={workspace.groupComposer}
+                composerNotice={workspaceComposerNotice}
                 modelUsageWatch={modelUsageWatch}
                 {...(workspace.groupSessionDraft
                     ? { draftMenus: workspace.groupSessionDraft.menus }
@@ -7394,6 +7572,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             />
         ) : (
             <HappyAgentConversationBody
+                composerNotice={workspaceComposerNotice}
                 modelUsageWatch={modelUsageWatch}
                 {...(props.artifacts ? { artifacts: props.artifacts } : {})}
                 inlineEngines={{
@@ -7787,19 +7966,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 : []),
                         ]}
                     />
-                    {/* A worktree with work already in it keeps its tab strip and
-                        its transcripts, so its phase is stated in the lane above
-                        them rather than in place of them: the reader can still
-                        read what ran there before the checkout went away. The
-                        lane is mounted in every phase, including the ready one,
-                        so arriving at or leaving a phase never rebuilds the
-                        strip and transcripts underneath it.
-
-                        A checkout being prepared is the exception, whenever its
-                        own chat is the thing on screen: that phase is stated
-                        inside the chat instead, above its messages and where the
-                        reader is already looking, so the lane stays empty rather
-                        than saying the same thing twice. */}
+                    {/* Chats say workspace errors above their input. Keep the
+                        lane mounted but empty there, preserving the tab strip
+                        and transcript identities. Views without a composer use
+                        it as their fallback. Preparation stays in the sidebar
+                        while the chat is on screen. */}
                     <WorkspaceLifecycleLane
                         {...(openGroup.lifecycle?.phase === "failed" &&
                         openGroup.lifecycle.reason !== undefined
@@ -7809,7 +7980,8 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         {...(openGroup.path ? { path: openGroup.path } : {})}
                         {...(openGroupPhase !== undefined &&
                         !openGroupNotice &&
-                        !preparingChatOnScreen
+                        !preparingChatOnScreen &&
+                        !workspaceNoticeInComposer
                             ? { phase: openGroupPhase }
                             : {})}
                     />
@@ -8766,6 +8938,7 @@ function HappyAgentComposerDock(
  */
 function HappyAgentGroupComposer(props: {
     composer: ComposerSource;
+    composerNotice?: readonly string[];
     modelUsageWatch?: ComposerModelUsageWatch;
     /**
      * How that first conversation will be configured, and the options behind
@@ -8812,7 +8985,10 @@ function HappyAgentGroupComposer(props: {
                             : composerPlaceholder(props.groupName)
                     }
                     submitDisabled={props.unavailable !== undefined || props.restarting === true}
-                    {...(props.restarting === true ? { notice: AGENT_RESTARTING_NOTICE } : {})}
+                    notice={[
+                        ...(props.composerNotice ?? []),
+                        ...(props.restarting === true ? AGENT_RESTARTING_NOTICE : []),
+                    ]}
                     // The first message is what creates the session, so its model,
                     // effort, and access mode have to be choosable before it is sent
                     // rather than corrected afterwards. These are the same pickers an
@@ -8920,6 +9096,8 @@ function HappyAgentConversationBody(props: {
      * composer underneath all behave exactly as they otherwise would.
      */
     notice?: ReactNode;
+    /** Workspace context kept directly above the input, including when it is disabled. */
+    composerNotice?: readonly string[];
     /** Starts a session here, when this workspace can host one. */
     onCreate?: () => void;
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
@@ -8973,6 +9151,7 @@ function HappyAgentConversationBody(props: {
                 focusOnType={props.focusOnType}
                 groupId={props.groupId}
                 groupName={props.groupName}
+                composerNotice={props.composerNotice}
                 {...(props.notice === undefined ? {} : { notice: props.notice })}
                 now={props.now}
                 {...(props.onCreate === undefined ? {} : { onNewChat: props.onCreate })}
@@ -9374,6 +9553,8 @@ function HappyAgentConversationSurface(props: {
     groupName: string;
     /** What to say above every message here; see `HappyAgentConversationBody`. */
     notice?: ReactNode;
+    /** Workspace context kept directly above the input, including when it is disabled. */
+    composerNotice?: readonly string[];
     now: number;
     /** Starts a fresh session here, offered by a conversation too long to continue. */
     onNewChat?: () => void;
@@ -9570,9 +9751,12 @@ function HappyAgentConversationSurface(props: {
                     submitDisabled={sendRefusal !== undefined || props.restarting === true}
                     // A restarting agent is said in two plain lines above the input,
                     // and only while the input is open: a locked chat already says why.
-                    {...(props.restarting === true && !composerDisabled
-                        ? { notice: AGENT_RESTARTING_NOTICE }
-                        : {})}
+                    notice={[
+                        ...(props.composerNotice ?? []),
+                        ...(props.restarting === true && !composerDisabled
+                            ? AGENT_RESTARTING_NOTICE
+                            : []),
+                    ]}
                     composerFocusOnType={!composerDisabled && props.focusOnType}
                     // The open conversation is what this composer writes into, so moving
                     // to another one — or landing in the one a new workspace was made

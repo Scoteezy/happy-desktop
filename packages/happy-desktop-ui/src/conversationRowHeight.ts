@@ -413,8 +413,24 @@ const NOTICE_INSET = 50;
 const ERROR_TEXT_INSET = 22;
 /** Error card: 6px vertical padding per side, plus 4px between heading and reason. */
 const ERROR_TEXT_CHROME = 16;
-/** Failure card: 6px vertical padding and a 1px warning border per side. */
-const FAILURE_CHROME = 14;
+/**
+ * The shared `--happy-chat-frame-outset`: a frame in a transcript stands out
+ * from the text column by this much on either side, and what it holds sits
+ * this far inside it.
+ */
+const CHAT_FRAME_OUTSET = 12;
+/**
+ * `--happy-chat-frame-text-inset`: a frame's inset above or below a 20px line
+ * of 14px text, whose glyphs sit 3px into the line.
+ */
+const CHAT_FRAME_TEXT_INSET = CHAT_FRAME_OUTSET - 3;
+/**
+ * Failure card: the row's 6px above and below, then the frame's inset (its
+ * border included) above its message line and below a last line of text. A
+ * card that ends on the switch button pads by the full outset below it.
+ */
+const FAILURE_CHROME = 2 * 6 + 2 * CHAT_FRAME_TEXT_INSET;
+const FAILURE_CONTROL_END = CHAT_FRAME_OUTSET - CHAT_FRAME_TEXT_INSET;
 /** Failure card: between the message line and the button row, and below that row. */
 const FAILURE_SECTION_GAP = 12;
 /** Failure card: between the message line and the record of what was done. */
@@ -426,10 +442,8 @@ const FAILURE_CODE_EXTRA = 32;
 /** Small Button: 28px tall, 10px padding and a 1px border per side, 12/700 at 0.01em. */
 const SMALL_BUTTON_HEIGHT = 28;
 const SMALL_BUTTON_CHROME = 22;
-/** The split button's chevron segment. */
-const SWITCH_MENU_WIDTH = 30;
-/** `.happy-conversation-failure-card__actions` gap, across and between wrapped lines. */
-const FAILURE_ACTIONS_GAP = 8;
+/** `.happy-conversation-failure-card__line-actions` gap between its quiet buttons. */
+const FAILURE_LINE_ACTIONS_GAP = 4;
 /* A steering notice keeps the notice row's 16px lead but closes to 4px above the
    quote it introduces; the quote itself wraps at 560px, inset 20px per side, and
    closes the row with the notice's usual 16px. */
@@ -456,7 +470,9 @@ const USER_INPUT_ANSWER_GAP = 8;
 const USER_INPUT_OPTION_VERTICAL_PADDING = 8;
 /** 12px parent gap, 4px padding either side of the 28px button. */
 const USER_INPUT_FOOTER_HEIGHT = 48;
-const APPROVAL_CARD_FIXED_CHROME = 153;
+/* The card's own 153px, less 1px above its chip and plus 3px above and below
+   its footer buttons, which the transcript pads by the chat frame outset. */
+const APPROVAL_CARD_FIXED_CHROME = 153 - 1 + 2 * 3;
 const APPROVAL_CARD_EXPANDED_DETAILS = 98;
 const APPROVAL_CARD_MAX_WIDTH = 680;
 /** Compute detail flex row: transcript insets, left detail inset, and row/column gaps. */
@@ -960,7 +976,7 @@ function userInputRequestHeight(
     const submitVisible =
         request.status === "pending" &&
         request.questions.every((question) => question.options.length > 0);
-    return total + (submitVisible ? USER_INPUT_FOOTER_HEIGHT : 0);
+    return 2 * CHAT_FRAME_TEXT_INSET + total + (submitVisible ? USER_INPUT_FOOTER_HEIGHT : 0);
 }
 
 /** Pending permission gate in its default collapsed transcript state. */
@@ -970,7 +986,11 @@ function permissionRequestHeight(
     expanded: boolean,
     cache?: MessageTextLayoutCache,
 ): number {
-    const measure = Math.min(width, APPROVAL_CARD_MAX_WIDTH) - 32;
+    /* The frame stands out from the text column by the chat frame outset and
+       caps at the card's maximum; its text keeps the outset inside it. */
+    const measure =
+        Math.min(width - AGENT_INSET + 2 * CHAT_FRAME_OUTSET, APPROVAL_CARD_MAX_WIDTH) -
+        2 * CHAT_FRAME_OUTSET;
     return (
         APPROVAL_CARD_FIXED_CHROME +
         (expanded ? APPROVAL_CARD_EXPANDED_DETAILS : 0) +
@@ -1163,14 +1183,16 @@ export function conversationRowHeight(
         if (entry.variant === "divider")
             return rowHeightCached(cache, entry, "notice:divider", () => DIVIDER_HEIGHT);
         /* A notice that opens its turn wears the same identity header a
-           tool-first row does, and therefore the same chrome above it. */
+           tool-first row does, and therefore the same chrome above it, with
+           the same 6px a run of tool rows opens under it. */
         const lead =
             context.surface === "conversation" && conversationAgentRowStartsGroup(entries, index)
-                ? ACTIVITY_LEAD_CHROME
+                ? ACTIVITY_LEAD_CHROME + ACTIVITY_LEAD_RUN_SEPARATION
                 : 0;
         if (entry.failure !== undefined) {
             const failure = entry.failure;
-            const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET;
+            /* Led or not, the card's content keeps the agent's text column. */
+            const measure = width - AGENT_INSET - ERROR_TEXT_INSET;
             const options = context.failure ?? FAILURE_ROW_INERT;
             const layout = conversationFailureCardLayout(failure, {
                 current: options.current,
@@ -1199,9 +1221,22 @@ export function conversationRowHeight(
                     layout.resolution ?? "",
                 ].join(":"),
                 () => {
-                    const lineAction = layout.lineAction
-                        ? FAILURE_LINE_GAP + smallButtonWidth(layout.lineAction.label, cache?.text)
-                        : 0;
+                    /* The message's own action and Ask Chief of Staff follow
+                       it on its line, and the message wraps beside them. */
+                    const lineButtons = [
+                        ...(layout.lineAction
+                            ? [smallButtonWidth(layout.lineAction.label, cache?.text)]
+                            : []),
+                        ...(layout.assistance
+                            ? [smallButtonWidth(layout.assistance.label, cache?.text)]
+                            : []),
+                    ];
+                    const lineActions =
+                        lineButtons.length === 0
+                            ? 0
+                            : FAILURE_LINE_GAP +
+                              lineButtons.reduce((total, button) => total + button, 0) +
+                              (lineButtons.length - 1) * FAILURE_LINE_ACTIONS_GAP;
                     let height =
                         lead +
                         FAILURE_CHROME +
@@ -1211,7 +1246,7 @@ export function conversationRowHeight(
                                     ? { code: segment.text, extraWidth: FAILURE_CODE_EXTRA }
                                     : { text: segment.text },
                             ),
-                            measure - lineAction,
+                            measure - lineActions,
                             cache?.text,
                         );
                     if (layout.resolution !== undefined)
@@ -1220,34 +1255,14 @@ export function conversationRowHeight(
                             FAILURE_RESOLUTION_GAP +
                             errorTextHeight(layout.resolution, measure, cache?.text)
                         );
-                    /* The row wraps like flex does: each button joins the line
-                       while it fits, and one wider than the line takes a line of
-                       its own, where the split button's main segment gives way. */
-                    const buttons = [
-                        ...(target
-                            ? [smallButtonWidth(switchLabel, cache?.text) + SWITCH_MENU_WIDTH]
-                            : []),
-                        ...(layout.assistance
-                            ? [smallButtonWidth(layout.assistance.label, cache?.text)]
-                            : []),
-                    ];
-                    let lines = 0;
-                    let used = 0;
-                    for (const button of buttons) {
-                        if (lines === 0 || used + FAILURE_ACTIONS_GAP + button > measure + 1 / 64) {
-                            lines += 1;
-                            used = button;
-                        } else used += FAILURE_ACTIONS_GAP + button;
-                    }
-                    if (lines > 0)
-                        height +=
-                            FAILURE_SECTION_GAP +
-                            lines * SMALL_BUTTON_HEIGHT +
-                            (lines - 1) * FAILURE_ACTIONS_GAP;
                     if (layout.assistance?.detail)
                         height +=
                             FAILURE_SECTION_GAP +
                             errorTextHeight(layout.assistance.detail, measure, cache?.text);
+                    /* The switch button has the row under the message to
+                       itself; its main segment gives way rather than wrap. */
+                    if (target)
+                        height += FAILURE_SECTION_GAP + SMALL_BUTTON_HEIGHT + FAILURE_CONTROL_END;
                     return height;
                 },
             );

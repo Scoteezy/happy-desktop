@@ -3,6 +3,7 @@ import type {
     LiveControlServerMessage,
     LiveDesktopActionResult,
     LiveDesktopContext,
+    LiveAgentTarget,
     LiveDesktopTarget,
     LiveSessionRef,
 } from "@slopus/happy-agent-client";
@@ -64,6 +65,18 @@ export const GPT_LIVE_DESKTOP_CAPABILITIES = [
     "taskCreate",
     "sessionModelChange",
 ] as const;
+
+/**
+ * A daemon agent's own conversation is addressed only with `agentTargets`,
+ * which this desktop does not offer; one named anyway is refused.
+ */
+const agentTarget = (target: object): target is LiveAgentTarget =>
+    "kind" in target && target.kind === "agent";
+const agentTargetRefusal = (): Refusal =>
+    new Refusal(
+        "unavailable",
+        "This desktop cannot address the Happy Agent's own conversation. Nothing was done.",
+    );
 
 /** How long a navigation target stays highlighted before the window turns to it. */
 export const GPT_LIVE_NAVIGATION_HOLD_MS = 500;
@@ -762,7 +775,9 @@ export function gptLiveControllerCreate(options: {
                 "This Happy Agent has not enabled model changes by voice. Nothing was changed.",
             );
         if (action.type === "sessionWatch" && !action.enabled) {
-            const key = refKey(action.target);
+            const watched = action.target;
+            if (agentTarget(watched)) throw agentTargetRefusal();
+            const key = refKey(watched);
             const watch = watches.get(key);
             if (watch) watchRelease(watch);
             watches.delete(key);
@@ -781,6 +796,7 @@ export function gptLiveControllerCreate(options: {
         check(request.contextRevision, signal);
         if (action.type === "desktopOpen") {
             const target = action.target;
+            if (target.kind === "agent") throw agentTargetRefusal();
             if (!targetListed(target))
                 throw new Refusal(
                     "notFound",
@@ -857,6 +873,7 @@ export function gptLiveControllerCreate(options: {
             );
         }
         const target = action.target;
+        if (agentTarget(target)) throw agentTargetRefusal();
         if (action.type === "sessionModelChange") {
             connectionFind(target.connectionId, true);
             sessionFind(target);

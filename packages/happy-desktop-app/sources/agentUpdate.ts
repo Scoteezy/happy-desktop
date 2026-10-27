@@ -1,3 +1,4 @@
+import type { SidebarUpdateNotes } from "happy-desktop-ui";
 import type {
     AppHappyAgentDaemonRestartStep,
     AppHappyAgentDrainComponent,
@@ -39,6 +40,8 @@ export type AppHappyAgentUpdateProgress =
           readonly message: string;
           readonly failedAt: AppHappyAgentDaemonRestartStep;
           readonly reason: AppHappyAgentUpdateReason;
+          /** Whether this Happy can run it again: it manages the agent it would restart. */
+          readonly retryable: boolean;
       };
 
 /**
@@ -82,4 +85,15 @@ export interface AppHappyAgentUpdateStore {
     restartNow(): void;
     /** Writes the failure into the Chief of Staff's draft and opens it. */
     chiefOfStaffAsk(): void;
+}
+
+/**
+ * What is new in the Happy Agent version the daemon is offering, supplied only
+ * by the native desktop shell. It reads every release in range before it says
+ * anything, so the notes arrive whole.
+ */
+export interface AppHappyAgentReleaseNotesStore {
+    /** Notes for the offered version, or nothing while none are known. */
+    get(): SidebarUpdateNotes | undefined;
+    subscribe(listener: () => void): () => void;
 }

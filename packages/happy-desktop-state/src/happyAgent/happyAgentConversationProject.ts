@@ -288,19 +288,16 @@ export function happyAgentConversationProject(
     }
 
     for (const entry of input.ephemeral) entries.push(resequence(entry, entries.length));
-    /*
-     * A question still waiting on the reader is the last thing in the
-     * transcript, whatever happened after it was asked. It is what the
-     * conversation is stopped on, so it belongs directly above the composer
-     * rather than buried among the rows the run went on to produce — and a
-     * connector that reports a pending request before its tool element arrives
-     * needs no separate path to stay actionable. Answering it settles the
-     * record back into history at the call that asked it.
-     */
+    // A connector may report a question before its tool row arrives. Keep that
+    // request visible once until the chronological row can take its place.
+    const projectedRequestIds = new Set(
+        entries.flatMap((entry) => (entry.kind === "request" ? [entry.request.requestId] : [])),
+    );
     for (const request of input.pendingUserInputs) {
         // An answered record settles the same question in place, so a session
         // snapshot still calling it pending adds nothing here.
         if (userInputs.get(request.requestId)?.state !== "pending") continue;
+        if (projectedRequestIds.has(request.requestId)) continue;
         entries.push(
             resequence(userInputRequestProject({ state: "pending", request }, ""), entries.length),
         );
@@ -916,12 +913,9 @@ function happyAgentConnectGroupProject(
                     const userInput = userInputs.get(element.toolCallId);
                     const child = delegatedChildByRow.get(element.id);
                     if (userInput) {
-                        /* An answered question is history and settles where it
-                           was asked. One still pending leaves no row here: it is
-                           pinned to the end of the transcript instead, so the
-                           call it came from does not also show as a tool row. */
-                        if (userInput.state === "answered")
-                            entries.push(userInputRequestProject(userInput, sequence));
+                        // Pending and answered questions keep the call's own
+                        // chronological position instead of moving on resolution.
+                        entries.push(userInputRequestProject(userInput, sequence));
                     } else if (element.presentation?.kind === "user_input") {
                         /* The call recorded what was asked and answered, so the
                            question keeps its place however long ago it was. */

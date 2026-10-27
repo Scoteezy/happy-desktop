@@ -1,5 +1,10 @@
 import { type ReactNode } from "react";
-import { WorkspaceLifecycleNotice } from "../../src/WorkspaceLifecycleNotice";
+import { type ComposerSnapshot } from "happy-desktop-state";
+import { ConversationDock } from "../../src/ConversationDock";
+import {
+    WorkspaceLifecycleNotice,
+    workspaceLifecycleNoticeLines,
+} from "../../src/WorkspaceLifecycleNotice";
 import { ComponentPage, Specimen } from "../kit";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
@@ -15,6 +20,17 @@ const FETCH_FAILURE = [
     "Please make sure you have the correct access rights and the repository exists.",
 ].join("\n");
 const REFUSAL = "A workspace named “Fix login redirect” already exists in this project.";
+const composer: ComposerSnapshot = {
+    scopeId: "workspace-lifecycle",
+    text: "Keep this draft until the checkout is available.",
+    attachments: [],
+    revision: 0,
+    submission: { status: "idle" },
+    focused: false,
+    capabilities: { shellMode: false, commands: [], mentions: false },
+    mentionCandidates: [],
+    agentUserIds: [],
+};
 /** The panel size fills its host, so a specimen gives it a real content region. */
 function region(children: ReactNode) {
     return (
@@ -41,7 +57,7 @@ export function WorkspaceLifecycleNoticePage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="One workspace's own phase, said in full: being prepared, failed, refused outright, or prepared and since gone. Panel fills a content region; compact is a strip for above a composer. Props only — no timers, no elapsed time, no re-check control."
+            summary="Workspace errors use the composer's service lines when a chat is open. Panel and compact notices serve views without an input. Props only — no timers, no elapsed time, no re-check control."
             title="Workspace lifecycle notice"
         >
             <Specimen
@@ -127,7 +143,7 @@ export function WorkspaceLifecycleNoticePage() {
             </Specimen>
 
             <Specimen
-                detail='size="compact" · 520px lane · every phase, stacked, as they sit above a composer'
+                detail='size="compact" · 520px lane · every phase, stacked, for views without a composer'
                 label="Compact strip, every phase"
                 number="07"
                 stage="surface"
@@ -178,6 +194,37 @@ export function WorkspaceLifecycleNoticePage() {
                     />,
                 )}
             </Specimen>
+            {(["failed", "missing"] as const).map((phase, index) => (
+                <Specimen
+                    detail="The existing composer notice slot · input disabled · host details and long paths wrap without a banner"
+                    key={phase}
+                    label={`${phase === "failed" ? "Failed checkout" : "Missing checkout"} above the input`}
+                    number={String(index + 9).padStart(2, "0")}
+                    stage="surface"
+                >
+                    <div
+                        data-screen={`workspace-${phase}-composer`}
+                        style={{ display: "flex", width: "520px" }}
+                    >
+                        <ConversationDock
+                            composer={composer}
+                            disabled
+                            notice={workspaceLifecycleNoticeLines({
+                                name: "Agent release tests 2",
+                                phase,
+                                ...(phase === "failed"
+                                    ? {
+                                          detail: "fatal: invalid reference: 0123456789abcdef0123456789abcdef01234567\nThe requested commit is not available in the repository.",
+                                      }
+                                    : {}),
+                                path: "/Users/steve/Happy/Workspaces/happy/agent-release-tests-2-checkout-with-a-long-directory-name",
+                            })}
+                            onComposerSend={() => undefined}
+                            onComposerValueChange={() => undefined}
+                        />
+                    </div>
+                </Specimen>
+            ))}
         </ComponentPage>
     );
 }

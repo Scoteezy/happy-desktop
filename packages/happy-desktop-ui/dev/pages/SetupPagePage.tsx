@@ -3,8 +3,9 @@ import { DesktopMobileSetup, type DesktopMobileSetupStep } from "../../src/Deskt
 import { LocalOnboardingScreen, type LocalOnboardingView } from "../../src/LocalOnboardingScreen";
 import { ProfileSetupScreen } from "../../src/ProfileSetupScreen";
 import { SetupHandoff, SetupPage } from "../../src/SetupPage";
+import { SetupPrompt } from "../../src/SetupPrompt";
 import { ThemeScope } from "../../src/ThemeScope";
-import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import { ComponentPage, DimensionRule, FullScreenSpecimen, Specimen } from "../kit";
 import type { MobileRelayPairingState } from "../../src/MobilePairingOptions";
 import { direct, relayWaiting } from "./mobilePairingFixtures";
 import { setupPairingOptions } from "./mobilePairingSpecimens";
@@ -116,6 +117,42 @@ export function SetupPagePage() {
                     <DimensionRule label="560 body · 40 padding · 120 stage · 24 gap" />
                 </div>
             </Specimen>
+
+            {([undefined, "restarting", "error"] as const).map((state) => (
+                <FullScreenSpecimen
+                    key={state ?? "idle"}
+                    detail="Recovery keeps its title, prompt, and actions anchored. A long error wraps and scrolls within the reserved status area."
+                    label={`Agent recovery · ${state ?? "idle"}`}
+                    number="01r"
+                    screen={`agent-recovery-${state ?? "idle"}`}
+                >
+                    <SetupPage
+                        action={{
+                            label: "Restart Happy Agent",
+                            busy: state === "restarting",
+                            onSelect: noop,
+                        }}
+                        copy="Happy will reconnect when the local agent returns."
+                        scene="owl"
+                        statusReserved
+                        status={
+                            state === "restarting"
+                                ? { label: "Starting Happy Agent…", busy: true }
+                                : state === "error"
+                                  ? {
+                                        label: "Restart failed: Happy Agent did not answer before the connection timeout. The local service may still be starting. Check that the agent can open its data directory and that the installed version is compatible with the data on this machine. Happy continues watching for its return.",
+                                    }
+                                  : undefined
+                        }
+                        title="Happy is in a broken state"
+                    >
+                        <SetupPrompt
+                            label="prompt"
+                            prompt="I'm using Happy, and the local Happy Agent on this computer is not responding. Help me diagnose and recover it. Happy Agent's documentation is at https://github.com/slopus/happy-agent."
+                        />
+                    </SetupPage>
+                </FullScreenSpecimen>
+            ))}
 
             <Specimen
                 detail="A failure that can be named: the error verbatim, the command to run, one retry"

@@ -12,6 +12,7 @@ import { SearchResults, type SearchResultGroup } from "../../src/SearchResults";
 import { SegmentedControl } from "../../src/SegmentedControl";
 import { Switch } from "../../src/Switch";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import happyMark from "../../src/assets/sidebar-icons/happy@40.png";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-060";
@@ -35,39 +36,44 @@ const suggestions: CommandPaletteResultsSection[] = [
         rows: [
             {
                 kind: "command",
-                id: "chat-relay",
-                avatar: { initials: "S", tone: "ocean" },
-                meta: "seville · main",
-                title: "Palette results list",
+                id: "bot-happy",
+                imageMark: { src: happyMark },
+                meta: "Bot",
+                shortcut: commandShortcut("1"),
+                title: "Happy",
             },
             {
                 kind: "command",
-                id: "chat-updater",
-                avatar: { initials: "H", tone: "violet" },
-                meta: "happy-desktop · main",
-                title: "Updater restart phases",
+                id: "task-release",
+                avatar: { icon: "tasks", initials: "", type: "agent" },
+                meta: "Task",
+                shortcut: commandShortcut("2"),
+                title: "Release desktop",
+            },
+            {
+                kind: "command",
+                id: "project-infra",
+                avatar: { initials: "S", type: "agent" },
+                meta: "~/Developer/search-infra",
+                shortcut: commandShortcut("3"),
+                title: "search-infra",
             },
         ],
     },
+];
+
+const actions: CommandPaletteResultsSection[] = [
     {
         id: "actions",
         caption: "Actions",
         rows: [
             {
                 kind: "command",
-                id: "chat-new",
-                icon: "plus",
-                shortcut: commandShortcut("t"),
-                title: "New chat",
+                id: "sidebar-toggle",
+                icon: "sidebar-collapse",
+                shortcut: commandShortcut("b"),
+                title: "Hide sidebar",
             },
-            {
-                kind: "command",
-                id: "workspace-new",
-                icon: "branch",
-                shortcut: commandShortcut("n", { shift: true }),
-                title: "New workspace",
-            },
-            { kind: "command", id: "settings-open", icon: "settings", title: "Open settings" },
         ],
     },
 ];
@@ -80,10 +86,12 @@ const typed: CommandPaletteResultsSection[] = [
             {
                 kind: "control",
                 id: "theme",
+                icon: "sun",
                 label: "Theme",
                 description: "Match the system appearance or pin one",
                 control: (
                     <FormRow
+                        density="compact"
                         control={
                             <SegmentedControl
                                 aria-label="Theme"
@@ -105,10 +113,12 @@ const typed: CommandPaletteResultsSection[] = [
             {
                 kind: "control",
                 id: "shimmer",
+                icon: "zap",
                 label: "Shimmer active titles",
                 description: "Animates running session, project, and workspace names",
                 control: (
                     <FormRow
+                        density="compact"
                         control={
                             <Switch
                                 aria-label="Shimmer active titles"
@@ -174,7 +184,7 @@ function PaletteSpecimen(props: {
     return (
         <Specimen detail={props.detail} label={props.label} number={props.number} stage="app">
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                <DimensionRule label="640 × 461 fixed frame · 60px header" />
+                <DimensionRule label="384 × 461 fixed frame · 60px header" />
                 <PaletteFrame query={props.query}>{props.children}</PaletteFrame>
             </div>
         </Specimen>
@@ -185,17 +195,28 @@ export function CommandPalettePage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Top-anchored Slack-style ⌘K palette — a fixed 640 × 461 card with its own focused search input over a stable-gutter scrollport. Renders the card only; ModalOverlay owns its dim, stacking, and placement."
+            summary="The ⌘K command bar — a compact, fixed 384 × 461 card with a hairline edge, a soft dissolving shadow, and a faintly translucent blurred surface, over a large search input and a stable-gutter scrollport. Closed by Escape, its close button, or a press outside it; ⌘1…⌘9 open the numbered rows. Renders the card only; a clear ModalOverlay owns its stacking and placement and dims nothing."
             title="Command palette"
         >
             <div className="specimen-grid">
                 <PaletteSpecimen
-                    detail="what ⌘K opens on: a waiting update, recents, and actions with their chords, first row highlighted"
+                    detail="what ⌘K opens on: a waiting update, then the sidebar's tasks, bots, and projects, last opened first · ⌘1…⌘9 open the numbered rows"
                     label="Suggestions"
                     number="CP-06"
                     query=""
                 >
                     <CommandPaletteResults activeIndex={0} sections={suggestions} />
+                </PaletteSpecimen>
+            </div>
+
+            <div className="specimen-grid">
+                <PaletteSpecimen
+                    detail="a typed act finds the window's own action, wearing the chord that does the same"
+                    label="Actions"
+                    number="CP-08"
+                    query="fold sidebar"
+                >
+                    <CommandPaletteResults activeIndex={0} sections={actions} />
                 </PaletteSpecimen>
             </div>
 

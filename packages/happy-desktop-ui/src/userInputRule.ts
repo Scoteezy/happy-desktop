@@ -1,5 +1,5 @@
-/** Where a question prompt is shown: the transcript card, the dock, or a flat list. */
-export type HappyAgentUserInputPromptVariant = "card" | "dock" | "flat";
+/** Where a question prompt is shown: the transcript card or a flat list. */
+export type HappyAgentUserInputPromptVariant = "card" | "flat";
 
 /**
  * The line beside a question's name. Settled, it says how the question was
@@ -22,8 +22,8 @@ export function userInputRuleText(
     const count =
         question.options.length === 0
             ? variant === "card"
-                ? "Open chat to reply"
-                : "Reply in the message box"
+                ? "Reply in the message box"
+                : "Open chat to reply"
             : question.multiSelect
               ? "Choose any"
               : "Choose one";

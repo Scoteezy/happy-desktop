@@ -1,3 +1,4 @@
+import type { HappyAgentDrain } from "../happyAgentConnection/types.js";
 import type { HappyAgentDebugLogInput } from "./happyAgentDebugLogStore.js";
 
 /**
@@ -28,6 +29,12 @@ export interface HappyAgentConnectionSnapshot {
      * admits work again. It is the daemon's own report, carried as it is.
      */
     readonly admitting?: false;
+    /**
+     * Why the daemon stopped admitting work, as it recorded when its drain
+     * began: a restart, possibly onto another version, or a shutdown. Present
+     * only beside `admitting`, and only from a daemon that records it.
+     */
+    readonly drain?: HappyAgentDrain;
 }
 
 /**
@@ -246,7 +253,8 @@ function snapshotsEqual(
         left.version === right.version &&
         left.message === right.message &&
         left.attempt === right.attempt &&
-        left.admitting === right.admitting
+        left.admitting === right.admitting &&
+        left.drain === right.drain
     );
 }
 

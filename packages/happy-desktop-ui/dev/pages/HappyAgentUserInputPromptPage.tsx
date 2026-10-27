@@ -74,7 +74,11 @@ const composer: ComposerSnapshot = {
     mentionCandidates: [],
     agentUserIds: [],
 };
-function message(id: string, text: string, agent: boolean): ConversationEntry {
+function message(
+    id: string,
+    text: string,
+    agent: boolean,
+): Extract<ConversationEntry, { kind: "message" }> {
     return {
         kind: "message",
         source: "server",
@@ -93,6 +97,7 @@ function message(id: string, text: string, agent: boolean): ConversationEntry {
         },
     };
 }
+const chatReply = message("4", "Use batches of 500. The rollout checklist is attached.", false);
 function QuestionConversation(props: { count: number; answered: boolean; lead?: boolean }) {
     const request: ConversationEntry = {
         kind: "request",
@@ -107,7 +112,7 @@ function QuestionConversation(props: { count: number; answered: boolean; lead?: 
                 ? {
                       status: "answered" as const,
                       answers: {
-                          approach: ["In batches"],
+                          approach: ["Replied in chat. Read the user's message and attachments."],
                           notify: ["On-call engineer", "Project channel"],
                           checks: ["Compare row counts"],
                       },
@@ -145,9 +150,25 @@ function QuestionConversation(props: { count: number; answered: boolean; lead?: 
                     request,
                     ...(props.answered
                         ? [
+                              {
+                                  ...chatReply,
+                                  message: {
+                                      ...chatReply.message,
+                                      attachments: [
+                                          {
+                                              kind: "linked" as const,
+                                              id: "rollout-checklist",
+                                              attachmentKind: "file" as const,
+                                              name: "rollout-checklist.txt",
+                                              source: "workspace" as const,
+                                              bytes: 842,
+                                          },
+                                      ],
+                                  },
+                              },
                               message(
-                                  "4",
-                                  "I will use those choices. This paragraph continues the same text column after the answered questions.",
+                                  "5",
+                                  "I will use batches of 500 and follow the attached checklist.",
                                   true,
                               ),
                           ]

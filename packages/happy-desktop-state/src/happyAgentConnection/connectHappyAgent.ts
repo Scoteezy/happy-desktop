@@ -10,6 +10,7 @@ import {
     type Bot,
     type BackgroundProcess,
     type DaemonConfig,
+    type DaemonDrain,
     type FailureResolutionResponse,
     type HappyAgentEvent,
     type HappyAgentUpdate,
@@ -69,6 +70,7 @@ import type {
     MutationAction,
     MutationRejectedDelta,
     HappyAgentConnection,
+    HappyAgentDrain,
     HappyAgentGroupsSubscriptionOptions,
     HappyAgentSessionSubscriptionOptions,
     ServerCompatibility,
@@ -138,6 +140,25 @@ function debugDetail(value: unknown): string {
     } catch {
         return String(value);
     }
+}
+
+/** The drain with the process that reported it, when that is known. */
+function drainTag(drain: DaemonDrain, daemonId: string | undefined): HappyAgentDrain {
+    return daemonId === undefined ? drain : { ...drain, daemonId };
+}
+
+/** Every reconnect re-reads the drain; the same one is not announced again. */
+function drainSame(left: DaemonDrain | undefined, right: DaemonDrain | undefined): boolean {
+    return (
+        left === right ||
+        (left !== undefined &&
+            right !== undefined &&
+            left.intent === right.intent &&
+            left.cause === right.cause &&
+            left.currentVersion === right.currentVersion &&
+            left.targetVersion === right.targetVersion &&
+            left.startedAt === right.startedAt)
+    );
 }
 
 function errorDetail(error: unknown): string {
@@ -326,6 +347,13 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     // Whether the daemon answering admits mutations. A daemon's drain is
     // sticky, so this only becomes true again for a replacement process.
     let admitting = true;
+    // What the daemon said of its drain when it began, kept while it admits nothing,
+    // with the process that said it when the feed named one.
+    let drain: HappyAgentDrain | undefined;
+    // Counts the drains recorded. A health read issued before the current one was
+    // recorded answered for a moment before the drain, so it neither clears it nor
+    // admits the process: a drain is sticky, and only a later read can say otherwise.
+    let drainEpoch = 0;
     const draftSaveCancel = (sessionId: string): void => {
         heldDraftSaves.delete(sessionId);
         unhydratedDraftSaves.delete(sessionId);
@@ -503,6 +531,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         connection: groupsStore.getState().connection,
         sessionsComplete: config !== undefined,
         ...(admitting ? {} : { admitting: false as const }),
+        ...(drain === undefined ? {} : { drain }),
     });
 
     /**
@@ -767,11 +796,40 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
      * window when that changes: it is what says the agent is restarting, from
      * the drain until a replacement process admits work again.
      */
-    const admittingSet = (next: boolean): void => {
-        if (admitting === next) return;
+    const admittingSet = (
+        next: boolean,
+        reported?: DaemonDrain | null,
+        reporter?: string,
+    ): void => {
+        // The drain is sticky and the daemon names it once. A report that does
+        // not carry it, such as a refused write, keeps what was already said.
+        // Only the managed feed names the process; a health read keeps the
+        // name already given to the same drain, and never guesses one.
+        const nextDrain: HappyAgentDrain | undefined = next
+            ? undefined
+            : !reported
+              ? drain
+              : reporter !== undefined
+                ? drainTag(reported, reporter)
+                : drain !== undefined && drainSame(drain, reported)
+                  ? drain
+                  : reported;
+        if (nextDrain !== undefined && !drainSame(drain, nextDrain)) drainEpoch += 1;
+        if (
+            admitting === next &&
+            drainSame(drain, nextDrain) &&
+            drain?.daemonId === nextDrain?.daemonId
+        )
+            return;
+        const changed = admitting !== next;
         admitting = next;
+        drain = nextDrain;
+        if (!changed) {
+            publishGroups([{ type: "groups_state_changed", state: groupState() }]);
+            return;
+        }
         reportDebug({
-            detail: debugDetail({ admitting: next }),
+            detail: debugDetail({ admitting: next, ...(nextDrain ? { drain: nextDrain } : {}) }),
             level: "info",
             message: next
                 ? "Happy Agent admits new work"
@@ -3083,7 +3141,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
      * does. Health is read for every new process, so this is also where a replacement that
      * admits work again is first known.
      */
-    const healthAdmit = (health: HappyAgentHealth): boolean => {
+    const healthAdmit = (health: HappyAgentHealth, issuedEpoch: number): boolean => {
         reportDebug({
             detail: debugDetail(health),
             level: health.ready ? "info" : "warning",
@@ -3093,7 +3151,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         sync.writer.healthReceived(health);
         // Health is read for every new process, so this is where a
         // replacement that admits work again is first known.
-        admittingSet(health.draining !== true && health.shuttingDown !== true);
+        // A read sent before the drain now known answered for the moment before it.
+        if (drain === undefined || issuedEpoch === drainEpoch)
+            admittingSet(health.draining !== true && health.shuttingDown !== true, health.drain);
         const nextCompatibility = serverCompatibility(health.version);
         reportCompatibility(nextCompatibility);
         return nextCompatibility.status === "compatible" && health.ready;
@@ -3124,6 +3184,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         | "unanswered"
         | "gated"
     > => {
+        const issuedEpoch = drainEpoch;
         reportDebug({
             level: "info",
             message: "Reading desktop bootstrap beside the managed update feed",
@@ -3223,7 +3284,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
                     ]),
                 }));
-            if (!healthAdmit(health)) {
+            if (!healthAdmit(health, issuedEpoch)) {
                 feedClose();
                 return "gated";
             }
@@ -3309,13 +3370,14 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         message: "Checking Happy Agent health before managed updates",
                         source: "connection",
                     });
+                    const issuedEpoch = drainEpoch;
                     const health = await client.getHealth({
                         signal: AbortSignal.any([
                             attemptSignal,
                             AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
                         ]),
                     });
-                    if (!healthAdmit(health)) {
+                    if (!healthAdmit(health, issuedEpoch)) {
                         if (config === undefined) sync.writer.onboardingUnavailable();
                         publishConnection(config === undefined ? "connecting" : "reconnecting");
                         reportDebug({
@@ -3433,6 +3495,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         // reconnects with the same daemon ID, so verify admission
                         // without waiting for a replacement-process signal.
                         if (!admitting) {
+                            const issuedEpoch = drainEpoch;
                             const health = await client.getHealth({
                                 signal: AbortSignal.any([
                                     attemptSignal,
@@ -3440,7 +3503,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                                 ]),
                             });
                             if (attemptSignal.aborted) break;
-                            if (!healthAdmit(health)) {
+                            if (!healthAdmit(health, issuedEpoch)) {
                                 daemonVerify = true;
                                 reopen = true;
                                 break;
@@ -3502,7 +3565,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         // A draining agent still answers and still streams, and
                         // the feed says so itself when it finally stops. It no
                         // longer admits writes, so routine ones are held.
-                        admittingSet(false);
+                        admittingSet(false, update.drain, update.daemonId);
                         replacementExpectedUntil = now() + REPLACEMENT_RECONNECT_WINDOW_MS;
                         reportDebug({
                             detail: debugDetail({

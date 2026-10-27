@@ -4,13 +4,20 @@ import { server, userEvent } from "vitest/browser";
 import "./theme.css";
 import "./styles/scrollbar.css";
 import "./styles/command-palette.css";
+import "./styles/command-palette-results.css";
+import "./styles/form-row.css";
+import "./styles/switch.css";
+import "./styles/avatar.css";
 import "./styles/search-results.css";
 import "./styles/badge.css";
 import "./styles/button.css";
 import "./styles/icon.css";
 import "./styles/vector-icon.css";
-import { KeyCap } from "./Badge";
 import { CommandPalette } from "./CommandPalette";
+import { CommandPaletteResults, type CommandPaletteResultsSection } from "./CommandPaletteResults";
+import { FormRow } from "./FormRow";
+import { commandShortcut } from "./keyboardShortcut";
+import { Switch } from "./Switch";
 import { SearchResults, type SearchResultGroup } from "./SearchResults";
 import { createRenderer } from "./testing";
 
@@ -44,7 +51,7 @@ function frame() {
     return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-it("holds the fixed 640x461 CommandPalette frame with a real short result set", async () => {
+it("holds the fixed 384x461 CommandPalette frame with a real short result set", async () => {
     const view = createRenderer();
     view.render(
         () => (
@@ -59,7 +66,7 @@ it("holds the fixed 640x461 CommandPalette frame with a real short result set", 
                 <SearchResults groups={shortGroups} query="calm" variant="flush" />
             </CommandPalette>
         ),
-        { width: 640, height: 461 },
+        { width: 384, height: 461 },
     );
     await view.ready();
 
@@ -67,7 +74,7 @@ it("holds the fixed 640x461 CommandPalette frame with a real short result set", 
     expect(card.element.getAttribute("role")).toBe("dialog");
     expect(card.element.getAttribute("aria-modal")).toBe("true");
     expect(card.element.getAttribute("aria-label")).toBe("Search Happy Place…");
-    expect(card.bounds()).toEqual({ x: 0, y: 0, width: 640, height: 461 });
+    expect(card.bounds()).toEqual({ x: 0, y: 0, width: 384, height: 461 });
     expect(
         card.computedStyles([
             "background-color",
@@ -84,11 +91,15 @@ it("holds the fixed 640x461 CommandPalette frame with a real short result set", 
             "overflow-y",
         ]),
     ).toEqual({
-        "background-color": "rgb(248, 248, 248)",
+        // The surface, faintly translucent: a little of what is under the
+        // card shows through its blur.
+        "background-color": "color(srgb 0.972549 0.972549 0.972549 / 0.88)",
         "border-top-color": "rgba(0, 0, 0, 0.1)",
         "border-top-left-radius": "14px",
         "border-top-width": "1px",
-        "box-shadow": "rgba(0, 0, 0, 0.5) 0px 24px 64px 0px",
+        // A contact line and two wide, faint layers; no heavy drop.
+        "box-shadow":
+            "rgba(0, 0, 0, 0.06) 0px 1px 2px 0px, rgba(0, 0, 0, 0.08) 0px 8px 24px 0px, rgba(0, 0, 0, 0.12) 0px 24px 64px 0px",
         "box-sizing": "border-box",
         display: "flex",
         "flex-direction": "column",
@@ -138,7 +149,7 @@ it("holds the fixed 640x461 CommandPalette frame with a real short result set", 
         "background-color": "rgba(0, 0, 0, 0)",
         "border-top-width": "0px",
         color: "rgb(0, 0, 0)",
-        "font-size": "16px",
+        "font-size": "18px",
         "font-weight": "500",
     });
     expect((await input.visibleMetrics()).pixelCount).toBeGreaterThan(0);
@@ -149,15 +160,15 @@ it("holds the fixed 640x461 CommandPalette frame with a real short result set", 
             )
             .bounds().width,
     ).toBe(18);
-    const cap = view.$('[data-testid="cp"] [data-happy-desktop-ui="key-cap"]');
-    expect(cap.element.getAttribute("aria-label")).toBe("ESC");
+    // Escape closes it without a cap saying so: the close button stands alone.
+    expect(header.element.querySelector('[data-happy-desktop-ui="key-cap"]')).toBeNull();
     const close = view.$('[data-testid="cp"] .happy-command-palette__close');
     expect(close.element.tagName).toBe("BUTTON");
     expect(close.element.getAttribute("aria-label")).toBe("Close");
     expect(close.bounds().height).toBe(28);
 
     const body = view.$('[data-testid="cp"] [data-happy-desktop-ui="command-palette-body"]');
-    expect(body.bounds()).toEqual({ x: 1, y: 61, width: 638, height: 399 });
+    expect(body.bounds()).toEqual({ x: 1, y: 61, width: 382, height: 399 });
     /* The host frames the body; the viewport inside it is the scrollport. */
     const bodyViewport = view.$(
         '[data-testid="cp"] [data-happy-desktop-ui="command-palette-body"] [data-scrollbar-viewport]',
@@ -206,7 +217,7 @@ it("shrinks in a short host and keeps overflowing focused rows visible at both e
         () => (
             <div
                 data-testid="short-host"
-                style={{ display: "flex", height: "408px", width: "640px" }}
+                style={{ display: "flex", height: "408px", width: "384px" }}
             >
                 <CommandPalette
                     autoFocus={false}
@@ -219,7 +230,7 @@ it("shrinks in a short host and keeps overflowing focused rows visible at both e
                 </CommandPalette>
             </div>
         ),
-        { width: 640, height: 408 },
+        { width: 384, height: 408 },
     );
     view.render(
         () => (
@@ -233,7 +244,7 @@ it("shrinks in a short host and keeps overflowing focused rows visible at both e
                 <SearchResults groups={overflowGroups} query="calm" variant="flush" />
             </CommandPalette>
         ),
-        { width: 640, height: 461 },
+        { width: 384, height: 461 },
     );
     (
         view.$(
@@ -243,7 +254,7 @@ it("shrinks in a short host and keeps overflowing focused rows visible at both e
     await view.ready();
 
     const constrained = view.$('[data-testid="constrained"]');
-    expect(constrained.bounds()).toEqual({ x: 0, y: 0, width: 640, height: 408 });
+    expect(constrained.bounds()).toEqual({ x: 0, y: 0, width: 384, height: 408 });
     expect(
         view
             .$('[data-testid="constrained"] [data-happy-desktop-ui="command-palette-header"]')
@@ -357,58 +368,7 @@ it("preserves the exact card, header, and input nodes across result-content swap
     expect(view.container.querySelector('[data-item-id="file-5"]')).toBeTruthy();
 });
 
-it("keeps its ESC KeyCap optically identical to a standalone reference", async () => {
-    const view = createRenderer();
-    view.render(
-        () => (
-            <CommandPalette
-                autoFocus={false}
-                data-testid="optical"
-                onClose={() => {}}
-                onQueryChange={() => {}}
-                query="calm"
-            >
-                <SearchResults groups={shortGroups} query="calm" variant="flush" />
-            </CommandPalette>
-        ),
-        { width: 640, height: 461 },
-    );
-    view.render(
-        () => (
-            <div data-testid="cap-control" style={{ display: "flex", paddingTop: "21.5px" }}>
-                <KeyCap keys="ESC" />
-            </div>
-        ),
-        { width: 80, height: 60 },
-    );
-    await view.ready();
-
-    const cap = view.$('[data-testid="optical"] [data-happy-desktop-ui="key-cap"]');
-    const capLabel = view.$('[data-testid="optical"] [data-happy-desktop-ui="key-cap-label"]');
-    const reference = view.$('[data-testid="cap-control"] [data-happy-desktop-ui="key-cap"]');
-    const referenceLabel = view.$(
-        '[data-testid="cap-control"] [data-happy-desktop-ui="key-cap-label"]',
-    );
-    expect(cap.bounds().height).toBe(18);
-    expect(reference.bounds().height).toBe(18);
-    expect(capLabel.bounds().height).toBe(10);
-    expect(referenceLabel.bounds().height).toBe(10);
-    expect(referenceLabel.bounds().y).toBe(capLabel.bounds().y);
-    const capInk = await capLabel.visibleMetrics();
-    const referenceInk = await referenceLabel.visibleMetrics();
-    expect(capInk.pixelCount).toBeGreaterThan(0);
-    expect(referenceInk.pixelCount).toBeGreaterThan(0);
-    expect(
-        Math.abs(capInk.center.y - referenceInk.center.y),
-        "palette ESC glyph parity y vs standalone KeyCap",
-    ).toBeLessThanOrEqual(0.4);
-    expect(
-        Math.abs(capInk.center.y + capLabel.bounds().y - cap.bounds().y - cap.bounds().height / 2),
-        "palette ESC glyph gross optical y",
-    ).toBeLessThanOrEqual(1.5);
-});
-
-it("focuses and selects its input on open and returns focus to the opener on close", async () => {
+it("focuses its input on open, caret after the query, and returns focus to the opener on close", async () => {
     const view = createRenderer();
     function PaletteFixture() {
         const [open, setOpen] = useState(false);
@@ -439,7 +399,8 @@ it("focuses and selects its input on open and returns focus to the opener on clo
     const input = view.$('[data-happy-desktop-ui="command-palette-input"]')
         .element as HTMLInputElement;
     expect(document.activeElement).toBe(input);
-    expect(input.selectionStart).toBe(0);
+    // The query reads as typed: nothing selected, the caret after it.
+    expect(input.selectionStart).toBe("seed".length);
     expect(input.selectionEnd).toBe("seed".length);
     input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
     await frame();
@@ -464,7 +425,7 @@ it("keeps composition input safe and closes only on a committed Escape", async (
                 <SearchResults groups={shortGroups} variant="flush" />
             </CommandPalette>
         ),
-        { width: 640, height: 461 },
+        { width: 384, height: 461 },
     );
     await view.ready();
     const input = view.$('[data-happy-desktop-ui="command-palette-input"]')
@@ -502,9 +463,256 @@ it("reports the close button through onClose", async () => {
                 <SearchResults groups={shortGroups} query="x" variant="flush" />
             </CommandPalette>
         ),
-        { width: 640, height: 461 },
+        { width: 384, height: 461 },
     );
     await view.ready();
     (view.$(".happy-command-palette__close").element as HTMLButtonElement).click();
     expect(closed).toEqual([1]);
+});
+
+const mixedSections: CommandPaletteResultsSection[] = [
+    {
+        id: "recent",
+        caption: "Recent",
+        rows: [
+            { kind: "command", id: "task", icon: "tasks", meta: "Task", title: "Fix Cmd K search" },
+        ],
+    },
+    {
+        id: "actions",
+        caption: "Actions",
+        rows: [
+            {
+                kind: "command",
+                id: "sidebar",
+                icon: "sidebar-collapse",
+                shortcut: commandShortcut("b"),
+                title: "Hide sidebar",
+            },
+        ],
+    },
+    {
+        id: "settings",
+        caption: "Settings",
+        rows: [
+            {
+                kind: "control",
+                id: "shimmer",
+                icon: "zap",
+                label: "Shimmer active titles",
+                description: "Animates running session, project, and workspace names",
+                control: (
+                    <FormRow
+                        control={
+                            <Switch
+                                aria-label="Shimmer active titles"
+                                checked
+                                onChange={() => {}}
+                                size="small"
+                            />
+                        }
+                        density="compact"
+                        description="Animates running session, project, and workspace names"
+                        label="Shimmer active titles"
+                    />
+                ),
+            },
+        ],
+    },
+];
+
+it("draws command rows as one 44px line — title, then its muted secondary text — beside taller settings rows", async () => {
+    const view = createRenderer();
+    view.render(
+        () => (
+            <CommandPalette autoFocus={false} onClose={() => {}} onQueryChange={() => {}} query="">
+                <CommandPaletteResults
+                    activeIndex={0}
+                    sections={[
+                        ...mixedSections,
+                        {
+                            id: "long",
+                            caption: "Long",
+                            rows: [
+                                {
+                                    kind: "command",
+                                    id: "long",
+                                    icon: "chat",
+                                    meta: "~/Developer/a-very-long-folder-name/that-keeps-going/and-going",
+                                    shortcut: commandShortcut("9"),
+                                    title: "A very long chat title that cannot possibly fit on one narrow line",
+                                },
+                            ],
+                        },
+                    ]}
+                />
+            </CommandPalette>
+        ),
+        { width: 384, height: 461 },
+    );
+    await view.ready();
+
+    const row = (id: string) =>
+        view.$(`[data-happy-desktop-ui="command-palette-results-row"][data-row-id="${id}"]`);
+    const part = (id: string, name: string) =>
+        view.$(`[data-row-id="${id}"] [data-happy-desktop-ui="command-palette-results-${name}"]`);
+    // Command rows are one line; the settings row keeps its label over its
+    // description, at least the compact 56px, and wraps rather than clips.
+    expect([row("task"), row("sidebar"), row("long")].map((r) => r.bounds().height)).toEqual([
+        44, 44, 44,
+    ]);
+    expect(row("shimmer").bounds().height).toBeGreaterThanOrEqual(56);
+
+    // The secondary text follows the title on its line, muted.
+    const title = part("task", "title");
+    const meta = part("task", "meta");
+    expect(meta.bounds().y).toBe(title.bounds().y);
+    expect(meta.bounds().x).toBeGreaterThanOrEqual(title.bounds().x + title.bounds().width);
+    expect(meta.element.textContent).toBe("Task");
+    expect(meta.computedStyles(["color"])).toEqual(
+        view
+            .$('[data-row-id="shimmer"] [data-happy-desktop-ui="form-row-description"]')
+            .computedStyles(["color"]),
+    );
+
+    // A long row truncates on its one line and keeps its cap inside the row.
+    const longRow = row("long").bounds();
+    const longTitle = part("long", "title");
+    const cap = view.$('[data-row-id="long"] [data-happy-desktop-ui="key-cap"]').bounds();
+    expect((longTitle.element as HTMLElement).scrollWidth).toBeGreaterThan(
+        (longTitle.element as HTMLElement).clientWidth,
+    );
+    expect(longTitle.computedStyles(["text-overflow", "white-space"])).toEqual({
+        "text-overflow": "ellipsis",
+        "white-space": "nowrap",
+    });
+    expect(longTitle.bounds().x + longTitle.bounds().width).toBeLessThanOrEqual(cap.x);
+    expect(cap.x + cap.width).toBeLessThanOrEqual(longRow.x + longRow.width);
+
+    // The command row's words and the settings row's label start on one column.
+    const label = view.$('[data-row-id="shimmer"] [data-happy-desktop-ui="form-row-label"]');
+    expect(title.bounds().x).toBe(label.bounds().x);
+    expect(
+        view
+            .$('[data-row-id="shimmer"] [data-happy-desktop-ui="form-row"]')
+            .computedStyles(["border-bottom-width"]),
+    ).toEqual({ "border-bottom-width": "0px" });
+    // The action wears the chord that does the same outside the palette.
+    expect(row("sidebar").element.getAttribute("aria-keyshortcuts")).toBe(
+        commandShortcut("b").aria,
+    );
+});
+
+it("wears the sidebar's marks: a 20px rounded tile, the tasks glyph in a task's", async () => {
+    const view = createRenderer();
+    view.render(
+        () => (
+            <CommandPalette autoFocus={false} onClose={() => {}} onQueryChange={() => {}} query="">
+                <CommandPaletteResults
+                    activeIndex={0}
+                    sections={[
+                        {
+                            id: "recent",
+                            caption: "Recent",
+                            rows: [
+                                {
+                                    kind: "command",
+                                    id: "chat",
+                                    icon: "chat",
+                                    meta: "search-infra",
+                                    title: "Index rebuild",
+                                },
+                                {
+                                    kind: "command",
+                                    id: "bot",
+                                    avatar: { initials: "H", tone: "violet", type: "agent" },
+                                    meta: "Bot",
+                                    title: "Happy",
+                                },
+                                {
+                                    kind: "command",
+                                    id: "release",
+                                    avatar: { icon: "tasks", initials: "", type: "agent" },
+                                    meta: "Task",
+                                    title: "Release desktop",
+                                },
+                            ],
+                        },
+                    ]}
+                />
+            </CommandPalette>
+        ),
+        { width: 384, height: 461 },
+    );
+    await view.ready();
+
+    const titleX = (id: string) =>
+        view
+            .$(`[data-row-id="${id}"] [data-happy-desktop-ui="command-palette-results-title"]`)
+            .bounds().x;
+    for (const id of ["bot", "release"]) {
+        const row = view.$(
+            `[data-happy-desktop-ui="command-palette-results-row"][data-row-id="${id}"]`,
+        );
+        const avatar = view.$(`[data-row-id="${id}"] [data-happy-desktop-ui="avatar"]`);
+        expect(row.bounds().height).toBe(44);
+        // The sidebar's agent tile, at the sidebar's size.
+        expect(avatar.element.getAttribute("data-type")).toBe("agent");
+        expect([avatar.bounds().width, avatar.bounds().height]).toEqual([20, 20]);
+        // A mark keeps the words on the same column as a plain glyph does.
+        expect(titleX(id)).toBe(titleX("chat"));
+    }
+    expect(
+        view.$('[data-row-id="release"] [data-happy-desktop-ui="avatar-glyph"]').element,
+    ).toBeTruthy();
+});
+
+it("opens a numbered result from ⌘1…⌘9 and keeps the chord from the window", async () => {
+    const committed: number[] = [];
+    const reachedWindow: string[] = [];
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+        if (!event.defaultPrevented) reachedWindow.push(event.key);
+    };
+    window.addEventListener("keydown", onWindowKeyDown);
+    try {
+        const view = createRenderer();
+        view.render(
+            () => (
+                <CommandPalette
+                    onClose={() => {}}
+                    onNumberCommit={(number) => committed.push(number)}
+                    onQueryChange={() => {}}
+                    query=""
+                >
+                    <CommandPaletteResults activeIndex={0} sections={mixedSections} />
+                </CommandPalette>
+            ),
+            { width: 384, height: 461 },
+        );
+        await view.ready();
+        const input = view.$('[data-happy-desktop-ui="command-palette-input"]')
+            .element as HTMLInputElement;
+        const press = (key: string, modifiers: KeyboardEventInit = {}) =>
+            input.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    bubbles: true,
+                    cancelable: true,
+                    code: /^[0-9]$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`,
+                    key,
+                    ...modifiers,
+                }),
+            );
+        const chord =
+            commandShortcut("1").modifier === "Meta" ? { metaKey: true } : { ctrlKey: true };
+        press("1", chord);
+        press("9", chord);
+        // A digit typed without the chord is a search, and the chord with the
+        // other modifier is not the palette's.
+        press("3");
+        press("3", { ...chord, shiftKey: true });
+        expect(committed).toEqual([1, 9]);
+        expect(reachedWindow).toEqual(["3", "3"]);
+    } finally {
+        window.removeEventListener("keydown", onWindowKeyDown);
+    }
 });

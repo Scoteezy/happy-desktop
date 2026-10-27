@@ -593,75 +593,87 @@ export function HappyAgentSettingsBlueprintPage() {
                     />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
-            <FullScreenSpecimen
-                detail="General category: appearance and the defaults a new local session starts with"
-                label="Happy Agent settings — general"
-                number="01"
-            >
-                <HappyAgentSettingsShell
-                    activeCategoryId="general"
-                    categories={categories}
-                    description="How this window looks and what a new session starts with"
-                    onCategorySelect={noop}
-                    onClose={noop}
-                    title="General"
+            {(["available", "downloading", "downloaded"] as const).map((updateStatus) => (
+                <FullScreenSpecimen
+                    detail="Desktop update status stays in Settings while downloading; Restart appears once the download finishes."
+                    key={updateStatus}
+                    label={`Happy Agent settings — general · update ${updateStatus}`}
+                    number="01"
+                    screen={`desktop-update-${updateStatus}`}
                 >
-                    <HappyAgentGeneralSettings
-                        // The ordinary resting state of a machine with an update:
-                        // the check found it and fetched it without asking, so
-                        // the version is already on disk and the only thing left
-                        // is the interruption nobody has agreed to yet.
-                        agent={{
-                            availableVersion: "0.3.1",
-                            installedVersion: "0.3.0",
-                            managed: true,
-                            message: "Happy Agent 0.3.1 is ready to install.",
-                            operation: "idle",
-                            readyVersion: "0.3.1",
-                            runningVersion: "0.3.0",
-                            runtime: "ready",
-                            updateAvailable: true,
-                            versions: [
-                                { downloaded: true, prerelease: false, version: "0.3.1" },
-                                { downloaded: false, prerelease: true, version: "0.3.1-rc.2" },
-                                { downloaded: true, prerelease: false, version: "0.3.0" },
-                                { downloaded: true, prerelease: false, version: "0.2.9" },
-                            ],
-                        }}
-                        appearance="system"
-                        {...settingsDefaultModel(false)}
-                        onAppearanceChange={noop}
-                        statusBar={{
-                            themeShown: true,
-                            keepAwakeShown: false,
-                            onThemeShownChange: noop,
-                            onKeepAwakeShownChange: noop,
-                        }}
-                        keepAwake="agent"
-                        onKeepAwakeChange={noop}
-                        completionSound="focused"
-                        onCompletionSoundChange={noop}
-                        onAgentCheck={noop}
-                        onAgentRestart={noop}
-                        onAgentUpgrade={noop}
-                        onAgentVersionSelect={noop}
-                        onPreviewUpdatesChange={noop}
-                        previewUpdatesEnabled
-                        onUsageAnalyticsChange={noop}
-                        usageAnalyticsEnabled
-                        onPermissionModeChange={noop}
-                        onScrollbarVisibilityChange={noop}
-                        onLinkOpenPlacementChange={noop}
-                        linkOpenPlacement="panel"
-                        onTitleShimmerChange={noop}
-                        onProjectsHiddenChange={noop}
-                        defaultAccessMenus={settingsMenus("claude", "anthropic/opus-5-5")}
-                        projectsHidden
-                        scrollbarVisibility="automatic"
-                        titleShimmerEnabled={false}
-                    />
-                </HappyAgentSettingsShell>
-            </FullScreenSpecimen>
+                    <HappyAgentSettingsShell
+                        activeCategoryId="general"
+                        categories={categories}
+                        description="How this window looks and what a new session starts with"
+                        onCategorySelect={noop}
+                        onClose={noop}
+                        title="General"
+                    >
+                        <HappyAgentGeneralSettings
+                            desktopUpdate={{
+                                action: "restart",
+                                detail:
+                                    updateStatus === "downloading" ? "64% downloaded" : undefined,
+                                status: updateStatus,
+                                version: "0.0.102-preview.18",
+                            }}
+                            onDesktopUpdateApply={noop}
+                            // The ordinary resting state of a machine with an update:
+                            // the check found it and fetched it without asking, so
+                            // the version is already on disk and the only thing left
+                            // is the interruption nobody has agreed to yet.
+                            agent={{
+                                availableVersion: "0.3.1",
+                                installedVersion: "0.3.0",
+                                managed: true,
+                                message: "Happy Agent 0.3.1 is ready to install.",
+                                operation: "idle",
+                                readyVersion: "0.3.1",
+                                runningVersion: "0.3.0",
+                                runtime: "ready",
+                                updateAvailable: true,
+                                versions: [
+                                    { downloaded: true, prerelease: false, version: "0.3.1" },
+                                    { downloaded: false, prerelease: true, version: "0.3.1-rc.2" },
+                                    { downloaded: true, prerelease: false, version: "0.3.0" },
+                                    { downloaded: true, prerelease: false, version: "0.2.9" },
+                                ],
+                            }}
+                            appearance="system"
+                            {...settingsDefaultModel(false)}
+                            onAppearanceChange={noop}
+                            statusBar={{
+                                themeShown: true,
+                                keepAwakeShown: false,
+                                onThemeShownChange: noop,
+                                onKeepAwakeShownChange: noop,
+                            }}
+                            keepAwake="agent"
+                            onKeepAwakeChange={noop}
+                            completionSound="focused"
+                            onCompletionSoundChange={noop}
+                            onAgentCheck={noop}
+                            onAgentRestart={noop}
+                            onAgentUpgrade={noop}
+                            onAgentVersionSelect={noop}
+                            onPreviewUpdatesChange={noop}
+                            previewUpdatesEnabled
+                            onUsageAnalyticsChange={noop}
+                            usageAnalyticsEnabled
+                            onPermissionModeChange={noop}
+                            onScrollbarVisibilityChange={noop}
+                            onLinkOpenPlacementChange={noop}
+                            linkOpenPlacement="panel"
+                            onTitleShimmerChange={noop}
+                            onProjectsHiddenChange={noop}
+                            defaultAccessMenus={settingsMenus("claude", "anthropic/opus-5-5")}
+                            projectsHidden
+                            scrollbarVisibility="automatic"
+                            titleShimmerEnabled={false}
+                        />
+                    </HappyAgentSettingsShell>
+                </FullScreenSpecimen>
+            ))}
             <FullScreenSpecimen
                 label="Happy Agent settings — Experimental"
                 detail="Independent choices for each unfinished feature"

@@ -63,7 +63,7 @@ import {
     type AppHappyAgentDebugStore,
     type AppHappyAgentProfilerStore,
 } from "../views/AppHappyAgentSettingsView";
-import type { AppHappyAgentUpdateStore } from "../agentUpdate";
+import type { AppHappyAgentReleaseNotesStore, AppHappyAgentUpdateStore } from "../agentUpdate";
 
 /**
  * Everything the local route tree needs that the URL does not address: the
@@ -102,6 +102,7 @@ export interface HappyAgentRouterContext {
     readonly daemon?: AppHappyAgentDaemonStore;
     /** The local Happy Agent update card, beside `daemon` and only with it. */
     readonly agentUpdate?: AppHappyAgentUpdateStore;
+    readonly agentReleaseNotes?: AppHappyAgentReleaseNotesStore;
     readonly profiler?: AppHappyAgentProfilerStore;
     readonly happyAgents: AppHappyAgentDirectoryStore;
     /** This build's development identity; absent in the packaged product. */
@@ -625,6 +626,7 @@ function HappyAgentWorkspaceLayout() {
             groupId={params.groupId}
             {...(context.daemon ? { daemon: context.daemon } : {})}
             {...(context.agentUpdate ? { agentUpdate: context.agentUpdate } : {})}
+            {...(context.agentReleaseNotes ? { agentReleaseNotes: context.agentReleaseNotes } : {})}
             {...(context.experiments ? { experiments: context.experiments } : {})}
             {...(context.projectsVisibility
                 ? { projectsVisibility: context.projectsVisibility }
@@ -820,6 +822,8 @@ function HappyAgentSettingsRoute() {
         <AppHappyAgentSettingsView
             appearance={context.appearance}
             browserPasswordsAvailable={context.browserPasswordsAvailable ?? false}
+            update={context.update}
+            onUpdateApply={context.onUpdateApply}
             {...(context.daemon ? { daemon: context.daemon } : {})}
             {...(context.debug ? { debug: context.debug } : {})}
             {...(context.profiler ? { profiler: context.profiler } : {})}

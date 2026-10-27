@@ -274,7 +274,8 @@ function snapshotsEqual(
         left.version === right.version &&
         left.message === right.message &&
         left.attempt === right.attempt &&
-        left.admitting === right.admitting
+        left.admitting === right.admitting &&
+        left.drain === right.drain
     );
 }
 
@@ -322,7 +323,13 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): {
             sourceState = state.connection;
             // The daemon's own word that it takes nothing new, from its drain
             // until a replacement admits work, carried through every state.
-            const admitting = state.admitting === false ? { admitting: false as const } : {};
+            const admitting =
+                state.admitting === false
+                    ? {
+                          admitting: false as const,
+                          ...(state.drain === undefined ? {} : { drain: state.drain }),
+                      }
+                    : {};
             if (state.connection === "live") {
                 publish({ attempt: 0, connection: "connected", daemon: "ready", ...admitting });
                 return;
@@ -355,6 +362,7 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): {
                 connection: "disconnected",
                 daemon: "unknown",
                 ...(snapshot.admitting === false ? { admitting: false as const } : {}),
+                ...(snapshot.drain === undefined ? {} : { drain: snapshot.drain }),
                 message: error instanceof Error ? error.message : String(error),
             });
         },
