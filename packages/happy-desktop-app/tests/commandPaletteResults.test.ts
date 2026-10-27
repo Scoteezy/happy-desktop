@@ -12,6 +12,7 @@ import type {
     HappyAgentWorktreeGroup,
     HappyAgentWorktreeId,
 } from "happy-desktop-state";
+import { commandShortcut } from "happy-desktop-ui";
 import { APP_SHORTCUTS } from "../sources/appShortcuts";
 import { commandPaletteResults, type CommandPaletteInput } from "../sources/commandPaletteResults";
 import { happyAgentSettingsCategoryExists } from "../sources/views/AppHappyAgentSettingsView";
@@ -62,8 +63,9 @@ const TASKS: readonly HappyAgentTask[] = [
     task("release", "Release desktop", 40, { subtasks: [NOTES] }),
 ];
 
-// Archived, never joined: found by name, listed under the sidebar's work.
-const OLD_TASK = task("search_old", "Old search experiment", 2, { archived: true });
+// Archived, never joined: found by name, but only below every live answer —
+// even one that matches worse.
+const OLD_TASK = task("search_old", "Search experiment, take one", 2, { archived: true });
 
 const BOTS: readonly HappyAgentBot[] = [
     {
@@ -127,7 +129,7 @@ const input = (overrides: Partial<CommandPaletteInput> = {}): CommandPaletteInpu
 
 const ids = (result: ReturnType<typeof commandPaletteResults>) => result.rows.map((row) => row.id);
 
-it("opens on the sidebar's work, last opened first, then other work; never a subtask", () => {
+it("opens on the sidebar's work, last opened first, then other work; never a subtask or archived work", () => {
     const result = commandPaletteResults(
         input({
             chatId: "ses_cmdk",
@@ -146,12 +148,20 @@ it("opens on the sidebar's work, last opened first, then other work; never a sub
         "workspace:prj_infra",
         "bot:bot_happy",
         "task:release",
-        // Other work: the project chat the reader opened, then a task they
-        // never joined.
+        // Other work: the project chat the reader opened.
         "chat:ses_index",
-        "task:search_old",
     ]);
     expect(ids(result)).not.toContain("chat:ses_notes");
+    // The archived task changed more recently than anything here, but it is over.
+    expect(ids(result)).not.toContain("task:search_old");
+});
+
+it("offers archived work in the empty palette only when nothing live is left", () => {
+    const result = commandPaletteResults(
+        input({ bots: [], projects: [], tasks: [], taskDirectory: [OLD_TASK] }),
+    );
+    expect(result.sections.map((section) => section.id)).toEqual(["recent"]);
+    expect(ids(result)).toEqual(["task:search_old"]);
 });
 
 it("puts the sidebar first: a hidden bot or a project left out of the sidebar sinks", () => {
@@ -186,11 +196,12 @@ it("wears the sidebar's marks: pictures in rounded tiles, the tasks glyph in its
 
 it("searches titles only, sidebar work first, and lets a subtask's title find its parent", () => {
     const result = commandPaletteResults(input({ query: "search" }));
-    expect(result.sections.map((section) => section.id)).toEqual(["work"]);
+    expect(result.sections.map((section) => section.id)).toEqual(["work", "archived"]);
     expect(ids(result)).toEqual([
         "workspace:prj_infra",
         "task:cmdk",
-        // Archived and never joined, so below the sidebar's own work.
+        // Its title starts with the query, which "Fix Cmd K search" does not,
+        // but it is archived, so it answers last.
         "task:search_old",
     ]);
     // The project's chat lives in a "search" folder but is not called that.
@@ -204,7 +215,8 @@ it("ranks a recently opened match above an older one of the same quality", () =>
     const result = commandPaletteResults(
         input({ query: "e", visits: [visit("ws_release", "ses_notes")] }),
     );
-    expect(ids(result)[0]).toBe("task:release");
+    const work = result.sections.find((section) => section.id === "work");
+    expect(work?.rows[0]?.id).toBe("task:release");
 });
 
 it("lists the spaces sidebar's rows first, under their names and marks", () => {
@@ -291,3 +303,62 @@ it.each([false, true])(
         void experimentalFeaturesEnabled;
     },
 );
+
+it("numbers the first nine rows that open something for ⌘1…⌘9, never an action or a setting", () => {
+    const numberOf = (result: ReturnType<typeof commandPaletteResults>) =>
+        result.rows.map((row) =>
+            row.kind === "command" && result.numbered.includes(result.rows.indexOf(row))
+                ? row.shortcut?.caps
+                : undefined,
+        );
+
+    const empty = commandPaletteResults(input());
+    expect(empty.numbered).toEqual(empty.rows.map((_, index) => index));
+    expect(numberOf(empty)).toEqual(
+        empty.rows.map((_, index) => commandShortcut(String(index + 1)).caps),
+    );
+
+    // Actions keep their own chords and settings their controls; the work and
+    // the archived work below them are counted on in the order shown.
+    const typed = commandPaletteResults(
+        input({
+            query: "hide",
+            tasks: [...TASKS, task("hidden", "Why tasks hide on reload", 1)],
+            taskDirectory: [
+                ...TASKS,
+                task("hidden_old", "Hide the old banner", 1, { archived: true }),
+            ],
+            sidebar: { hidden: false },
+        }),
+    );
+    expect(typed.sections.map((section) => section.id)).toEqual([
+        "actions",
+        "work",
+        "settings",
+        "archived",
+    ]);
+    expect(typed.numbered.map((index) => typed.rows[index]!.id)).toEqual([
+        "task:hidden",
+        "task:hidden_old",
+    ]);
+    expect(typed.rows.find((row) => row.id === "action:sidebar-toggle")).toMatchObject({
+        shortcut: { caps: APP_SHORTCUTS.sidebarToggle.caps },
+    });
+    expect(typed.rows.find((row) => row.id === "task:hidden")).toMatchObject({
+        shortcut: { caps: commandShortcut("1").caps },
+    });
+    expect(typed.rows.find((row) => row.id === "task:hidden_old")).toMatchObject({
+        shortcut: { caps: commandShortcut("2").caps },
+    });
+
+    // Only nine chords exist.
+    const many = commandPaletteResults(
+        input({
+            query: "task",
+            tasks: Array.from({ length: 12 }, (_, index) =>
+                task(`t${index}`, `Task ${index}`, index),
+            ),
+        }),
+    );
+    expect(many.numbered.length).toBeLessThanOrEqual(9);
+});

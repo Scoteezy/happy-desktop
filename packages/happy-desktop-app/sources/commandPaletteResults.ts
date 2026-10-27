@@ -12,12 +12,13 @@ import type {
     ThemeMode,
 } from "happy-desktop-state";
 import { happyAgentSessionGroupIdOf } from "happy-desktop-state";
-import type {
-    CommandPaletteRowEmphasis,
-    CommandShortcut,
-    IconName,
-    ImageMark,
-    StemCellMark,
+import {
+    commandShortcut,
+    type CommandPaletteRowEmphasis,
+    type CommandShortcut,
+    type IconName,
+    type ImageMark,
+    type StemCellMark,
 } from "happy-desktop-ui";
 import { APP_SHORTCUTS } from "./appShortcuts";
 
@@ -176,7 +177,8 @@ export type CommandPaletteSectionId =
     | "work"
     | "tabs"
     | "actions"
-    | "settings";
+    | "settings"
+    | "archived";
 
 export interface CommandPaletteSection {
     readonly id: CommandPaletteSectionId;
@@ -193,6 +195,12 @@ export interface CommandPaletteResults {
      * list, not through sections.
      */
     readonly rows: readonly CommandPaletteRow[];
+    /**
+     * The flat indexes of the rows ⌘1…⌘9 open, in that order: the rows that
+     * go somewhere — work and files — and never an action or a setting, whose
+     * own chords or controls already say what they do.
+     */
+    readonly numbered: readonly number[];
 }
 
 /** One row of the spaces sidebar: its name, its mark, and where it opens. */
@@ -650,8 +658,12 @@ function subtasksOf(subtasks: readonly HappyAgentBotSubtask[]): HappyAgentBotSub
  */
 interface WorkOffer {
     readonly row: CommandPaletteCommandRow;
-    /** 0 for a top-level row of the sidebar on screen; 1 for any other work. */
-    readonly tier: 0 | 1;
+    /**
+     * 0 for a top-level row of the sidebar on screen, 1 for any other live
+     * work, 2 for work that is over — an archived task, a closed session —
+     * which sinks below every live answer however well it matches.
+     */
+    readonly tier: 0 | 1 | 2;
     /** Sessions whose visit is a visit to this work: its own and its subtasks'. */
     readonly sessions: ReadonlySet<string>;
     /** Workspaces whose every visit counts: a project's or worktree's own. */
@@ -712,7 +724,7 @@ function workOffers(context: CommandPaletteContext): WorkOffer[] {
         const listed =
             mode.kind === "spaces" ? space !== undefined : joined.has(task.id) && !task.archived;
         push({
-            tier: listed ? 0 : 1,
+            tier: task.archived ? 2 : listed ? 0 : 1,
             sessions: new Set([
                 task.conversation.id,
                 ...subtasks.map((sub) => sub.conversation.id),
@@ -853,7 +865,7 @@ function workOffers(context: CommandPaletteContext): WorkOffer[] {
         const owner = groupFind(context.projects, groupId);
         if (!owner) continue;
         push({
-            tier: 1,
+            tier: 2,
             sessions: new Set([session.id]),
             groups: NONE,
             keywords: [],
@@ -1228,7 +1240,8 @@ function actionOffers(
  * the reader is most likely to open next — the sidebar's own rows first, the
  * one opened most recently on top, then other work they could return to. What
  * the window is already showing is left out: the row Enter would run should go
- * somewhere.
+ * somewhere. Archived tasks and closed sessions are offered only when there is
+ * no live work at all.
  *
  * A machine with nothing to open yet would leave the palette blank, so it
  * offers the window's actions instead.
@@ -1236,12 +1249,11 @@ function actionOffers(
 export function commandPaletteSuggestionSections(
     context: CommandPaletteContext,
 ): CommandPaletteSection[] {
-    const recent = workRanked(
-        workOffers(context).filter((offer) => !workHere(offer, context)),
-        context,
-        () => 0,
-        RECENT_LIMIT,
-    ).map((entry) => entry.row);
+    const offers = workOffers(context).filter((offer) => !workHere(offer, context));
+    const live = offers.filter((offer) => offer.tier < 2);
+    const recent = workRanked(live.length > 0 ? live : offers, context, () => 0, RECENT_LIMIT).map(
+        (entry) => entry.row,
+    );
     const update = updateRow(context);
     return [
         ...(update ? [{ id: "update" as const, rows: [update] }] : []),
@@ -1285,6 +1297,8 @@ export function commandPaletteResults(input: CommandPaletteInput): CommandPalett
         for (const section of commandPaletteSuggestionSections(input))
             if (section.rows.length > 0) sections.push(section);
     } else {
+        const offers = workOffers(input);
+        const workRank = (offer: WorkOffer) => rowRank(query, offer.row.title, ...offer.keywords);
         const offered: readonly {
             readonly id: CommandPaletteSectionId;
             readonly label: string;
@@ -1294,9 +1308,9 @@ export function commandPaletteResults(input: CommandPaletteInput): CommandPalett
                 id: "work",
                 label: "Work",
                 rows: workRanked(
-                    workOffers(input),
+                    offers.filter((offer) => offer.tier < 2),
                     input,
-                    (offer) => rowRank(query, offer.row.title, ...offer.keywords),
+                    workRank,
                     SECTION_LIMIT,
                 ),
             },
@@ -1332,8 +1346,55 @@ export function commandPaletteResults(input: CommandPaletteInput): CommandPalett
                 label: section.label,
                 rows: section.rows.map((entry) => entry.row),
             });
+        // Work that is over answers last, below every live answer, however
+        // well its title matches.
+        const archived = workRanked(
+            offers.filter((offer) => offer.tier === 2),
+            input,
+            workRank,
+            SECTION_LIMIT,
+        ).map((entry) => entry.row);
+        if (archived.length > 0)
+            sections.push({ id: "archived", label: "Archived", rows: archived });
     }
-    return { sections, rows: sections.flatMap((section) => section.rows) };
+    return numberedResults(sections);
+}
+
+/** The sections whose rows go somewhere, and so are numbered for ⌘1…⌘9. */
+const NUMBERED_SECTIONS: ReadonlySet<CommandPaletteSectionId> = new Set([
+    "recent",
+    "work",
+    "tabs",
+    "archived",
+]);
+
+const NUMBER_SHORTCUTS = Array.from({ length: 9 }, (_, index) =>
+    commandShortcut(String(index + 1)),
+);
+
+/**
+ * The flat result list, with the first nine rows that open something wearing
+ * the ⌘-number that opens them, counted down the list as the reader sees it.
+ */
+function numberedResults(sections: readonly CommandPaletteSection[]): CommandPaletteResults {
+    const numbered: number[] = [];
+    let index = 0;
+    const shown = sections.map((section) => ({
+        ...section,
+        rows: section.rows.map((row) => {
+            const flat = index++;
+            if (
+                row.kind !== "command" ||
+                !NUMBERED_SECTIONS.has(section.id) ||
+                numbered.length === NUMBER_SHORTCUTS.length
+            )
+                return row;
+            const shortcut = NUMBER_SHORTCUTS[numbered.length]!;
+            numbered.push(flat);
+            return { ...row, shortcut };
+        }),
+    }));
+    return { sections: shown, rows: shown.flatMap((section) => section.rows), numbered };
 }
 
 /**

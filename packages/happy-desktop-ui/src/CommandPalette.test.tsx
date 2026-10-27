@@ -13,7 +13,6 @@ import "./styles/badge.css";
 import "./styles/button.css";
 import "./styles/icon.css";
 import "./styles/vector-icon.css";
-import { KeyCap } from "./Badge";
 import { CommandPalette } from "./CommandPalette";
 import { CommandPaletteResults, type CommandPaletteResultsSection } from "./CommandPaletteResults";
 import { FormRow } from "./FormRow";
@@ -157,8 +156,8 @@ it("holds the fixed 640x461 CommandPalette frame with a real short result set", 
             )
             .bounds().width,
     ).toBe(18);
-    const cap = view.$('[data-testid="cp"] [data-happy-desktop-ui="key-cap"]');
-    expect(cap.element.getAttribute("aria-label")).toBe("ESC");
+    // Escape closes it without a cap saying so: the close button stands alone.
+    expect(header.element.querySelector('[data-happy-desktop-ui="key-cap"]')).toBeNull();
     const close = view.$('[data-testid="cp"] .happy-command-palette__close');
     expect(close.element.tagName).toBe("BUTTON");
     expect(close.element.getAttribute("aria-label")).toBe("Close");
@@ -363,57 +362,6 @@ it("preserves the exact card, header, and input nodes across result-content swap
     expect(input.selectionStart).toBe(1);
     expect(input.selectionEnd).toBe(4);
     expect(view.container.querySelector('[data-item-id="file-5"]')).toBeTruthy();
-});
-
-it("keeps its ESC KeyCap optically identical to a standalone reference", async () => {
-    const view = createRenderer();
-    view.render(
-        () => (
-            <CommandPalette
-                autoFocus={false}
-                data-testid="optical"
-                onClose={() => {}}
-                onQueryChange={() => {}}
-                query="calm"
-            >
-                <SearchResults groups={shortGroups} query="calm" variant="flush" />
-            </CommandPalette>
-        ),
-        { width: 640, height: 461 },
-    );
-    view.render(
-        () => (
-            <div data-testid="cap-control" style={{ display: "flex", paddingTop: "21.5px" }}>
-                <KeyCap keys="ESC" />
-            </div>
-        ),
-        { width: 80, height: 60 },
-    );
-    await view.ready();
-
-    const cap = view.$('[data-testid="optical"] [data-happy-desktop-ui="key-cap"]');
-    const capLabel = view.$('[data-testid="optical"] [data-happy-desktop-ui="key-cap-label"]');
-    const reference = view.$('[data-testid="cap-control"] [data-happy-desktop-ui="key-cap"]');
-    const referenceLabel = view.$(
-        '[data-testid="cap-control"] [data-happy-desktop-ui="key-cap-label"]',
-    );
-    expect(cap.bounds().height).toBe(18);
-    expect(reference.bounds().height).toBe(18);
-    expect(capLabel.bounds().height).toBe(10);
-    expect(referenceLabel.bounds().height).toBe(10);
-    expect(referenceLabel.bounds().y).toBe(capLabel.bounds().y);
-    const capInk = await capLabel.visibleMetrics();
-    const referenceInk = await referenceLabel.visibleMetrics();
-    expect(capInk.pixelCount).toBeGreaterThan(0);
-    expect(referenceInk.pixelCount).toBeGreaterThan(0);
-    expect(
-        Math.abs(capInk.center.y - referenceInk.center.y),
-        "palette ESC glyph parity y vs standalone KeyCap",
-    ).toBeLessThanOrEqual(0.4);
-    expect(
-        Math.abs(capInk.center.y + capLabel.bounds().y - cap.bounds().y - cap.bounds().height / 2),
-        "palette ESC glyph gross optical y",
-    ).toBeLessThanOrEqual(1.5);
 });
 
 it("focuses and selects its input on open and returns focus to the opener on close", async () => {
@@ -672,4 +620,54 @@ it("wears the sidebar's marks: a 20px rounded tile, the tasks glyph in a task's"
     expect(
         view.$('[data-row-id="release"] [data-happy-desktop-ui="avatar-glyph"]').element,
     ).toBeTruthy();
+});
+
+it("opens a numbered result from ⌘1…⌘9 and keeps the chord from the window", async () => {
+    const committed: number[] = [];
+    const reachedWindow: string[] = [];
+    const onWindowKeyDown = (event: KeyboardEvent) => {
+        if (!event.defaultPrevented) reachedWindow.push(event.key);
+    };
+    window.addEventListener("keydown", onWindowKeyDown);
+    try {
+        const view = createRenderer();
+        view.render(
+            () => (
+                <CommandPalette
+                    onClose={() => {}}
+                    onNumberCommit={(number) => committed.push(number)}
+                    onQueryChange={() => {}}
+                    query=""
+                >
+                    <CommandPaletteResults activeIndex={0} sections={mixedSections} />
+                </CommandPalette>
+            ),
+            { width: 640, height: 461 },
+        );
+        await view.ready();
+        const input = view.$('[data-happy-desktop-ui="command-palette-input"]')
+            .element as HTMLInputElement;
+        const press = (key: string, modifiers: KeyboardEventInit = {}) =>
+            input.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                    bubbles: true,
+                    cancelable: true,
+                    code: /^[0-9]$/.test(key) ? `Digit${key}` : `Key${key.toUpperCase()}`,
+                    key,
+                    ...modifiers,
+                }),
+            );
+        const chord =
+            commandShortcut("1").modifier === "Meta" ? { metaKey: true } : { ctrlKey: true };
+        press("1", chord);
+        press("9", chord);
+        // A digit typed without the chord is a search, and the chord with the
+        // other modifier is not the palette's.
+        press("3");
+        press("3", { ...chord, shiftKey: true });
+        expect(committed).toEqual([1, 9]);
+        expect(reachedWindow).toEqual(["3", "3"]);
+    } finally {
+        window.removeEventListener("keydown", onWindowKeyDown);
+    }
 });

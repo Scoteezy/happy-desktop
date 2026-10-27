@@ -5458,6 +5458,10 @@ function HappyAgentCommandPalette(
                     highlightIntent();
                 }}
                 onSelectionCommit={() => rowCommit(palette.activeIndex)}
+                onNumberCommit={(number) => {
+                    const index = results.numbered[number - 1];
+                    if (index !== undefined) rowCommit(index);
+                }}
                 onSelectionMove={(direction) => {
                     props.store.activeIndexUpdate(
                         commandPaletteIndexMove(palette.activeIndex, direction, length),

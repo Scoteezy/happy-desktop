@@ -20,6 +20,8 @@ const BODY_WIDTH = 622;
 const SESSION_SHORTCUT = commandShortcut("t");
 const SIDEBAR_SHORTCUT = commandShortcut("b");
 const PANEL_SHORTCUT = commandShortcut("j");
+/** Every row that opens something wears the ⌘-number that opens it, counted down the list. */
+const NUMBERS = Array.from({ length: 9 }, (_, index) => commandShortcut(String(index + 1)));
 
 const suggestions: CommandPaletteResultsSection[] = [
     {
@@ -45,6 +47,7 @@ const suggestions: CommandPaletteResultsSection[] = [
                 id: "bot-happy",
                 imageMark: { src: happyMark },
                 meta: "Bot",
+                shortcut: NUMBERS[0],
                 title: "Happy",
             },
             {
@@ -52,6 +55,7 @@ const suggestions: CommandPaletteResultsSection[] = [
                 id: "project-infra",
                 avatar: { initials: "S", type: "agent" },
                 meta: "~/Developer/search-infra",
+                shortcut: NUMBERS[1],
                 title: "search-infra",
             },
             {
@@ -59,6 +63,7 @@ const suggestions: CommandPaletteResultsSection[] = [
                 id: "task-release",
                 avatar: { icon: "tasks", initials: "", type: "agent" },
                 meta: "Task",
+                shortcut: NUMBERS[2],
                 title: "Release desktop",
             },
             {
@@ -66,22 +71,66 @@ const suggestions: CommandPaletteResultsSection[] = [
                 id: "task-onboarding",
                 avatar: { initials: "KS", type: "agent" },
                 meta: "Task · Kirill",
+                shortcut: NUMBERS[3],
                 title: "Onboarding copy pass",
             },
-            // Then other work: a chat inside a project, an archived task.
+            // Then other work, such as a chat inside a project. Archived work
+            // is left out while anything live remains.
             {
                 kind: "command",
                 id: "chat-index",
                 icon: "chat",
                 meta: "search-infra",
+                shortcut: NUMBERS[4],
                 title: "Index rebuild",
             },
+        ],
+    },
+];
+
+/** A typed query: live work first, the archived answers last however well they match. */
+const searched: CommandPaletteResultsSection[] = [
+    {
+        id: "work",
+        caption: "Work",
+        rows: [
+            {
+                kind: "command",
+                id: "project-infra",
+                avatar: { initials: "S", type: "agent" },
+                meta: "~/Developer/search-infra",
+                shortcut: NUMBERS[0],
+                title: "search-infra",
+            },
+            {
+                kind: "command",
+                id: "task-cmdk",
+                avatar: { icon: "tasks", initials: "", type: "agent" },
+                meta: "Task",
+                shortcut: NUMBERS[1],
+                title: "Fix Cmd K search",
+            },
+        ],
+    },
+    {
+        id: "archived",
+        caption: "Archived",
+        rows: [
             {
                 kind: "command",
                 id: "task-old",
                 avatar: { icon: "tasks", initials: "", type: "agent" },
                 meta: "Archived task",
-                title: "Old search experiment",
+                shortcut: NUMBERS[2],
+                title: "Search experiment, take one",
+            },
+            {
+                kind: "command",
+                id: "chat-closed",
+                icon: "history",
+                meta: "Closed · happy-desktop",
+                shortcut: NUMBERS[3],
+                title: "Search ranking notes",
             },
         ],
     },
@@ -244,7 +293,7 @@ export function CommandPaletteResultsPage() {
         >
             <div className="specimen-grid">
                 <BodySpecimen
-                    detail="empty query · the waiting update, then the sidebar's tasks, bots, and projects in their sidebar marks, last opened first, then other work · no subtasks · highlight on the first row"
+                    detail="empty query · the waiting update, then the sidebar's tasks, bots, and projects in their sidebar marks, last opened first, then other live work · no subtasks or archived work · ⌘1…⌘9 on the rows · highlight on the first row"
                     label="Suggestions"
                     number="PR-01"
                     rule="622px body width · 56px rows · 20px sidebar marks · 28px captions"
@@ -258,9 +307,20 @@ export function CommandPaletteResultsPage() {
                     detail="the flat index counts across sections: row 3 is the third recent row"
                     label="Highlight across sections"
                     number="PR-02"
-                    rule="index 3 of 7 · captions are not rows"
+                    rule="index 3 of 6 · captions are not rows"
                 >
                     <CommandPaletteResults activeIndex={3} sections={suggestions} />
+                </BodySpecimen>
+            </div>
+
+            <div className="specimen-grid">
+                <BodySpecimen
+                    detail="a typed query such as “search” · live work first, archived tasks and closed sessions last however well they match · ⌘1…⌘9 count on across sections"
+                    label="Work and archived"
+                    number="PR-07"
+                    rule="56px rows · ⌘-number caps on rows that open something"
+                >
+                    <CommandPaletteResults activeIndex={0} sections={searched} />
                 </BodySpecimen>
             </div>
 

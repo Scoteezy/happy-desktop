@@ -39,6 +39,7 @@ const suggestions: CommandPaletteResultsSection[] = [
                 id: "bot-happy",
                 imageMark: { src: happyMark },
                 meta: "Bot",
+                shortcut: commandShortcut("1"),
                 title: "Happy",
             },
             {
@@ -46,6 +47,7 @@ const suggestions: CommandPaletteResultsSection[] = [
                 id: "task-release",
                 avatar: { icon: "tasks", initials: "", type: "agent" },
                 meta: "Task",
+                shortcut: commandShortcut("2"),
                 title: "Release desktop",
             },
             {
@@ -53,6 +55,7 @@ const suggestions: CommandPaletteResultsSection[] = [
                 id: "project-infra",
                 avatar: { initials: "S", type: "agent" },
                 meta: "~/Developer/search-infra",
+                shortcut: commandShortcut("3"),
                 title: "search-infra",
             },
         ],
@@ -192,12 +195,12 @@ export function CommandPalettePage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Top-anchored Slack-style ⌘K palette — a fixed 640 × 461 card with its own focused search input over a stable-gutter scrollport. Renders the card only; ModalOverlay owns its dim, stacking, and placement."
+            summary="Top-anchored Slack-style ⌘K palette — a fixed 640 × 461 card with its own focused search input over a stable-gutter scrollport, closed by Escape or its close button. ⌘1…⌘9 open the numbered rows. Renders the card only; ModalOverlay owns its dim, stacking, and placement."
             title="Command palette"
         >
             <div className="specimen-grid">
                 <PaletteSpecimen
-                    detail="what ⌘K opens on: a waiting update, then the tasks, bots, and chats worked in last, newest first"
+                    detail="what ⌘K opens on: a waiting update, then the sidebar's tasks, bots, and projects, last opened first · ⌘1…⌘9 open the numbered rows"
                     label="Suggestions"
                     number="CP-06"
                     query=""
