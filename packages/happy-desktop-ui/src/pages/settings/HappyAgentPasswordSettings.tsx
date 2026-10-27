@@ -11,7 +11,8 @@ export interface HappyAgentPasswordSettingsProps {
     readonly loading?: boolean;
     readonly pending?: boolean;
     readonly error?: string;
-    readonly onePasswordInstalled: boolean;
+    /** `unsupported` hides 1Password: this host does not load it. */
+    readonly onePasswordInstall: "unsupported" | "missing" | "installed";
     /** The connected account, or null when 1Password is not connected. */
     readonly onePasswordAccount: string | null;
     readonly onePasswordAccountDraft: string;
@@ -37,7 +38,8 @@ export function HappyAgentPasswordSettings(props: HappyAgentPasswordSettingsProp
                             {props.error}
                         </Banner>
                     ) : null}
-                    {props.onePasswordAccount !== null ? (
+                    {props.onePasswordInstall ===
+                    "unsupported" ? null : props.onePasswordAccount !== null ? (
                         <FormRow
                             control={
                                 <Button
@@ -53,7 +55,7 @@ export function HappyAgentPasswordSettings(props: HappyAgentPasswordSettingsProp
                             description={`Connected as ${props.onePasswordAccount}`}
                             label="1Password"
                         />
-                    ) : props.onePasswordInstalled ? (
+                    ) : props.onePasswordInstall === "installed" ? (
                         <FormRow
                             control={
                                 <Box className="happy-agent-passwords__connect">

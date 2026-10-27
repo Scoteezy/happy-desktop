@@ -2,6 +2,7 @@ import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isIP } from "node:net";
+import { browserLoginNssInstallProtected } from "./browserLoginNssTrust";
 
 export type BrowserLoginEngine = "chromium" | "firefox";
 
@@ -183,21 +184,16 @@ export async function browserLoginProfilesDiscover(): Promise<readonly BrowserLo
             });
         }
     }
-    const firefoxNss = await firstFile(
+    // NSS runs inside Happy, so only a Firefox this user cannot modify is used:
+    // one installed by root on macOS. Windows is not offered (see browserLoginLibraryTrust).
+    const firefoxNss =
         platform === "darwin"
-            ? [
+            ? await firefoxNssProtected([
                   "/Applications/Firefox.app/Contents/MacOS/libnss3.dylib",
                   "/Applications/Firefox Developer Edition.app/Contents/MacOS/libnss3.dylib",
                   "/Applications/Firefox Nightly.app/Contents/MacOS/libnss3.dylib",
-              ]
-            : [
-                  join(process.env.ProgramFiles ?? "C:\\Program Files", "Mozilla Firefox/nss3.dll"),
-                  join(
-                      process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
-                      "Mozilla Firefox/nss3.dll",
-                  ),
-              ],
-    );
+              ])
+            : undefined;
     // Zen keeps Firefox's profile format. Its logins are decrypted with the
     // NSS of a Mozilla-signed Firefox install, the only library Happy trusts.
     for (const [label, root] of [
@@ -217,6 +213,23 @@ export async function browserLoginProfilesDiscover(): Promise<readonly BrowserLo
         if (firefoxNss)
             profiles.push(...(await firefoxProfiles(label, root, platform, firefoxNss)));
     return profiles;
+}
+
+/** Installs already reported as not used, so each is logged once. */
+const firefoxUnprotectedLogged = new Set<string>();
+
+async function firefoxNssProtected(paths: readonly string[]): Promise<string | undefined> {
+    for (const path of paths) {
+        if (!(await fileExists(path))) continue;
+        if (await browserLoginNssInstallProtected(path)) return path;
+        if (!firefoxUnprotectedLogged.has(path)) {
+            firefoxUnprotectedLogged.add(path);
+            console.warn(
+                `Saved logins: not reading Firefox or Zen through ${path}; its install is not owned by root, so another program could change it.`,
+            );
+        }
+    }
+    return undefined;
 }
 
 function isInside(root: string, path: string): boolean {

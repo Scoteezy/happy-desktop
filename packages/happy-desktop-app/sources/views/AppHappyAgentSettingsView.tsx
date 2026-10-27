@@ -1213,7 +1213,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     loading={browserPasswordSettings.loading}
                     onePasswordAccount={browserPasswordSettings.onePasswordAccount}
                     onePasswordAccountDraft={browserPasswordSettings.onePasswordAccountDraft}
-                    onePasswordInstalled={browserPasswordSettings.onePasswordInstalled}
+                    onePasswordInstall={browserPasswordSettings.onePasswordInstall}
                     onOnePasswordAccountDraftChange={(value) =>
                         browserPasswords.settings.onePasswordAccountDraftUpdate(value)
                     }

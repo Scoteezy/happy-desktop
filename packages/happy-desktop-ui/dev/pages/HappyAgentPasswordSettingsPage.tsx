@@ -43,7 +43,7 @@ function PasswordSettingsSpecimen(props: {
                     <HappyAgentPasswordSettings
                         available
                         onePasswordAccount={null}
-                        onePasswordInstalled
+                        onePasswordInstall="installed"
                         onOnePasswordAccountDraftChange={draftSet}
                         onOnePasswordConnect={noop}
                         onOnePasswordDisconnect={noop}
@@ -103,7 +103,7 @@ export function HappyAgentPasswordSettingsPage() {
                 detail="Without the 1Password app there is nothing to connect"
                 label="1Password not installed"
                 number="06"
-                settings={{ onePasswordInstalled: false }}
+                settings={{ onePasswordInstall: "missing" }}
             />
             <PasswordSettingsSpecimen
                 detail="A host that reads no saved logins still says what Happy never does"

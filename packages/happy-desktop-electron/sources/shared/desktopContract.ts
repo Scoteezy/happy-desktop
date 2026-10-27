@@ -420,8 +420,11 @@ export interface DesktopGuestKeyEvent {
 
 /** Saved-login settings: which password manager is connected, never a login. */
 export interface DesktopBrowserPasswordSettings {
-    /** Whether the 1Password app is installed with its SDK integration library. */
-    readonly onePasswordInstalled: boolean;
+    /**
+     * `unsupported` where Happy does not load 1Password (Windows), else whether
+     * the 1Password app is installed with its SDK integration library.
+     */
+    readonly onePasswordInstall: "unsupported" | "missing" | "installed";
     /** The 1Password account Happy reads logins from, or null when none is connected. */
     readonly onePasswordAccount: string | null;
 }

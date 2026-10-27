@@ -273,6 +273,7 @@ export * from "./stories/storiesScreenStore.js";
 export * from "./stories/storiesRowStore.js";
 export {
     browserPasswordSettingsStoreOwnedCreate,
+    type BrowserPasswordOnePasswordInstall,
     type BrowserPasswordSettingsStore,
     type BrowserPasswordSettingsWriter,
     type BrowserPasswordSettingsSnapshot,

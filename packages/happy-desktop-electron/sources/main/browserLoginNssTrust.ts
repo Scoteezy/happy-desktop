@@ -1,13 +1,10 @@
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join } from "node:path";
 import {
-    browserLoginLibraryTrustRequire,
+    browserLoginLibraryInstallProtected,
+    browserLoginLibraryVerify,
     type BrowserLoginLibraryPublisher,
+    type BrowserLoginVerifiedLibrary,
 } from "./browserLoginLibraryTrust";
-
-function inside(root: string, path: string): boolean {
-    const fromRoot = relative(root, path);
-    return fromRoot !== "" && !fromRoot.startsWith(`..${sep}`) && fromRoot !== "..";
-}
 
 /** Mozilla Corporation, which signs every Firefox build: Team ID 43AQ936H96. */
 const mozilla: BrowserLoginLibraryPublisher = {
@@ -22,11 +19,16 @@ const mozilla: BrowserLoginLibraryPublisher = {
             ? bundle
             : null;
     },
-    windowsOrganizations: ["Mozilla Corporation"],
-    windowsLocation: (library, programFiles) => programFiles.some((root) => inside(root, library)),
 };
 
-/** NSS loads only from a system-wide Firefox install whose code is Mozilla's. */
-export function browserLoginNssTrustRequire(nssLibraryPath: string): Promise<void> {
-    return browserLoginLibraryTrustRequire(nssLibraryPath, mozilla);
+/** Whether Firefox is installed so that this user cannot change it, which Happy requires to load NSS. */
+export function browserLoginNssInstallProtected(nssLibraryPath: string): Promise<boolean> {
+    return browserLoginLibraryInstallProtected(nssLibraryPath, mozilla);
+}
+
+/** NSS loads only from a root-owned Firefox install whose code is Mozilla's. */
+export function browserLoginNssVerify(
+    nssLibraryPath: string,
+): Promise<BrowserLoginVerifiedLibrary> {
+    return browserLoginLibraryVerify(nssLibraryPath, mozilla);
 }

@@ -27,6 +27,8 @@ export default defineConfig({
             },
             external: [
                 "electron",
+                // Electron's fs without its `.asar` view, for reading real file owners.
+                "original-fs",
                 "electron-updater",
                 "ws",
                 // node-usb is native: loaded from node_modules at first use.

@@ -2,11 +2,14 @@
  * Saved-login settings: which 1Password account Happy reads logins from. Happy
  * stores no password, so there is no list of logins here, only this choice.
  */
+/** `unsupported` where the host does not load 1Password at all. */
+export type BrowserPasswordOnePasswordInstall = "unsupported" | "missing" | "installed";
+
 export interface BrowserPasswordSettingsSnapshot {
     /** Whether this host reads saved logins at all (the macOS and Windows desktop app). */
     readonly available: boolean;
     readonly loading: boolean;
-    readonly onePasswordInstalled: boolean;
+    readonly onePasswordInstall: BrowserPasswordOnePasswordInstall;
     /** The connected 1Password account, or null when none is. */
     readonly onePasswordAccount: string | null;
     /** The account name being typed before connecting. */
@@ -16,7 +19,7 @@ export interface BrowserPasswordSettingsSnapshot {
 }
 
 export interface BrowserPasswordSettingsReceived {
-    readonly onePasswordInstalled: boolean;
+    readonly onePasswordInstall: BrowserPasswordOnePasswordInstall;
     readonly onePasswordAccount: string | null;
 }
 
@@ -54,7 +57,7 @@ export function browserPasswordSettingsStoreOwnedCreate(
     let snapshot: BrowserPasswordSettingsSnapshot = {
         available,
         loading: available && options.initial === undefined,
-        onePasswordInstalled: options.initial?.onePasswordInstalled ?? false,
+        onePasswordInstall: options.initial?.onePasswordInstall ?? "missing",
         onePasswordAccount: options.initial?.onePasswordAccount ?? null,
         onePasswordAccountDraft: "",
         pending: false,
@@ -81,7 +84,7 @@ export function browserPasswordSettingsStoreOwnedCreate(
         },
         onePasswordConnect() {
             const account = snapshot.onePasswordAccountDraft.trim();
-            if (!ready() || !snapshot.onePasswordInstalled || account === "") return;
+            if (!ready() || snapshot.onePasswordInstall !== "installed" || account === "") return;
             set({ ...snapshot, pending: true, error: undefined });
             output.onePasswordConnectRequested?.(account);
         },

@@ -88,7 +88,7 @@ export class BrowserPasswords {
 
     private settings(): DesktopBrowserPasswordSettings {
         return {
-            onePasswordInstalled: this.onePassword.installed(),
+            onePasswordInstall: this.onePassword.install(),
             onePasswordAccount: this.onePassword.accountGet(),
         };
     }

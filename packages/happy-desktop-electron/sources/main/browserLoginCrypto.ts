@@ -8,7 +8,7 @@ import {
     browserLoginKeychainPasswordRead,
 } from "./browserLoginKeychain";
 import { browserLoginNativeBytesCopy } from "./browserLoginNativeBytes";
-import { browserLoginNssTrustRequire } from "./browserLoginNssTrust";
+import { browserLoginNssVerify } from "./browserLoginNssTrust";
 
 /** Source-browser cryptography is main-only. Buffers returned here belong to the caller, which must wipe them. */
 
@@ -397,13 +397,18 @@ export async function browserLoginFirefoxDecryptorCreate(
             (process.platform === "darwin" ? "libnss3.dylib" : "nss3.dll")
     )
         throw unavailable();
-    await browserLoginNssTrustRequire(options.nssLibraryPath);
     if (nssShutdownFailed || retainedNssLibrary)
         throw new Error(
             "Firefox logins are unavailable in this app session. Reopen Happy to try again.",
         );
     if (firefoxContextActive)
         throw new Error("Another Firefox login is being read. Try again in a moment.");
+    // Verified for this load alone. Nothing is awaited between here and koffi.load.
+    const verified = await browserLoginNssVerify(options.nssLibraryPath);
+    if (firefoxContextActive) {
+        verified.close();
+        throw new Error("Another Firefox login is being read. Try again in a moment.");
+    }
     firefoxContextActive = true;
     let library: LibraryHandle | null = null;
     let initialized = false;
@@ -444,7 +449,14 @@ export async function browserLoginFirefoxDecryptorCreate(
     }
 
     try {
-        library = koffi.load(options.nssLibraryPath, { global: false });
+        try {
+            // NSS loads its sibling libraries beside it, so it loads by path;
+            // the bundle is root's, and still the one just verified.
+            verified.unchanged();
+            library = koffi.load(options.nssLibraryPath, { global: false });
+        } finally {
+            verified.close();
+        }
         const initialize = library.func(
             "int NSS_Initialize(const char *, const char *, const char *, const char *, unsigned int)",
         );
