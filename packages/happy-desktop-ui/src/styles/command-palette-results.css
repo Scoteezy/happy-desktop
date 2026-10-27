@@ -3,12 +3,13 @@
  *
  * Sections stack with an 8px breath and a 28px mono uppercase caption; captions
  * name a section and nothing else, so there are no rules or stripes between
- * them. Every row is the settings page's row (C-029 FormRow) at its compact
- * density: 56px on the 4px grid, a 28px leading lane (avatar or glyph), a 12px
- * gutter, then FormRow's 13px semibold label over its 12px muted second line,
- * 4px apart, and an optional trailing cap or the hosted control. A row with
- * more to say may grow past 56px; none is shorter. The highlighted row carries
- * the selected fill, so keyboard travel is visible while focus stays in the
+ * them. A command row is one 44px line, command-bar style: a 20px leading lane
+ * (avatar, mark, or glyph), a 10px gutter, the 13px title, then its muted
+ * secondary text inline after an em dash, both truncating on that one line,
+ * and an optional trailing cap. A settings row hosts the settings page's own
+ * row (C-029 FormRow) at its compact 56px after the same lane, so its label
+ * starts on the titles' column. The highlighted row carries the rounded
+ * selected fill, so keyboard travel is visible while focus stays in the
  * palette input — which is also why the settings list's hairlines are left out
  * here: a list read by its highlight has no use for rules between its rows.
  */
@@ -73,9 +74,9 @@
     display: flex;
     flex: none;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     width: 100%;
-    min-height: 56px;
+    min-height: 44px;
     margin: 0;
     padding: 0 10px;
     border: none;
@@ -90,14 +91,12 @@
 }
 
 .happy-command-palette-results__row[data-kind="command"] {
-    padding-top: 8px;
-    padding-bottom: 8px;
     cursor: pointer;
 }
 
 /* The hosted settings row spans what is left of the row after the leading
-   lane, and keeps its own vertical rhythm: at the compact density it is the
-   same 56px a command row is. */
+   lane, and keeps its own vertical rhythm: its label over its description is
+   the compact density's 56px, the one row allowed to stand taller. */
 .happy-command-palette-results__control {
     display: flex;
     flex: 1 1 auto;
@@ -155,8 +154,8 @@
     flex: none;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 20px;
+    height: 20px;
     color: var(--text-secondary);
 }
 
@@ -176,38 +175,41 @@
     color: var(--box-warning-text);
 }
 
-/* The two lines are FormRow's label and description (styles/form-row.css):
-   the same sizes, weights, line boxes, and 4px gap, so a command row reads as
-   the settings row hosted beside it. */
+/* One line: the title, then what it belongs to, muted, after an em dash. The
+   secondary text gives way first, so a long path never hides whose it is; the
+   title truncates only once the secondary text is gone. */
 .happy-command-palette-results__body {
     display: flex;
     flex: 1 1 auto;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
+    align-items: baseline;
     min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 13px;
+    line-height: 20px;
 }
 
 .happy-command-palette-results__title {
-    display: block;
+    flex: 0 1 auto;
+    min-width: 0;
     overflow: hidden;
     color: var(--text);
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 20px;
+    font-weight: 500;
     text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .happy-command-palette-results__meta {
-    display: block;
+    flex: 0 100000 auto;
+    min-width: 0;
     overflow: hidden;
     color: var(--text-secondary);
-    font-size: 12px;
     font-weight: 400;
-    line-height: 16px;
     text-overflow: ellipsis;
-    white-space: nowrap;
+}
+
+.happy-command-palette-results__meta::before {
+    content: " — ";
+    white-space: pre;
 }
 
 .happy-command-palette-results__caps {

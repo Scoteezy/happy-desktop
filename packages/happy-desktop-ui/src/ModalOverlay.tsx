@@ -1,5 +1,5 @@
 import { partitionComponentProps } from "./componentProps";
-import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useEffectEvent, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 export type ModalOverlayProps = {
     className?: string;
     "data-testid"?: string;
@@ -25,6 +25,15 @@ export type ModalOverlayProps = {
      * own dark instead of floating as a card on the dim.
      */
     placement?: "center" | "top" | "fill";
+    /**
+     * `dim` (default) lays the scrim over the window and makes it the click
+     * target that dismisses. `clear` leaves the window exactly as it is: no
+     * dim, and pointers pass through to it. A press anywhere outside the hosted
+     * card — the app behind it, or chrome outside the overlay such as the
+     * connection rail — calls `onDismiss`, and the press still reaches what it
+     * landed on. For a light, transient surface like the ⌘K palette.
+     */
+    backdrop?: "dim" | "clear";
 };
 const FOCUSABLE =
     'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -39,6 +48,10 @@ const FOCUSABLE =
  * window to one immersive surface with no gutter at all. Clicking the dim
  * outside the card calls `onDismiss` when wired; clicks inside never dismiss.
  *
+ * A `clear` backdrop paints nothing and lets pointers through, for a light
+ * transient card such as the ⌘K palette: the window stays exactly as it was,
+ * and a press anywhere outside the card dismisses it.
+ *
  * The overlay owns modal focus: on mount it moves focus to the hosted card's
  * first focusable control (unless the card already focused itself, as the
  * command palette does), so Escape works immediately without a preceding
@@ -52,6 +65,7 @@ export function ModalOverlay(props: ModalOverlayProps) {
         "onDismiss",
         "onEscape",
         "placement",
+        "backdrop",
     ]);
     const overlayEl = useRef<HTMLDivElement>(null);
     // Imperative focus handoff at the overlay's lifetime boundary: there is no
@@ -68,15 +82,41 @@ export function ModalOverlay(props: ModalOverlayProps) {
             const target = overlay.querySelector<HTMLElement>(FOCUSABLE) ?? overlay;
             target.focus();
         }
+        const passThrough = local.backdrop === "clear";
         return () => {
-            if (invoker && invoker.isConnected && invoker !== document.body) invoker.focus();
+            // A press outside a clear overlay may already have put focus where
+            // it landed; that is where the reader went, so leave it there.
+            const focused = document.activeElement;
+            const unclaimed =
+                !passThrough ||
+                focused === null ||
+                focused === document.body ||
+                overlay.contains(focused);
+            if (unclaimed && invoker && invoker.isConnected && invoker !== document.body)
+                invoker.focus();
         };
     }, []);
+    const clear = local.backdrop === "clear";
+    const dismissOutside = useEffectEvent((event: PointerEvent) => {
+        const overlay = overlayEl.current;
+        // Pointers pass through the clear overlay's own boxes, so a press that
+        // lands anywhere inside it landed on the card or something it hosts.
+        if (!overlay || (event.target instanceof Node && overlay.contains(event.target))) return;
+        local.onDismiss?.();
+    });
+    // eslint-disable-next-line happy-react/no-layout-effect -- a clear overlay lets presses through to the window, so dismissing on a press outside the card can only be read from the document itself
+    useLayoutEffect(() => {
+        if (!clear) return;
+        const onPointerDown = (event: PointerEvent) => dismissOutside(event);
+        document.addEventListener("pointerdown", onPointerDown, true);
+        return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    }, [clear]);
     return (
         <div
             {...rest}
             className={["happy-modal-overlay", local.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui="modal-overlay"
+            data-backdrop={clear ? "clear" : undefined}
             data-placement={local.placement === "center" ? undefined : local.placement}
             onClick={(event) => {
                 if (

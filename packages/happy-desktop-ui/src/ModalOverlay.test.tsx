@@ -437,3 +437,60 @@ it("does not steal focus from a card that already focused itself", async () => {
     await userEvent.click(view.$('[data-testid="opener"]').element);
     expect(document.activeElement).toBe(view.$('[data-testid="field"]').element);
 });
+
+it("leaves the window as it is behind a clear backdrop and dismisses on a press outside the card", async () => {
+    const dismissed: number[] = [];
+    const behindClicks: number[] = [];
+    const view = createRenderer();
+    view.render(
+        () => (
+            <div style={{ display: "flex", gap: "8px" }}>
+                {/* Chrome outside the overlay, as the connection rail is. */}
+                <button data-testid="rail" type="button">
+                    Rail
+                </button>
+                <WindowFrame>
+                    <button
+                        data-testid="behind"
+                        onClick={() => behindClicks.push(1)}
+                        style={{ position: "absolute", left: "8px", top: "8px" }}
+                        type="button"
+                    >
+                        Behind
+                    </button>
+                    <ModalOverlay
+                        backdrop="clear"
+                        data-testid="clear"
+                        onDismiss={() => dismissed.push(1)}
+                    >
+                        <div data-testid="clear-card" style={{ width: "200px", height: "120px" }}>
+                            <button data-testid="inside" type="button">
+                                Inside
+                            </button>
+                        </div>
+                    </ModalOverlay>
+                </WindowFrame>
+            </div>
+        ),
+        { width: 800, height: 540, padding: 20 },
+    );
+    await view.ready();
+    const overlay = view.$('[data-testid="clear"]');
+    expect(overlay.element.getAttribute("data-backdrop")).toBe("clear");
+    expect(overlay.computedStyles(["background-color", "pointer-events"])).toEqual({
+        "background-color": "rgba(0, 0, 0, 0)",
+        "pointer-events": "none",
+    });
+
+    await userEvent.click(view.$('[data-testid="inside"]').element);
+    expect(dismissed).toEqual([]);
+
+    // A press on the app behind the card reaches it, and dismisses.
+    await userEvent.click(view.$('[data-testid="behind"]').element);
+    expect(behindClicks).toEqual([1]);
+    expect(dismissed).toEqual([1]);
+
+    // So does one on chrome outside the overlay altogether.
+    await userEvent.click(view.$('[data-testid="rail"]').element);
+    expect(dismissed).toEqual([1, 1]);
+}, 120000);

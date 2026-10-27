@@ -143,29 +143,6 @@ export function ConnectionShellPage() {
             summary="A 56px connection rail outside each independent workspace. Home stays first above a separator; remote order is controlled without remounting workspaces."
         >
             <Specimen
-                number="11"
-                label="Palette open · rail dimmed"
-                detail="The active connection's command palette lays its backdrop over that connection; the rail carries the same dim, and a click on it dismisses the palette."
-                stage="surface"
-            >
-                <div style={{ display: "flex", width: 600, height: 300 }}>
-                    <ConnectionShell
-                        items={items}
-                        selectedId="local"
-                        onSelect={() => undefined}
-                        scrim={{ onDismiss: () => undefined }}
-                    >
-                        <div
-                            style={{
-                                display: "flex",
-                                flex: "1 1 auto",
-                                background: "var(--overlay-backdrop)",
-                            }}
-                        />
-                    </ConnectionShell>
-                </div>
-            </Specimen>
-            <Specimen
                 number="09"
                 label="Working connections · frozen shimmer"
                 detail="The sheen crosses home, image, and generated tiles. Unread and selection dots stay clear; idle and offline tiles do not shimmer. Reduced motion uses a static outline."

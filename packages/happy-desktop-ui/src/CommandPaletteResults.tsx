@@ -131,7 +131,7 @@ function rowAnnouncement(row: CommandPaletteResultsRow, index: number, total: nu
     const words = row.kind === "control" ? [row.label, row.description] : [row.title, row.meta];
     return `${words.filter(Boolean).join(" — ")}, ${index + 1} of ${total}`;
 }
-/** The inside of a command row: leading lane, the two lines, then its cap. */
+/** The inside of a command row: leading lane, its one line, then its cap. */
 function commandRowContent(row: CommandPaletteCommandRow) {
     return (
         <>
@@ -210,15 +210,13 @@ function commandRowContent(row: CommandPaletteCommandRow) {
  * their native roles, states, and tab stops, and the announcement carries what
  * `aria-selected` would have carried.
  *
- * Two kinds of row share one list, and one look: the settings page's row. A
- * command row is a button wearing FormRow's type — the 13px label over its
- * 12px muted second line — after a leading glyph or avatar and before an
- * optional trailing cap. A control row hosts the very FormRow +
- * Switch/SegmentedControl the settings page renders, after the same leading
- * lane, so a preference can be changed where it was found instead of being
- * navigated to. Both stand 56px tall: the settings row's two lines with the
- * compact density's 8px above and below, so a list mixing them keeps one
- * rhythm. Hand the hosted FormRow `density="compact"` to keep it there.
+ * Two kinds of row share one list. A command row is a button on one 44px
+ * line, command-bar style — a leading glyph or avatar, the title, its muted
+ * secondary text after an em dash, and an optional trailing cap. A control
+ * row hosts the very FormRow + Switch/SegmentedControl the settings page
+ * renders, after the same leading lane, so a preference can be changed where
+ * it was found instead of being navigated to; it keeps the settings row's two
+ * lines at 56px. Hand the hosted FormRow `density="compact"` to keep it there.
  */
 export function CommandPaletteResults(props: CommandPaletteResultsProps) {
     const rows = commandPaletteResultsRows(props.sections);

@@ -69,6 +69,9 @@ it("matches Command chords on macOS and keeps Control out", () => {
     expect(plain.caps).toBe("⌘B");
     expect(commandShortcut("n", { shift: true }, "Meta").caps).toBe("⇧⌘N");
     expect(commandShortcut("b", { alt: true }, "Meta").caps).toBe("⌥⌘B");
+    // The palette's numbered rows read the way the sidebar's do.
+    expect(commandShortcut("1", {}, "Meta")).toMatchObject({ caps: "⌘1", aria: "Meta+1" });
+    expect(commandShortcut("9", {}, "Meta").caps).toBe("⌘9");
     expect(plain.aria).toBe("Meta+B");
 });
 

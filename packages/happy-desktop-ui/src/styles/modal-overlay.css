@@ -80,3 +80,17 @@
 .happy-modal-overlay > .happy-modal > .happy-modal__dialog {
     max-height: min(calc(100% - 80px), 760px);
 }
+
+/* The clear backdrop leaves the window exactly as it is: nothing painted, and
+   pointers pass through every box the overlay draws to whatever is under them.
+   Only the hosted card takes presses; a press anywhere else dismisses through
+   the overlay's document listener and still reaches what it landed on. */
+.happy-modal-overlay[data-backdrop="clear"] {
+    background: none;
+    pointer-events: none;
+}
+
+.happy-modal-overlay[data-backdrop="clear"] > :not(.happy-modal-overlay__top-layout),
+.happy-modal-overlay[data-backdrop="clear"] > .happy-modal-overlay__top-layout > * {
+    pointer-events: auto;
+}

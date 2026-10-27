@@ -70,16 +70,6 @@
     .happy-connections__rail[data-window-controls][data-window-full-screen="true"]::after {
     top: 40px;
 }
-/* The dim of the active connection's command palette, carried over the rail:
-   the palette's own backdrop is fixed inside its connection's surface, so
-   without this the rail beside it would stay lit. Same role, same stacking
-   intent, above every tile, badge, hairline, and popover the rail holds. */
-.happy-connections__scrim {
-    position: absolute;
-    inset: 0;
-    z-index: var(--happy-z-overlay);
-    background: var(--overlay-backdrop);
-}
 .happy-connections__rail > .happy-scroll-area {
     /* The tile list takes the height between the title bar and the footer. */
     flex: 1 1 auto;

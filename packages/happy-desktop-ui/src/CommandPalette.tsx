@@ -47,7 +47,7 @@ export type CommandPaletteProps = {
     placeholder?: string;
     closeLabel?: string;
     /**
-     * Focuses and selects the input on mount. On by default so the palette is
+     * Focuses the input on mount, caret after the query. On by default so the palette is
      * ready to type; disable it only for deterministic screenshot fixtures.
      */
     autoFocus?: boolean;
@@ -60,7 +60,7 @@ export type CommandPaletteProps = {
  * search input over a scrollable result/command body, hosted by ModalOverlay.
  *
  * The card owns four behaviors application code should not re-implement: it
- * focuses (and selects) its input on mount, returns focus to whatever control
+ * focuses its input on mount with the caret after the query, returns focus to whatever control
  * was focused when it opened once it unmounts, closes on Escape and on ⌘K
  * again, and reads ArrowUp/ArrowDown/Enter and ⌘1…⌘9 for the owner's result
  * list without ever surrendering focus. Typing is IME-safe —
@@ -93,9 +93,12 @@ export function CommandPalette(props: CommandPaletteProps) {
         // Capture the invoking control before autofocus moves focus into the
         // input, so closing the palette can hand focus back to it.
         invokerRef.current = document.activeElement as HTMLElement | null;
-        if (local.autoFocus !== false && inputRef.current) {
-            inputRef.current.focus();
-            inputRef.current.select();
+        // The caret goes after the query rather than selecting it: the field
+        // shows exactly what was typed, never a highlighted run of text.
+        const input = inputRef.current;
+        if (local.autoFocus !== false && input) {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
         }
     }, [local.autoFocus]);
     // eslint-disable-next-line happy-react/no-layout-effect -- closing the palette restores focus to the exact still-connected DOM control that invoked it, which is an imperative unmount handoff

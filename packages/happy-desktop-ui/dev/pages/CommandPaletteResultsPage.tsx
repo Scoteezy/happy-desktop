@@ -13,9 +13,9 @@ import happyMark from "../../src/assets/sidebar-icons/happy@40.png";
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-273";
 
-/* The width the list has inside the palette card: 640 − 2 borders − the card's
+/* The width the list has inside the palette card: 384 − 2 borders − the card's
    own 8px body inset on each side. Every specimen is measured at it. */
-const BODY_WIDTH = 622;
+const BODY_WIDTH = 366;
 
 const SESSION_SHORTCUT = commandShortcut("t");
 const SIDEBAR_SHORTCUT = commandShortcut("b");
@@ -288,7 +288,7 @@ export function CommandPaletteResultsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The ⌘K palette's body: captioned sections of command rows and live settings rows, all the settings page's FormRow at its compact 56px, with one highlighted row that Enter commits. Props only — the owner holds the flat index and moves it."
+            summary="The ⌘K palette's body: captioned sections of one-line 44px command rows — title, then muted secondary text — and live settings rows at the settings page's compact 56px, with one rounded highlighted row that Enter commits. Props only — the owner holds the flat index and moves it."
             title="Command palette results"
         >
             <div className="specimen-grid">
@@ -296,7 +296,7 @@ export function CommandPaletteResultsPage() {
                     detail="empty query · the waiting update, then the sidebar's tasks, bots, and projects in their sidebar marks, last opened first, then other live work · no subtasks or archived work · ⌘1…⌘9 on the rows · highlight on the first row"
                     label="Suggestions"
                     number="PR-01"
-                    rule="622px body width · 56px rows · 20px sidebar marks · 28px captions"
+                    rule="366px body width · 44px one-line rows · 20px sidebar marks · 28px captions"
                 >
                     <CommandPaletteResults activeIndex={0} sections={suggestions} />
                 </BodySpecimen>
@@ -318,7 +318,7 @@ export function CommandPaletteResultsPage() {
                     detail="a typed query such as “search” · live work first, archived tasks and closed sessions last however well they match · ⌘1…⌘9 count on across sections"
                     label="Work and archived"
                     number="PR-07"
-                    rule="56px rows · ⌘-number caps on rows that open something"
+                    rule="44px rows · ⌘-number caps on rows that open something"
                 >
                     <CommandPaletteResults activeIndex={0} sections={searched} />
                 </BodySpecimen>
@@ -329,7 +329,7 @@ export function CommandPaletteResultsPage() {
                     detail="a typed query such as “fold sidebar” finds the window's acts, each with the chord that does the same"
                     label="Actions"
                     number="PR-06"
-                    rule="56px rows · trailing cap"
+                    rule="44px rows · trailing cap"
                 >
                     <CommandPaletteResults activeIndex={0} sections={actions} />
                 </BodySpecimen>
@@ -340,7 +340,7 @@ export function CommandPaletteResultsPage() {
                     detail="the same FormRow + SegmentedControl the settings page renders · highlighted, the chosen segment still reads as chosen"
                     label="Settings in place"
                     number="PR-03"
-                    rule="compact FormRow · 56px like every command row · no hairlines"
+                    rule="compact FormRow · 56px, the one taller row · no hairlines"
                 >
                     <CommandPaletteResults activeIndex={0} sections={settings} />
                 </BodySpecimen>

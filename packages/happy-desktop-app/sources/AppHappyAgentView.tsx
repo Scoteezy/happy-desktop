@@ -5468,7 +5468,13 @@ function HappyAgentCommandPalette(
     };
 
     return (
-        <ModalOverlay onDismiss={() => props.store.paletteClose()} placement="center">
+        // No dim: the window stays as it is behind the card, and a press
+        // anywhere outside it — the connection rail included — closes it.
+        <ModalOverlay
+            backdrop="clear"
+            onDismiss={() => props.store.paletteClose()}
+            placement="center"
+        >
             <CommandPalette
                 onClose={() => props.store.paletteClose()}
                 onQueryChange={(value) => {
@@ -5486,7 +5492,7 @@ function HappyAgentCommandPalette(
                     );
                     highlightIntent();
                 }}
-                placeholder="Search tasks, chats, and workspaces…"
+                placeholder="Search tasks and chats…"
                 query={palette.query}
             >
                 <CommandPaletteResults

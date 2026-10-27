@@ -76,7 +76,7 @@ export function ModalOverlayPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The single backdrop every modal-class surface sits on — one dim and stacking level with a 24px minimum safe area. Dialogs center by default; transient type-ahead surfaces may use the adaptive top placement."
+            summary="The single backdrop every modal-class surface sits on — one dim and stacking level with a 24px minimum safe area, or a clear backdrop that dims nothing for a light command bar. Dialogs center by default; transient type-ahead surfaces may use the adaptive top placement."
             title="Modal overlay"
         >
             <div className="specimen-grid">
@@ -178,6 +178,33 @@ export function ModalOverlayPage() {
                             </ModalOverlay>
                         </TopWindowFrame>
                     </div>
+                </Specimen>
+            </div>
+
+            <div className="specimen-grid">
+                <Specimen
+                    detail="clear backdrop · nothing dimmed, pointers pass through · a press outside the card dismisses"
+                    label="Clear — command bar"
+                    number="O-05"
+                    stage="app"
+                >
+                    <WindowFrame height={520} width={720}>
+                        <div
+                            style={{
+                                display: "flex",
+                                flex: "1 1 auto",
+                                flexDirection: "column",
+                                gap: "8px",
+                                padding: "24px",
+                                color: "var(--text)",
+                            }}
+                        >
+                            The window behind a clear overlay stays exactly as it is.
+                        </div>
+                        <ModalOverlay backdrop="clear" onDismiss={() => {}}>
+                            <TopPalette />
+                        </ModalOverlay>
+                    </WindowFrame>
                 </Specimen>
             </div>
         </ComponentPage>

@@ -184,7 +184,7 @@ function PaletteSpecimen(props: {
     return (
         <Specimen detail={props.detail} label={props.label} number={props.number} stage="app">
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                <DimensionRule label="640 × 461 fixed frame · 60px header" />
+                <DimensionRule label="384 × 461 fixed frame · 60px header" />
                 <PaletteFrame query={props.query}>{props.children}</PaletteFrame>
             </div>
         </Specimen>
@@ -195,7 +195,7 @@ export function CommandPalettePage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Top-anchored Slack-style ⌘K palette — a fixed 640 × 461 card with its own focused search input over a stable-gutter scrollport, closed by Escape or its close button. ⌘1…⌘9 open the numbered rows. Renders the card only; ModalOverlay owns its dim, stacking, and placement."
+            summary="The ⌘K command bar — a compact, fixed 384 × 461 card with a hairline edge, a soft dissolving shadow, and a faintly translucent blurred surface, over a large search input and a stable-gutter scrollport. Closed by Escape, its close button, or a press outside it; ⌘1…⌘9 open the numbered rows. Renders the card only; a clear ModalOverlay owns its stacking and placement and dims nothing."
             title="Command palette"
         >
             <div className="specimen-grid">
