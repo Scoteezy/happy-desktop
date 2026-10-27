@@ -3924,7 +3924,9 @@ export function Sidebar(props: SidebarProps) {
           )
         : [];
     const tabStop =
-        tabStopFocus?.activeItemId === local.activeItemId && walkedIds.includes(tabStopFocus.id)
+        tabStopFocus !== undefined &&
+        tabStopFocus.activeItemId === local.activeItemId &&
+        walkedIds.includes(tabStopFocus.id)
             ? tabStopFocus.id
             : walkedIds.includes(local.activeItemId)
               ? local.activeItemId
