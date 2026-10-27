@@ -13,7 +13,6 @@ import {
     happyAgentRouterGroupForget,
     happyAgentRouterSubtasksForget,
     happyAgentRouterCreate,
-    type AppBrowserPasswords,
     type AppHappyAgentDaemonStore,
     type AppHappyAgentUpdateStore,
     type AppHappyAgentUpdate,
@@ -117,7 +116,6 @@ import {
 } from "./happyAgentDirectoryStore";
 import { startupValuesStoreCreate, type StartupValuesStore } from "./startupValuesStore";
 import { browserDevBridgeCreate } from "./browserDevBridge";
-import { browserPasswordsSourceCreate } from "./browserPasswords";
 import { localWebBuild } from "./localWebBuild";
 import {
     localWebUpdateStoreCreate,
@@ -376,7 +374,8 @@ function HappyAgentBoundary(props: {
     profiler?: AppHappyAgentProfilerStore;
     connectionOnboarding?: boolean;
     bridge: HappyDesktopBridge;
-    browserPasswords: AppBrowserPasswords;
+    /** Whether this desktop fills logins saved in the person's browsers. */
+    browserPasswordsAvailable: boolean;
     browserContent?: BrowserContentRenderer;
     htmlPreview?: HtmlPreviewRenderer;
     artifactPage?: HtmlPreviewRenderer;
@@ -406,7 +405,7 @@ function HappyAgentBoundary(props: {
         <RouterProvider
             context={{
                 appearance: props.appearance,
-                browserPasswords: props.browserPasswords,
+                browserPasswordsAvailable: props.browserPasswordsAvailable,
                 browserContent: props.browserContent,
                 // A development window says which checkout it came from; the
                 // packaged product supplies nothing and shows nothing.
@@ -589,7 +588,8 @@ function desktopLocalPhase(snapshot: DesktopRuntimeSnapshot): boolean {
 }
 
 interface DesktopRendererProps {
-    browserPasswords: AppBrowserPasswords;
+    /** Whether this desktop fills logins saved in the person's browsers. */
+    browserPasswordsAvailable: boolean;
     connectionUis: ReadonlyMap<string, DesktopConnectionUi>;
     appearance: AppearanceStore;
     commandPalette: CommandPaletteStore;
@@ -798,7 +798,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                             >
                                 <HappyAgentBoundary
                                     appearance={props.appearance}
-                                    browserPasswords={props.browserPasswords}
+                                    browserPasswordsAvailable={props.browserPasswordsAvailable}
                                     bridge={props.bridge}
                                     browserContent={props.browserContent}
                                     commandPalette={ui.commandPalette}
@@ -1021,7 +1021,7 @@ function DesktopRuntimeContent(
     return (
         <HappyAgentBoundary
             appearance={props.appearance}
-            browserPasswords={props.browserPasswords}
+            browserPasswordsAvailable={props.browserPasswordsAvailable}
             bridge={props.bridge}
             commandPalette={props.commandPalette}
             {...(props.daemon ? { agentUpdate: props.agentUpdate, daemon: props.daemon } : {})}
@@ -1193,9 +1193,8 @@ if (mediaPreviewBridge) {
     if (configUnsubscribe) appDisposers.push(configUnsubscribe);
     const start = (initial: DesktopConfig): void => {
         const config = latestConfig ?? initial;
-        // This machine's vault outlives every independently retained connection UI.
-        const browserPasswords = browserPasswordsSourceCreate(desktopBridge);
-        appDisposers.push(browserPasswords.dispose);
+        // Saved logins belong to this machine, shared by every connection UI.
+        const browserPasswordsAvailable = desktopBridge.browserPasswordPickerOpen !== undefined;
         const runtimeStore = desktopRuntimeStoreCreate(desktopBridge);
         // Whether this machine's owner has been welcomed. Acknowledging this
         // deck enters machine setup; it does not wait for machine work to finish.
@@ -1644,7 +1643,7 @@ if (mediaPreviewBridge) {
                 <DesktopCloudSignInNotice store={notices} />
                 <CodeHighlightWorkers>
                     <DesktopRenderer
-                        browserPasswords={browserPasswords}
+                        browserPasswordsAvailable={browserPasswordsAvailable}
                         connectionUis={connectionUis}
                         appearance={appearance}
                         commandPalette={commandPalette}

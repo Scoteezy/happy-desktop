@@ -19,33 +19,22 @@ if (process.isMainFrame && location.protocol === "https:") {
     let tokenExpiresAt = 0;
     let origin: string | null = null;
     let field: HTMLInputElement | null = null;
-    let candidateField: HTMLInputElement | null = null;
-    let candidateForm: HTMLFormElement | null = null;
-    let candidateUsername: HTMLInputElement | null = null;
-    let candidatePassword = "";
-    let candidateExpiresAt = 0;
-    let candidateTimer: ReturnType<typeof setTimeout> | undefined;
     let probe: { requestId: string; field: HTMLInputElement; expiresAt: number } | null = null;
     let leaving = false;
-    let fillingAllowed = false;
-    let lastSubmitGesture = 0;
 
     function send(message: BrowserPasswordGuestMessage): void {
         ipcRenderer.send(browserPasswordGuestChannel, message);
     }
 
-    function saveBound(): boolean {
+    function bound(): boolean {
         return (
             !leaving &&
             token !== null &&
             Date.now() < tokenExpiresAt &&
             origin === location.origin &&
-            location.protocol === "https:"
+            location.protocol === "https:" &&
+            document.visibilityState === "visible"
         );
-    }
-
-    function bound(): boolean {
-        return saveBound() && fillingAllowed && document.visibilityState === "visible";
     }
 
     function usable(input: HTMLInputElement): boolean {
@@ -153,69 +142,12 @@ if (process.isMainFrame && location.protocol === "https:") {
         });
     }
 
-    function candidateClear(): void {
-        clearTimeout(candidateTimer);
-        candidateField = null;
-        candidateForm = null;
-        candidateUsername = null;
-        candidatePassword = "";
-        candidateExpiresAt = 0;
-    }
-
-    function saveCapture(reason: "submit" | "navigation"): void {
-        const password = candidateField;
-        if (
-            !saveBound() ||
-            !token ||
-            !password ||
-            Date.now() >= candidateExpiresAt ||
-            password.type !== "password" ||
-            password.form !== candidateForm ||
-            !password.isConnected ||
-            password.ownerDocument !== document ||
-            password.value !== candidatePassword
-        ) {
-            candidateClear();
-            return;
-        }
-        // Both fields were visible and editable at trusted nomination. Sites commonly
-        // disable or hide the form while submitting, which must not erase its account.
-        // Read the original username field now, after any later user correction.
-        const usernameField = candidateUsername;
-        if (
-            usernameField &&
-            (!usernameField.isConnected ||
-                usernameField.ownerDocument !== document ||
-                usernameField.form !== candidateForm ||
-                !["text", "email", "tel"].includes(usernameField.type))
-        ) {
-            candidateClear();
-            return;
-        }
-        // A script-changed password is never adopted as a new trusted nomination.
-        const username = usernameField?.value ?? "";
-        if (username.length <= 4096)
-            send({
-                type: "save",
-                reason,
-                token,
-                nonce,
-                username,
-                password: candidatePassword,
-                expiresAt: candidateExpiresAt,
-            });
-        candidateClear();
-    }
-
     function reset(): void {
-        candidateClear();
         token = null;
         tokenExpiresAt = 0;
         origin = null;
         field = null;
         probe = null;
-        fillingAllowed = false;
-        lastSubmitGesture = 0;
     }
 
     // Focus alone is not a user gesture: scripts can call focus(). Native pointer/key input
@@ -224,7 +156,6 @@ if (process.isMainFrame && location.protocol === "https:") {
         "pointerdown",
         (event) => {
             if (!event.isTrusted || !bound()) return;
-            lastSubmitGesture = Date.now();
             const target = event.target;
             if (target instanceof HTMLInputElement && fieldKind(target)) {
                 setTimeout(() => {
@@ -254,7 +185,6 @@ if (process.isMainFrame && location.protocol === "https:") {
         "keydown",
         (event) => {
             if (!event.isTrusted || !bound()) return;
-            lastSubmitGesture = Date.now();
             if (event.key === "Tab" || event.target instanceof HTMLInputElement) {
                 setTimeout(focusPublish, 0);
             }
@@ -276,43 +206,13 @@ if (process.isMainFrame && location.protocol === "https:") {
         "input",
         (event) => {
             const input = event.target;
-            if (!event.isTrusted && input === candidateField) candidateClear();
             if (
-                !event.isTrusted ||
-                !(event instanceof InputEvent) ||
-                !(input instanceof HTMLInputElement) ||
-                !passwordActive(input) ||
-                !token
+                event.isTrusted &&
+                event instanceof InputEvent &&
+                input instanceof HTMLInputElement &&
+                passwordActive(input)
             )
-                return;
-            focusPublish();
-            candidateClear();
-            if (input.value.length === 0 || input.value.length > 65_536) return;
-            candidateField = input;
-            candidateForm = input.form;
-            candidateUsername = usernameFor(input);
-            candidatePassword = input.value;
-            candidateExpiresAt = Math.min(tokenExpiresAt, Date.now() + 120_000);
-            candidateTimer = setTimeout(candidateClear, 120_000);
-        },
-        true,
-    );
-    document.addEventListener(
-        "submit",
-        (event) => {
-            if (
-                !event.isTrusted ||
-                !bound() ||
-                !token ||
-                !candidateField ||
-                event.target !== candidateField.form ||
-                Date.now() - lastSubmitGesture > 1500
-            )
-                return;
-            // A task runs after every synchronous submit listener. A full navigation
-            // can retire it first; beforeunload/pagehide then provide the capture.
-            // Either path rejects a password the site replaced or changed.
-            setTimeout(() => saveCapture("submit"), 0);
+                focusPublish();
         },
         true,
     );
@@ -336,19 +236,10 @@ if (process.isMainFrame && location.protocol === "https:") {
                 token = message.token;
                 tokenExpiresAt = message.expiresAt;
                 origin = message.origin;
-                fillingAllowed = true;
                 return;
             }
             if (message.type === "invalidate") {
                 if (message.token === token) reset();
-                return;
-            }
-            if (message.type === "fillInvalidate") {
-                if (message.token === token) {
-                    fillingAllowed = false;
-                    field = null;
-                    probe = null;
-                }
                 return;
             }
             if (!bound() || message.token !== token) return;
@@ -410,11 +301,7 @@ if (process.isMainFrame && location.protocol === "https:") {
         },
     );
 
-    window.addEventListener("beforeunload", (event) => {
-        if (event.isTrusted) queueMicrotask(() => saveCapture("navigation"));
-    });
-    window.addEventListener("pagehide", (event) => {
-        if (event.isTrusted) saveCapture("navigation");
+    window.addEventListener("pagehide", () => {
         leaving = true;
         reset();
     });

@@ -2,38 +2,23 @@ import { chmod, copyFile, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
-import {
-    browserLoginOriginNormalize,
-    browserLoginTextFileRead,
-    type BrowserLoginProfile,
-} from "./browserLoginProfiles";
+import { browserLoginOriginNormalize, type BrowserLoginProfile } from "./browserLoginProfiles";
 
 /** One saved login as its browser lists it. Never a password. */
 export interface BrowserLoginMetadata {
     /** The logins file this record lives in. */
     readonly path: string;
     readonly origin: string;
-    /** Absent for a Firefox login whose account name is still encrypted. */
-    readonly username?: string;
+    readonly username: string;
     readonly updatedAt: number;
-    /** Firefox's own record ID and still-encrypted account name. */
-    readonly firefox?: { readonly guid: string; readonly encryptedUsername: string };
 }
 
-/** One chosen record's ciphertext; the caller wipes a Chromium buffer after use. */
-export type BrowserLoginSecretRecord =
-    | {
-          readonly kind: "chromium";
-          readonly origin: string;
-          readonly username: string;
-          readonly encryptedPassword: Buffer;
-      }
-    | {
-          readonly kind: "firefox";
-          readonly origin: string;
-          readonly encryptedUsername: string;
-          readonly encryptedPassword: string;
-      };
+/** One chosen record's ciphertext; the caller wipes the buffer after use. */
+export interface BrowserLoginSecretRecord {
+    readonly origin: string;
+    readonly username: string;
+    readonly encryptedPassword: Buffer;
+}
 
 type Row = Record<string, SQLOutputValue>;
 const maximumPasswordRows = 20_000;
@@ -45,29 +30,6 @@ const maximumSelectedBytes = 32 * 1024 * 1024;
 export async function browserLoginMetadataRead(
     profile: BrowserLoginProfile,
 ): Promise<readonly BrowserLoginMetadata[]> {
-    if (profile.engine === "firefox") {
-        const path = profile.loginsPath!;
-        const file = await firefoxLoginsRead(path);
-        return file.flatMap((entry) => {
-            const metadata = firefoxMetadata(entry);
-            return metadata &&
-                typeof entry.guid === "string" &&
-                entry.guid.length <= 256 &&
-                typeof entry.encryptedUsername === "string" &&
-                entry.encryptedUsername.length <= maximumCiphertextBytes
-                ? [
-                      {
-                          path,
-                          ...metadata,
-                          firefox: {
-                              guid: entry.guid,
-                              encryptedUsername: entry.encryptedUsername,
-                          },
-                      },
-                  ]
-                : [];
-        });
-    }
     const output: BrowserLoginMetadata[] = [];
     for (const path of profile.loginsPaths) {
         output.push(
@@ -100,34 +62,13 @@ export async function browserLoginFingerprint(profile: BrowserLoginProfile): Pro
 
 /**
  * Reads the ciphertext of exactly the one login the person chose, and nothing
- * else: the newest Chromium row with its origin and account name in its file,
- * or the Firefox record with its ID.
+ * else: the newest row with its origin and account name in its file.
  */
 export async function browserLoginRecordRead(
     login: BrowserLoginMetadata,
 ): Promise<BrowserLoginSecretRecord | undefined> {
     if (browserLoginOriginNormalize(login.origin) !== login.origin)
         throw new Error("This saved login is invalid.");
-    if (login.firefox) {
-        const file = await firefoxLoginsRead(login.path);
-        const entry = file.find((candidate) => candidate.guid === login.firefox!.guid);
-        if (!entry || firefoxMetadata(entry)?.origin !== login.origin) return undefined;
-        if (
-            entry.encType !== 1 ||
-            typeof entry.encryptedUsername !== "string" ||
-            typeof entry.encryptedPassword !== "string" ||
-            entry.encryptedUsername.length > maximumCiphertextBytes ||
-            entry.encryptedPassword.length > maximumCiphertextBytes
-        )
-            throw formatError();
-        return {
-            kind: "firefox",
-            origin: login.origin,
-            encryptedUsername: entry.encryptedUsername,
-            encryptedPassword: entry.encryptedPassword,
-        };
-    }
-    if (login.username === undefined) return undefined;
     return databaseRead(login.path, (database) => {
         columnsRead(database, "logins", ["password_value"]);
         const row = chromiumPasswordRows(database)
@@ -145,9 +86,8 @@ export async function browserLoginRecordRead(
         const secret = query.get(row.rowid);
         if (!secret) return undefined;
         return {
-            kind: "chromium",
             origin: login.origin,
-            username: login.username!,
+            username: login.username,
             encryptedPassword: blobRequire(secret.password_value, maximumCiphertextBytes),
         };
     });
@@ -288,7 +228,7 @@ function limitError(): Error {
 /** Table and column names below are constants, never untrusted identifiers. */
 function columnsRead(
     database: DatabaseSync,
-    table: "cookies" | "moz_cookies" | "logins" | "meta",
+    table: "logins",
     required: readonly string[],
 ): ReadonlySet<string> {
     const schema = database.prepare("SELECT type FROM sqlite_master WHERE name = ?").get(table);
@@ -323,7 +263,7 @@ function rowsRead(database: DatabaseSync, query: string, maximum: number): Row[]
 
 interface LoginRowMetadata {
     readonly origin: string;
-    readonly username?: string;
+    readonly username: string;
     readonly updatedAt: number;
 }
 
@@ -376,41 +316,6 @@ function chromiumPasswordRows(
     return output;
 }
 
-async function firefoxLoginsRead(path: string): Promise<readonly Record<string, unknown>[]> {
-    try {
-        const value: unknown = JSON.parse(await browserLoginTextFileRead(path, 16 * 1024 * 1024));
-        if (
-            !objectIs(value) ||
-            !Array.isArray(value.logins) ||
-            ![1, 2, 3].includes(Number(value.version))
-        )
-            throw formatError();
-        if (value.logins.length > maximumPasswordRows) throw limitError();
-        if (!value.logins.every(objectIs)) throw formatError();
-        return value.logins;
-    } catch (error) {
-        if (error instanceof BrowserLoginDatabaseError) throw error;
-        throw new BrowserLoginDatabaseError("Firefox saved logins could not be read.");
-    }
-}
-
-function firefoxMetadata(entry: Record<string, unknown>): LoginRowMetadata | undefined {
-    if (
-        typeof entry.hostname !== "string" ||
-        (entry.httpRealm !== null && entry.httpRealm !== undefined && entry.httpRealm !== "")
-    )
-        return undefined;
-    const origin = browserLoginOriginNormalize(entry.hostname);
-    if (!origin) return undefined;
-    const updated = entry.timePasswordChanged ?? entry.timeCreated ?? 0;
-    if (typeof updated !== "number" || !Number.isSafeInteger(updated) || updated < 0)
-        throw formatError();
-    return { origin, updatedAt: updated };
-}
-
-function objectIs(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 function integerRequire(value: SQLOutputValue | undefined): bigint {
     if (typeof value === "bigint") return value;
     if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);

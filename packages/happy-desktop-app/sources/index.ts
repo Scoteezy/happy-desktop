@@ -31,7 +31,6 @@ export {
     type AppHappyAgentUpdateStore,
 } from "./agentUpdate";
 export {
-    type AppBrowserPasswords,
     type AppHappyAgentDaemonInstall,
     type AppHappyAgentDaemonRestartReason,
     type AppHappyAgentDaemonRestartStep,

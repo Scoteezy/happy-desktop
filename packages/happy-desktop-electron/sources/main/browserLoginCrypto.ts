@@ -1,14 +1,11 @@
 import { spawn } from "node:child_process";
 import { createDecipheriv, pbkdf2Sync } from "node:crypto";
 import { open } from "node:fs/promises";
-import { basename, isAbsolute, join } from "node:path";
-import koffi, { type LibraryHandle } from "koffi";
+import { isAbsolute, join } from "node:path";
 import {
     BrowserLoginKeychainError,
     browserLoginKeychainPasswordRead,
 } from "./browserLoginKeychain";
-import { browserLoginNativeBytesCopy } from "./browserLoginNativeBytes";
-import { browserLoginNssVerify } from "./browserLoginNssTrust";
 
 /** Source-browser cryptography is main-only. Buffers returned here belong to the caller, which must wipe them. */
 
@@ -20,37 +17,6 @@ export interface BrowserLoginChromiumPassword {
 export interface BrowserLoginChromiumDecryptor {
     passwordDecrypt(input: BrowserLoginChromiumPassword): Promise<Buffer>;
     dispose(): void;
-}
-
-export interface BrowserLoginFirefoxLogin {
-    readonly origin: string;
-    readonly encryptedUsername: string;
-    readonly encryptedPassword: string;
-}
-
-export interface BrowserLoginFirefoxDecryptor {
-    loginDecrypt(input: BrowserLoginFirefoxLogin): Promise<{ username: Buffer; password: Buffer }>;
-    /** The account name alone, to label a login in the picker. */
-    usernameDecrypt(input: Omit<BrowserLoginFirefoxLogin, "encryptedPassword">): Promise<Buffer>;
-    dispose(): void;
-}
-
-export interface BrowserLoginFirefoxOptions {
-    readonly profilePath: string;
-    /** Discovered from the installed Firefox application, never supplied by a renderer. */
-    readonly nssLibraryPath: string;
-    readonly selectedSites: readonly string[];
-    /** Native secure input, main only. The callback transfers ownership of its UTF-8 buffer. */
-    readonly primaryPasswordRequest?: (input: {
-        readonly attempt: number;
-    }) => Promise<Buffer | null>;
-}
-
-export class BrowserLoginFirefoxPrimaryPasswordRequiredError extends Error {
-    readonly code = "firefox-primary-password-required";
-    constructor() {
-        super("Firefox requires its primary password to use this login.");
-    }
 }
 
 export class BrowserLoginAppBoundError extends Error {
@@ -369,202 +335,6 @@ function chromiumGcmDecrypt(encrypted: Buffer, key: Buffer): Buffer {
     } finally {
         partial.fill(0);
         final?.fill(0);
-    }
-}
-
-// NSS has process-global key-slot state. A single live read owns it until dispose.
-let firefoxContextActive = false;
-let nssShutdownFailed = false;
-let retainedNssLibrary: LibraryHandle | null = null;
-
-interface NssItem {
-    type: number;
-    data: bigint | null;
-    len: number;
-}
-
-export async function browserLoginFirefoxDecryptorCreate(
-    options: BrowserLoginFirefoxOptions,
-): Promise<BrowserLoginFirefoxDecryptor> {
-    const selected = selectionRequire(options.selectedSites);
-    platformRequire();
-    interactiveAccessRequire();
-    if (
-        !isAbsolute(options.profilePath) ||
-        !isAbsolute(options.nssLibraryPath) ||
-        options.profilePath.includes("\0") ||
-        basename(options.nssLibraryPath) !==
-            (process.platform === "darwin" ? "libnss3.dylib" : "nss3.dll")
-    )
-        throw unavailable();
-    if (nssShutdownFailed || retainedNssLibrary)
-        throw new Error(
-            "Firefox logins are unavailable in this app session. Reopen Happy to try again.",
-        );
-    if (firefoxContextActive)
-        throw new Error("Another Firefox login is being read. Try again in a moment.");
-    // Verified for this load alone. Nothing is awaited between here and koffi.load.
-    const verified = await browserLoginNssVerify(options.nssLibraryPath);
-    if (firefoxContextActive) {
-        verified.close();
-        throw new Error("Another Firefox login is being read. Try again in a moment.");
-    }
-    firefoxContextActive = true;
-    let library: LibraryHandle | null = null;
-    let initialized = false;
-    let slot: bigint | null = null;
-    let disposed = false;
-    let shutdown: (() => number) | undefined;
-    let slotFree: ((slot: bigint) => void) | undefined;
-    let slotLogout: ((slot: bigint) => number) | undefined;
-
-    function dispose(): void {
-        if (disposed) return;
-        disposed = true;
-        try {
-            if (slot) {
-                slotLogout?.(slot);
-                slotFree?.(slot);
-                slot = null;
-            }
-            if (initialized && shutdown?.() !== 0) nssShutdownFailed = true;
-        } catch {
-            nssShutdownFailed = true;
-        } finally {
-            initialized = false;
-            // Do not unload NSS after a failed shutdown: its worker threads can still
-            // own code pointers. A new profile is then refused until app restart.
-            if (nssShutdownFailed) retainedNssLibrary = library;
-            else {
-                try {
-                    library?.unload();
-                } catch {
-                    retainedNssLibrary = library;
-                    nssShutdownFailed = true;
-                }
-            }
-            library = null;
-            firefoxContextActive = false;
-        }
-    }
-
-    try {
-        try {
-            // NSS loads its sibling libraries beside it, so it loads by path;
-            // the bundle is root's, and still the one just verified.
-            verified.unchanged();
-            library = koffi.load(options.nssLibraryPath, { global: false });
-        } finally {
-            verified.close();
-        }
-        const initialize = library.func(
-            "int NSS_Initialize(const char *, const char *, const char *, const char *, unsigned int)",
-        );
-        const isInitialized = library.func("int NSS_IsInitialized(void)");
-        shutdown = library.func("int NSS_Shutdown(void)");
-        slotFree = library.func("void PK11_FreeSlot(void *)");
-        slotLogout = library.func("int PK11_Logout(void *)");
-        const slotRead = library.func("void *PK11_GetInternalKeySlot(void)");
-        const needLogin = library.func("int PK11_NeedLogin(void *)");
-        const passwordCheck = library.func("PK11_CheckUserPassword", "int", ["void *", "void *"]);
-        // Official NSS flags: READONLY | NOMODDB | NOROOTINIT | OPTIMIZESPACE.
-        // NOMODDB also prevents loading arbitrary modules from the source profile.
-        if (
-            isInitialized() !== 0 ||
-            initialize(`sql:${options.profilePath}`, "", "", "", 0x1 | 0x4 | 0x10 | 0x20) !== 0
-        )
-            throw unavailable();
-        initialized = true;
-        slot = slotRead() as bigint | null;
-        if (!slot) throw unavailable();
-        const empty = Buffer.alloc(1);
-        let unlocked = needLogin(slot) === 0 || passwordCheck(slot, empty) === 0;
-        if (!unlocked && !options.primaryPasswordRequest)
-            throw new BrowserLoginFirefoxPrimaryPasswordRequiredError();
-        for (let attempt = 1; !unlocked && attempt <= 3; attempt += 1) {
-            const password = await options.primaryPasswordRequest!({ attempt });
-            if (password === null) throw cancelled();
-            let terminated: Buffer | undefined;
-            try {
-                if (password.length > maximumSecretBytes || password.includes(0))
-                    throw new Error("This Firefox primary password cannot be used.");
-                terminated = Buffer.alloc(password.length + 1);
-                password.copy(terminated);
-                unlocked = passwordCheck(slot, terminated) === 0;
-            } finally {
-                password.fill(0);
-                terminated?.fill(0);
-            }
-        }
-        if (!unlocked) throw new Error("Firefox did not accept its primary password.");
-
-        const itemType = koffi.struct({
-            type: "unsigned int",
-            data: "void *",
-            len: "unsigned int",
-        });
-        const itemPointer = koffi.pointer(itemType);
-        const decrypt = library.func("PK11SDR_Decrypt", "int", [
-            itemPointer,
-            koffi.inout(itemPointer),
-            "void *",
-        ]);
-        const freeItem = library.func("SECITEM_ZfreeItem", "void", [itemPointer, "int"]);
-
-        function valueDecrypt(encoded: string): Buffer {
-            const encrypted = base64Require(encoded);
-            const output: NssItem = { type: 0, data: null, len: 0 };
-            try {
-                const source = { type: 0, data: encrypted, len: encrypted.length };
-                if (
-                    decrypt(source, output, null) !== 0 ||
-                    output.len > maximumSecretBytes ||
-                    (!output.data && output.len !== 0)
-                )
-                    throw decryptionFailed();
-                return browserLoginNativeBytesCopy(output.data, output.len);
-            } finally {
-                encrypted.fill(0);
-                if (output.data) freeItem(output, 0);
-            }
-        }
-
-        return {
-            async usernameDecrypt(input) {
-                if (disposed) throw cancelled();
-                selectedRequire(selected, input.origin);
-                try {
-                    return valueDecrypt(input.encryptedUsername);
-                } catch {
-                    throw decryptionFailed();
-                }
-            },
-            async loginDecrypt(input) {
-                if (disposed) throw cancelled();
-                selectedRequire(selected, input.origin);
-                let username: Buffer | undefined;
-                try {
-                    username = valueDecrypt(input.encryptedUsername);
-                    const password = valueDecrypt(input.encryptedPassword);
-                    return { username, password };
-                } catch {
-                    username?.fill(0);
-                    throw decryptionFailed();
-                }
-            },
-            dispose,
-        };
-    } catch (error) {
-        dispose();
-        if (
-            error instanceof BrowserLoginFirefoxPrimaryPasswordRequiredError ||
-            error instanceof BrowserLoginCryptoCancelledError
-        )
-            throw error;
-        // Native exceptions must never carry paths, buffers, passwords or NSS diagnostics.
-        throw new Error(
-            "Firefox could not unlock this login. Check its primary password and installed application, then try again.",
-        );
     }
 }
 

@@ -1,10 +1,7 @@
 import { open, readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { isIP } from "node:net";
-import { browserLoginNssInstallProtected } from "./browserLoginNssTrust";
-
-export type BrowserLoginEngine = "chromium" | "firefox";
 
 /** Main-only source locations. Nothing here crosses a bridge. */
 export interface BrowserLoginProfile {
@@ -12,16 +9,14 @@ export interface BrowserLoginProfile {
     readonly label: string;
     /** The name the person gave this profile in the browser, such as "Work". */
     readonly profileName: string;
-    readonly engine: BrowserLoginEngine;
     readonly platform: "darwin" | "win32";
     readonly directory: string;
-    readonly loginsPath?: string;
+    /** `Login Data`, then `Login Data For Account` when the browser keeps one. */
     readonly loginsPaths: readonly string[];
-    /** Chromium: the Keychain service holding the browser's key (macOS). */
-    readonly keychainService?: string;
-    /** Chromium: the browser's `Local State`, whose DPAPI-wrapped key Windows uses. */
-    readonly localStatePath?: string;
-    readonly nssLibraryPath?: string;
+    /** The Keychain service holding the browser's key (macOS). */
+    readonly keychainService: string;
+    /** The browser's `Local State`, whose DPAPI-wrapped key Windows uses. */
+    readonly localStatePath: string;
 }
 
 /**
@@ -115,7 +110,6 @@ export async function browserLoginProfilesDiscover(): Promise<readonly BrowserLo
     if (platform !== "darwin" && platform !== "win32") return [];
     const userHome = homedir();
     const localAppData = process.env.LOCALAPPDATA ?? join(userHome, "AppData/Local");
-    const appData = process.env.APPDATA ?? join(userHome, "AppData/Roaming");
     const profiles: BrowserLoginProfile[] = [];
     const roots: {
         readonly label: string;
@@ -174,62 +168,15 @@ export async function browserLoginProfilesDiscover(): Promise<readonly BrowserLo
             profiles.push({
                 label,
                 profileName: names.get(directoryName) ?? (directoryName || label),
-                engine: "chromium",
                 platform,
                 directory,
-                loginsPath: loginsPaths[0],
                 loginsPaths,
                 keychainService,
                 localStatePath,
             });
         }
     }
-    // NSS runs inside Happy, so only a Firefox this user cannot modify is used:
-    // one installed by root on macOS. Windows is not offered (see browserLoginLibraryTrust).
-    const firefoxNss =
-        platform === "darwin"
-            ? await firefoxNssProtected([
-                  "/Applications/Firefox.app/Contents/MacOS/libnss3.dylib",
-                  "/Applications/Firefox Developer Edition.app/Contents/MacOS/libnss3.dylib",
-                  "/Applications/Firefox Nightly.app/Contents/MacOS/libnss3.dylib",
-              ])
-            : undefined;
-    // Zen keeps Firefox's profile format. Its logins are decrypted with the
-    // NSS of a Mozilla-signed Firefox install, the only library Happy trusts.
-    for (const [label, root] of [
-        [
-            "Firefox",
-            platform === "darwin"
-                ? join(userHome, "Library/Application Support/Firefox")
-                : join(appData, "Mozilla/Firefox"),
-        ],
-        [
-            "Zen",
-            platform === "darwin"
-                ? join(userHome, "Library/Application Support/zen")
-                : join(appData, "zen"),
-        ],
-    ] as const)
-        if (firefoxNss)
-            profiles.push(...(await firefoxProfiles(label, root, platform, firefoxNss)));
     return profiles;
-}
-
-/** Installs already reported as not used, so each is logged once. */
-const firefoxUnprotectedLogged = new Set<string>();
-
-async function firefoxNssProtected(paths: readonly string[]): Promise<string | undefined> {
-    for (const path of paths) {
-        if (!(await fileExists(path))) continue;
-        if (await browserLoginNssInstallProtected(path)) return path;
-        if (!firefoxUnprotectedLogged.has(path)) {
-            firefoxUnprotectedLogged.add(path);
-            console.warn(
-                `Saved logins: not reading Firefox or Zen through ${path}; its install is not owned by root, so another program could change it.`,
-            );
-        }
-    }
-    return undefined;
 }
 
 function isInside(root: string, path: string): boolean {
@@ -275,70 +222,6 @@ async function windowsArcRoots(localAppData: string): Promise<readonly string[]>
     }
 }
 
-async function firefoxProfiles(
-    label: "Firefox" | "Zen",
-    root: string,
-    platform: "darwin" | "win32",
-    nssLibraryPath: string,
-): Promise<readonly BrowserLoginProfile[]> {
-    let source: string;
-    try {
-        source = await browserLoginTextFileRead(join(root, "profiles.ini"), 1024 * 1024);
-    } catch {
-        return [];
-    }
-    const sections: Map<string, string>[] = [];
-    let section: Map<string, string> | undefined;
-    for (const line of source.replace(/^\uFEFF/, "").split(/\r?\n/)) {
-        const header = /^\[(Profile\d+)\]$/.exec(line.trim());
-        if (header) {
-            section = new Map();
-            sections.push(section);
-            continue;
-        }
-        if (line.trim().startsWith("[")) {
-            section = undefined;
-            continue;
-        }
-        const field = /^([^=;#]+)=(.*)$/.exec(line);
-        if (section && field) section.set(field[1].trim(), field[2].trim());
-    }
-    const profiles: BrowserLoginProfile[] = [];
-    const seen = new Set<string>();
-    for (const values of sections.slice(0, 1024)) {
-        const path = values.get("Path");
-        if (!path || path.includes("\0") || path.length > 8192) continue;
-        const relativeFlag = values.get("IsRelative");
-        if (relativeFlag !== "0" && relativeFlag !== "1") continue;
-        if (relativeFlag === "0" && !isAbsolute(path)) continue;
-        // Every picker reads every profile: a network path would make Happy
-        // authenticate to, or mount, a server profiles.ini names.
-        if (relativeFlag === "0" && networkPath(path)) continue;
-        if (relativeFlag === "1" && isAbsolute(path)) continue;
-        const directory = relativeFlag === "1" ? resolve(root, path) : resolve(path);
-        if (relativeFlag === "1") {
-            const fromRoot = relative(root, directory);
-            if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot))
-                continue;
-        }
-        if (seen.has(directory)) continue;
-        seen.add(directory);
-        const loginsPath = await firstFile([join(directory, "logins.json")]);
-        if (!loginsPath) continue;
-        profiles.push({
-            label,
-            engine: "firefox",
-            platform,
-            directory,
-            profileName: (values.get("Name") ?? label).slice(0, 64),
-            loginsPath,
-            loginsPaths: [loginsPath],
-            nssLibraryPath,
-        });
-    }
-    return profiles;
-}
-
 async function fileExists(path: string): Promise<boolean> {
     try {
         return (await stat(path)).isFile();
@@ -347,31 +230,12 @@ async function fileExists(path: string): Promise<boolean> {
     }
 }
 
-/** UNC and SMB shares, `\\?\UNC`, and macOS automounts are never browser profiles. */
-function networkPath(path: string): boolean {
-    const normalized = path.replaceAll("\\", "/").toLowerCase();
-    return (
-        normalized.startsWith("//") ||
-        normalized.startsWith("/net/") ||
-        normalized.startsWith("/network/") ||
-        normalized.startsWith("/volumes/")
-    );
-}
-
-async function firstFile(paths: readonly string[]): Promise<string | undefined> {
-    for (const path of paths) if (await fileExists(path)) return path;
-    return undefined;
-}
-
 function objectIs(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Bounded main-only reads; callers replace filesystem errors with safe UI errors. */
-export async function browserLoginTextFileRead(
-    path: string,
-    maximumBytes: number,
-): Promise<string> {
+async function browserLoginTextFileRead(path: string, maximumBytes: number): Promise<string> {
     const handle = await open(path, "r");
     try {
         const info = await handle.stat();
@@ -393,7 +257,7 @@ export async function browserLoginTextFileRead(
 }
 
 /** A canonical host name, or undefined for anything that is not one. */
-export function browserLoginHostNormalize(source: string): string | undefined {
+function browserLoginHostNormalize(source: string): string | undefined {
     if (!source || source.length > 8192 || /[\s/@?#\\%]/.test(source)) return undefined;
     const host = source.replace(/^\./, "").replace(/\.$/, "");
     if (host.includes(":") && !host.startsWith("[") && isIP(host) !== 6) return undefined;

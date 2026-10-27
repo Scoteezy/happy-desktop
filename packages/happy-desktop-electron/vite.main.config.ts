@@ -27,18 +27,13 @@ export default defineConfig({
             },
             external: [
                 "electron",
-                // Electron's fs without its `.asar` view, for reading real file owners.
-                "original-fs",
                 "electron-updater",
                 "ws",
                 // node-usb is native: loaded from node_modules at first use.
                 "usb",
-                // Native FFI binds the Keychain, Firefox NSS, and the platform's
-                // secure dialogs. Keep its prebuilt N-API modules in node_modules.
+                // Native FFI binds the macOS Keychain from /System frameworks.
+                // Keep its prebuilt N-API modules in node_modules.
                 "koffi",
-                // Loads its WebAssembly core from its own package directory, and
-                // only when the person uses 1Password: never bundled or eager.
-                "@1password/sdk",
                 // Kept out of the bundle and shipped as a runtime dependency.
                 // Nothing in the main process imports it since the notes
                 // collection was removed, so this entry is inert; it is left in

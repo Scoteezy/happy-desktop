@@ -92,12 +92,6 @@ const bridge: HappyDesktopBridge = {
     // Saved logins are read from other browsers on macOS and Windows only.
     ...(process.platform === "darwin" || process.platform === "win32"
         ? {
-              browserPasswordSettingsRead: () =>
-                  ipcRenderer.invoke(desktopIpc.browserPasswordSettingsRead),
-              browserOnePasswordConnect: (account: string) =>
-                  ipcRenderer.invoke(desktopIpc.browserOnePasswordConnect, account),
-              browserOnePasswordDisconnect: () =>
-                  ipcRenderer.invoke(desktopIpc.browserOnePasswordDisconnect),
               browserPasswordPickerOpen: (guestId: number) =>
                   ipcRenderer.invoke(desktopIpc.browserPasswordPickerOpen, guestId),
           }

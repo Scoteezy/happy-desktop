@@ -20,15 +20,6 @@ export type BrowserPasswordGuestMessage =
           readonly open: boolean;
       }
     | {
-          readonly type: "save";
-          readonly reason: "submit" | "navigation";
-          readonly token: string;
-          readonly nonce: string;
-          readonly username: string;
-          readonly password: string;
-          readonly expiresAt: number;
-      }
-    | {
           readonly type: "probeResult";
           readonly token: string;
           readonly requestId: string;
@@ -45,7 +36,6 @@ export type BrowserPasswordGuestDelivery =
           readonly expiresAt: number;
       }
     | { readonly type: "invalidate"; readonly token: string }
-    | { readonly type: "fillInvalidate"; readonly token: string }
     | {
           readonly type: "probe";
           readonly token: string;

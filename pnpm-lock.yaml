@@ -5,9 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  '@1password/sdk@0.5.0':
-    hash: 2e4f928ede8f17a9edec4a9fb10a3d2154c221605a17755c679d15ca908c9b0e
-    path: patches/@1password__sdk@0.5.0.patch
   react-dom@19.2.7:
     hash: 14e2cfa7d72d4064e573a384fedfcdcc7589b6d08ab00ac90e41ef11f9496979
     path: patches/react-dom@19.2.7.patch
@@ -156,9 +153,6 @@ importers:
 
   packages/happy-desktop-electron:
     dependencies:
-      '@1password/sdk':
-        specifier: 0.5.0
-        version: 0.5.0(patch_hash=2e4f928ede8f17a9edec4a9fb10a3d2154c221605a17755c679d15ca908c9b0e)
       '@sinclair/typebox':
         specifier: ^0.34.49
         version: 0.34.52
@@ -514,12 +508,6 @@ importers:
         version: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0)
 
 packages:
-
-  '@1password/sdk-core@0.5.0':
-    resolution: {integrity: sha512-9g7LWOKRKdePZ85evVgE9xEom3DAg3hRIyQdOwLPvpL/F7KpDXmUHMi72rsqJxKaDbWApXmrYjDExMSPqUg7xw==}
-
-  '@1password/sdk@0.5.0':
-    resolution: {integrity: sha512-k6kov3pcA7PRg2tev9CgTfEf/3JSyAp11BPQNCEsqAD32QbqM032OXC1rfjyC8Ba0sfH+NHYZxcifUZToyGyYA==}
 
   '@asamuzakjp/css-color@5.1.11':
     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
@@ -5866,12 +5854,6 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
-
-  '@1password/sdk-core@0.5.0': {}
-
-  '@1password/sdk@0.5.0(patch_hash=2e4f928ede8f17a9edec4a9fb10a3d2154c221605a17755c679d15ca908c9b0e)':
-    dependencies:
-      '@1password/sdk-core': 0.5.0
 
   '@asamuzakjp/css-color@5.1.11':
     dependencies:

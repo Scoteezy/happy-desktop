@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type {
     AppearanceStore,
-    BrowserPasswordSettingsStore,
     HappyAgentAttentionStore,
     HappyAgentCompletionSound,
     HappyAgentChangeTiersSnapshot,
@@ -28,7 +27,6 @@ import type {
 } from "happy-desktop-state";
 import {
     EXPERIMENTAL_FEATURES,
-    browserPasswordSettingsStoreOwnedCreate,
     HAPPY_AGENT_CHANGE_TIERS_MAX,
     HAPPY_AGENT_INSTRUCTIONS_MAX_BYTES,
     HAPPY_AGENT_SECURITY_POLICY_MAX_BYTES,
@@ -346,7 +344,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     "file-tiers": "Which changed files are listed apart",
     instructions: "Agent guidance and permission review for this machine",
     secrets: "Environment variables for agents",
-    passwords: "Saved logins from your browsers and 1Password",
+    passwords: "Saved logins from your browsers",
     providers: "Model providers and the models they offer",
     usage: "What each provider account has spent",
 };
@@ -365,19 +363,10 @@ const usageAnalyticsAbsent: UsageAnalyticsStore = {
     usageAnalyticsUpdate: () => undefined,
 };
 
-/** This machine's saved-login settings; Happy itself stores no password. */
-export interface AppBrowserPasswords {
-    readonly settings: BrowserPasswordSettingsStore;
-}
-
-const browserPasswordsAbsent: AppBrowserPasswords = {
-    settings: browserPasswordSettingsStoreOwnedCreate().store,
-};
-
 export interface AppHappyAgentSettingsViewProps {
     appearance: AppearanceStore;
-    /** This machine's saved-login settings, shared by local and remote connections. */
-    browserPasswords?: AppBrowserPasswords;
+    /** Whether this desktop fills logins saved in the person's browsers (macOS and Windows). */
+    browserPasswordsAvailable?: boolean;
     /** Managed Happy Agent controls, present only in the native desktop shell. */
     daemon?: AppHappyAgentDaemonStore;
     /**
@@ -430,12 +419,6 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         props.appearance.subscribe,
         props.appearance.get,
         props.appearance.get,
-    );
-    const browserPasswords = props.browserPasswords ?? browserPasswordsAbsent;
-    const browserPasswordSettings = useSyncExternalStore(
-        browserPasswords.settings.subscribe,
-        browserPasswords.settings.get,
-        browserPasswords.settings.get,
     );
     const experimentsStore = props.experiments ?? experimentsStoreNoop;
     const gptLiveStore = props.gptLive ?? gptLiveStoreNoop;
@@ -1207,22 +1190,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     {...(unavailable === undefined ? {} : { unavailable })}
                 />
             ) : section === "passwords" ? (
-                <HappyAgentPasswordSettings
-                    available={browserPasswordSettings.available}
-                    error={browserPasswordSettings.error}
-                    loading={browserPasswordSettings.loading}
-                    onePasswordAccount={browserPasswordSettings.onePasswordAccount}
-                    onePasswordAccountDraft={browserPasswordSettings.onePasswordAccountDraft}
-                    onePasswordInstall={browserPasswordSettings.onePasswordInstall}
-                    onOnePasswordAccountDraftChange={(value) =>
-                        browserPasswords.settings.onePasswordAccountDraftUpdate(value)
-                    }
-                    onOnePasswordConnect={() => browserPasswords.settings.onePasswordConnect()}
-                    onOnePasswordDisconnect={() =>
-                        browserPasswords.settings.onePasswordDisconnect()
-                    }
-                    pending={browserPasswordSettings.pending}
-                />
+                <HappyAgentPasswordSettings available={props.browserPasswordsAvailable ?? false} />
             ) : section === "secrets" ? (
                 <HappyAgentSecretSettings
                     loading={secrets.loading}

@@ -1,4 +1,3 @@
-import type { BrowserWindow } from "electron";
 import { getDomain } from "tldts";
 
 /**
@@ -15,23 +14,20 @@ export interface BrowserLoginSecret {
 }
 
 /**
- * One saved login offered for one page, read on demand from a browser or a
- * password manager. Only metadata is held; `use` decrypts this one record,
+ * One saved login offered for one page, read on demand from a browser
+ * profile. Only metadata is held; `use` decrypts this one record,
  * hands it to `deliver`, and keeps nothing.
  */
 export interface BrowserLoginCandidate {
     /** The login's own HTTPS origin. */
     readonly origin: string;
     readonly relation: BrowserLoginRelation;
-    /** The primary label: an account name, or the item title when that is all a source lists. */
+    /** The account name, which the browser keeps unencrypted. */
     readonly name: string;
-    /** Where the login comes from, such as "Chrome · Work" or "1Password". */
+    /** Where the login comes from, such as "Chrome · Work". */
     readonly source: string;
-    /** Whether `name` is the account name, which a username field may receive without a decrypt. */
-    readonly nameIsUsername: boolean;
     use(
         field: "username" | "password",
-        window: BrowserWindow,
         deliver: (login: BrowserLoginSecret) => Promise<void>,
     ): Promise<void>;
 }
@@ -46,16 +42,6 @@ export interface BrowserLoginSourceList {
 
 /** A failure to use a picked login, in a short sentence fit to show the person. */
 export class BrowserLoginUseError extends Error {}
-
-/** Where a newly typed password may be saved. Happy itself never stores one. */
-export interface BrowserLoginSaveTarget {
-    readonly label: string;
-    /** Whether saving is offered at all. Never connects. */
-    connected(): boolean;
-    /** Whether this target already holds this account for this site. */
-    has(origin: string, username: string): Promise<boolean>;
-    save(login: { origin: string; username: string; password: string }): Promise<void>;
-}
 
 /** The relation of a saved login's origin to a page's, or null when it is unrelated. */
 export function browserLoginRelation(

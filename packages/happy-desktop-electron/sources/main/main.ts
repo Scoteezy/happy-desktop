@@ -1028,7 +1028,6 @@ function browserGuestAttach(window: BrowserWindow): void {
                 guest,
                 window,
                 logins: browserPasswords.logins,
-                saveTarget: browserPasswords.onePassword,
             });
             browserPasswordGuests.set(guest.id, {
                 owner: window.webContents,
@@ -1702,8 +1701,6 @@ void app
         );
         const desktopRoot = join(app.getPath("userData"), "desktop");
         browserPasswords = new BrowserPasswords({
-            onePasswordPath: join(desktopRoot, "one-password.json"),
-            version: app.getVersion(),
             windowRequire: (event) => {
                 const window = windowLifecycle.get();
                 if (
@@ -1722,7 +1719,7 @@ void app
                 passwords.pickerOpen();
             },
         });
-        await browserPasswords.install();
+        browserPasswords.install();
         app.once("will-quit", () => browserPasswords?.dispose());
         desktopWindowStateStore = await DesktopWindowStateStore.create(
             join(desktopRoot, "window-state.json"),

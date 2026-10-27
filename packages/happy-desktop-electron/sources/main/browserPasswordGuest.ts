@@ -19,7 +19,6 @@ import {
     browserLoginRelation,
     BrowserLoginUseError,
     type BrowserLoginCandidate,
-    type BrowserLoginSaveTarget,
     type BrowserLoginSourceList,
 } from "./browserLoginSources";
 
@@ -34,20 +33,11 @@ interface GuestDocument {
     fieldKind: BrowserPasswordGuestFieldKind | null;
 }
 
-interface SaveCandidate {
-    readonly origin: string;
-    readonly username: string;
-    password: string;
-    readonly expiresAt: number;
-}
-
 export interface BrowserPasswordGuestOptions {
     readonly guest: WebContents;
     readonly window: BrowserWindow;
     /** Every source's saved logins for one page origin, read on demand. */
     readonly logins: (origin: string) => Promise<BrowserLoginSourceList>;
-    /** Where a newly typed password may be saved; nothing is offered when it is not connected. */
-    readonly saveTarget: BrowserLoginSaveTarget;
 }
 
 /**
@@ -58,7 +48,7 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
     pickerOpen(): void;
     dispose(): void;
 } {
-    const { guest, window, logins, saveTarget } = options;
+    const { guest, window, logins } = options;
     const guestIpc = guest.ipc;
     // will-attach-webview owns the sandbox, isolated-world and preload settings;
     // Electron has no public API for re-reading a guest's WebPreferences here.
@@ -71,8 +61,6 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
     let generation = 0;
     let document: GuestDocument | null = null;
     let documentTimer: ReturnType<typeof setTimeout> | undefined;
-    let departing: { readonly document: GuestDocument; readonly expiresAt: number } | null = null;
-    let departingTimer: ReturnType<typeof setTimeout> | undefined;
     let menu: Menu | null = null;
     let menuTimer: ReturnType<typeof setTimeout> | undefined;
     let pickerPending = false;
@@ -82,9 +70,6 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         readonly requestId: string;
         readonly finish: (eligible: boolean) => void;
     } | null = null;
-    let prompt: AbortController | null = null;
-    let promptCandidate: SaveCandidate | null = null;
-    let promptTimer: ReturnType<typeof setTimeout> | undefined;
 
     function owned(): boolean {
         return (
@@ -129,21 +114,7 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         frame.send(browserPasswordGuestDeliveryChannel, message);
     }
 
-    function departingClear(): void {
-        clearTimeout(departingTimer);
-        const old = departing;
-        departing = null;
-        if (old && owned()) {
-            try {
-                send(old.document.frame, { type: "invalidate", token: old.document.token });
-            } catch {
-                /* Departed frame. */
-            }
-        }
-    }
-
-    function invalidate(preserveDepartingSave = false): void {
-        if (!preserveDepartingSave) departingClear();
+    function invalidate(): void {
         const old = document;
         document = null;
         clearTimeout(documentTimer);
@@ -161,10 +132,7 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         probePending = null;
         if (old && owned()) {
             try {
-                send(old.frame, {
-                    type: preserveDepartingSave ? "fillInvalidate" : "invalidate",
-                    token: old.token,
-                });
+                send(old.frame, { type: "invalidate", token: old.token });
             } catch {
                 /* Detached frame. */
             }
@@ -186,84 +154,6 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         } catch {
             /* Window closed. Never forward OS errors or credential-bearing exceptions. */
         }
-    }
-
-    function promptCancel(): void {
-        if (promptCandidate) promptCandidate.password = "";
-        promptCandidate = null;
-        clearTimeout(promptTimer);
-        prompt?.abort();
-    }
-
-    function saveOffer(proposed: SaveCandidate): void {
-        if (!owned() || prompt || proposed.expiresAt <= Date.now()) {
-            proposed.password = "";
-            return;
-        }
-        const controller = new AbortController();
-        prompt = controller;
-        promptCandidate = proposed;
-        const expiresAt = Math.min(proposed.expiresAt, Date.now() + 60_000);
-        const timer = setTimeout(
-            () => {
-                proposed.password = "";
-                controller.abort();
-            },
-            Math.max(0, expiresAt - Date.now()),
-        );
-        promptTimer = timer;
-        // Saving belongs to the originating document, even if submitting it navigates.
-        // This captured origin is never reused for filling the next document.
-        void (async () => {
-            try {
-                // Happy never stores a password. A new one is offered only to a
-                // connected password manager, and only when it lacks this account.
-                if (
-                    !saveTarget.connected() ||
-                    (await saveTarget.has(proposed.origin, proposed.username)) ||
-                    controller.signal.aborted ||
-                    !owned() ||
-                    Date.now() >= expiresAt ||
-                    !proposed.password
-                )
-                    return;
-                const result = await dialog.showMessageBox(window, {
-                    type: "question",
-                    title: saveTarget.label,
-                    message: `Save to ${saveTarget.label}?`,
-                    detail: `${proposed.origin}\n${nativeText(proposed.username) || "No username"}\n\nHappy itself never stores passwords.`,
-                    buttons: [`Save to ${saveTarget.label}`, "Not now"],
-                    defaultId: 1,
-                    cancelId: 1,
-                    noLink: true,
-                    signal: controller.signal,
-                });
-                if (
-                    result.response !== 0 ||
-                    controller.signal.aborted ||
-                    !owned() ||
-                    Date.now() >= expiresAt ||
-                    !proposed.password
-                )
-                    return;
-                await saveTarget.save({
-                    origin: proposed.origin,
-                    username: proposed.username,
-                    password: proposed.password,
-                });
-            } catch {
-                if (!controller.signal.aborted)
-                    await errorShow(`The password could not be saved to ${saveTarget.label}.`);
-            } finally {
-                clearTimeout(timer);
-                proposed.password = "";
-                if (prompt === controller) {
-                    prompt = null;
-                    promptCandidate = null;
-                    promptTimer = undefined;
-                }
-            }
-        })();
     }
 
     function fieldProbe(expected: GuestDocument, fieldId: string): Promise<string | null> {
@@ -304,7 +194,7 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         expiresAt: number,
         pickerId: number,
     ): Promise<void> {
-        // Focus is required up to the unlock. A Keychain or 1Password prompt during
+        // Focus is required up to the unlock. A Keychain prompt during
         // the unlock takes focus away from Happy, so afterwards only presence is.
         const eligible = (focused: boolean) =>
             current(expected) &&
@@ -320,7 +210,7 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
                 return;
             // The source decrypts this one record and keeps nothing; the
             // plaintext lives only for this callback.
-            await candidate.use(fieldKind, window, async (login) => {
+            await candidate.use(fieldKind, async (login) => {
                 if (!eligible(false)) return;
                 // Unlocking can outlive either the field or its document. Probe
                 // again afterwards, then check main's origin immediately before send.
@@ -446,41 +336,6 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         const origin = originOf(frame);
         if (!origin) return;
         const message = payload as Record<string, unknown>;
-        if (message.type === "save") {
-            const source =
-                document && current(document)
-                    ? document
-                    : departing && Date.now() < departing.expiresAt
-                      ? departing.document
-                      : null;
-            if (
-                !source ||
-                frame !== source.frame ||
-                origin !== source.origin ||
-                message.token !== source.token ||
-                message.nonce !== source.nonce ||
-                (message.reason !== "submit" && message.reason !== "navigation") ||
-                typeof message.username !== "string" ||
-                message.username.length > 4096 ||
-                typeof message.password !== "string" ||
-                message.password.length === 0 ||
-                message.password.length > 65_536 ||
-                typeof message.expiresAt !== "number" ||
-                !Number.isFinite(message.expiresAt) ||
-                Date.now() >= message.expiresAt
-            )
-                return;
-            if (departing?.document === source) departingClear();
-            // No secret is cached from typing: this pair was revalidated by the
-            // originating preload at the submit/navigation boundary itself.
-            saveOffer({
-                origin,
-                username: message.username,
-                password: message.password,
-                expiresAt: Math.min(message.expiresAt, source.expiresAt, Date.now() + 60_000),
-            });
-            return;
-        }
         if (navigating) return;
         if (message.type === "ready") {
             if (!identifier(message.nonce)) return;
@@ -549,22 +404,12 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         if (!details.isMainFrame) return;
         // A same-document route change can replace a form just as a full navigation
         // can. Both cancel the picker, probe and document capability.
-        departingClear();
-        const source = document;
-        if (!details.isSameDocument && source && current(source)) {
-            departing = {
-                document: source,
-                expiresAt: Math.min(source.expiresAt, Date.now() + 3000),
-            };
-            departingTimer = setTimeout(departingClear, 3000);
-        }
         navigating = !details.isSameDocument;
-        invalidate(departing !== null);
+        invalidate();
     }
 
     function documentReady(): void {
         if (!owned()) return;
-        departingClear();
         navigating = false;
         try {
             send(guest.mainFrame, { type: "readyRequest" });
@@ -574,7 +419,6 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
     }
 
     function navigationCommitted(): void {
-        departingClear();
         navigating = false;
     }
     function inPageNavigationReady(
@@ -592,13 +436,10 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
     function rendererGone(): void {
         navigating = true;
         invalidate();
-        promptCancel();
     }
     function dispose(): void {
         if (disposed) return;
         invalidate();
-        promptCancel();
-        prompt = null;
         disposed = true;
         guestIpc.off(browserPasswordGuestChannel, messageReceive);
         guest.off("did-start-navigation", navigationStart);
@@ -625,7 +466,7 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
 
 /**
  * The picker: logins for this exact site first, then related sites under their
- * own label, each named by account (or item title), site, and source; then
+ * own label, each named by account, site, and source; then
  * one line saying that Happy stores no password.
  */
 export function browserLoginPickerTemplate(options: {

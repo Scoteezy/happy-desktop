@@ -418,21 +418,6 @@ export interface DesktopGuestKeyEvent {
     readonly type: "keydown" | "keyup";
 }
 
-/** Saved-login settings: which password manager is connected, never a login. */
-export interface DesktopBrowserPasswordSettings {
-    /**
-     * `unsupported` where Happy does not load 1Password (Windows), else whether
-     * the 1Password app is installed with its SDK integration library.
-     */
-    readonly onePasswordInstall: "unsupported" | "missing" | "installed";
-    /** The 1Password account Happy reads logins from, or null when none is connected. */
-    readonly onePasswordAccount: string | null;
-}
-
-export type DesktopBrowserOnePasswordConnectResult =
-    | { readonly type: "connected"; readonly settings: DesktopBrowserPasswordSettings }
-    | { readonly type: "failed"; readonly message: string };
-
 /**
  * `disabled` is the build's permanent refusal, with its reason in `error`: a
  * packaged Happy never opens a debugger into a process that can reach its secrets.
@@ -860,14 +845,10 @@ export interface HappyDesktopBridge {
     /** Returns the partition of a network's profile, opening it the first time. */
     browserNetworkProfileOpen?(network: DesktopBrowserNetwork): Promise<string>;
     /**
-     * Saved-login settings. Happy stores no password, and no bridge method
-     * returns one: a login is filled only after a native picker choice.
+     * Opens a native picker of the logins saved in the person's browsers.
+     * Happy stores no password, and no bridge method returns one: only a
+     * native menu choice can fill. Present on macOS and Windows only.
      */
-    browserPasswordSettingsRead?(): Promise<DesktopBrowserPasswordSettings>;
-    /** 1Password asks the person to approve Happy before this resolves. */
-    browserOnePasswordConnect?(account: string): Promise<DesktopBrowserOnePasswordConnectResult>;
-    browserOnePasswordDisconnect?(): Promise<DesktopBrowserPasswordSettings>;
-    /** Opens a native credential picker; only a native menu choice can fill. */
     browserPasswordPickerOpen?(guestId: number): Promise<void>;
     /**
      * Resolves with an inline guest's content height once it differs from
@@ -1066,9 +1047,6 @@ export const desktopIpc = {
     appearanceSet: "happy:appearance:set",
     browserNetworkResolve: "happy:browser:network-resolve",
     browserNetworkProfileOpen: "happy:browser:network-profile-open",
-    browserPasswordSettingsRead: "happy:browser-passwords:settings-read",
-    browserOnePasswordConnect: "happy:browser-passwords:one-password-connect",
-    browserOnePasswordDisconnect: "happy:browser-passwords:one-password-disconnect",
     browserPasswordPickerOpen: "happy:browser-passwords:picker-open",
     guestFitMeasure: "happy:guest:fit-measure",
     browserNetworkPopupRequested: "happy:browser:network-popup-requested",
