@@ -908,14 +908,6 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             ? snapshot.spaces.get(id.slice("space:".length) as HappyAgentSpaceId)
             : undefined;
     const subjectOf = (id: string) => happyAgentSpacesRowSubject(id, snapshot, places);
-    /** Conversations with a row of their own, such as Focus and Voice; they never nest again. */
-    const helperAgents = new Set(
-        [...snapshot.spaces.values()].flatMap((space) =>
-            space.target.kind === "agent" && space.target.agentId !== null
-                ? [space.target.agentId]
-                : [],
-        ),
-    );
     /** The sessions a row's conversation has, as its subtasks nest; a worktree has none. */
     const subtasksOf = (
         subject: HappyAgentSpacesRowSubject,
@@ -923,11 +915,9 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         subject.kind === "space"
             ? sessionTreeOf(
                   (
-                      (
-                          targetTask(subject.space.target, places) ??
-                          targetBot(subject.space.target, places)
-                      )?.subtasks ?? []
-                  ).filter((subtask) => !helperAgents.has(subtask.conversation.id)),
+                      targetTask(subject.space.target, places) ??
+                      targetBot(subject.space.target, places)
+                  )?.subtasks ?? [],
               )
             : subject.kind === "subtask"
               ? sessionTreeOf(subject.subtask.subtasks)

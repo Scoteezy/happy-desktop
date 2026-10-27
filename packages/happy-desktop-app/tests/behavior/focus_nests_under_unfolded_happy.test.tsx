@@ -18,17 +18,13 @@ import {
 } from "../../sources/components/HappyAgentSpacesSidebar";
 
 /*
- * Focus has a row of its own, right after Happy. Folding Happy hides what
- * nests under Happy and nothing else, so Focus stays on screen; and showing
- * Happy's subtasks never nests a second copy of Focus under it.
+ * Focus is one of Happy's subtasks: it is on screen nested under Happy when
+ * Happy is unfolded, and gone when Happy folds. Showing Happy's subtasks
+ * nests it like any other. A row the sidebar document names resolves even
+ * when the window's list of rows does not hold it yet.
  */
 
-function space(
-    id: string,
-    title: string,
-    target: HappyAgentSpace["target"],
-    version = 1,
-): HappyAgentSpace {
+function space(id: string, title: string, target: HappyAgentSpace["target"]): HappyAgentSpace {
     return {
         id: id as HappyAgentSpaceId,
         title,
@@ -38,7 +34,7 @@ function space(
         orderKey: "0",
         placement: "settled",
         visibility: "shown",
-        version,
+        version: 1,
         createdAt: 1,
         updatedAt: 1,
         working: false,
@@ -55,6 +51,12 @@ const focus = space("focus", "Focus", {
     kind: "agent",
     id: "agent-focus",
     agentId: "agent-focus",
+    workspaceId: "w",
+});
+const release = space("release", "Release", {
+    kind: "task",
+    id: "task-release",
+    agentId: "agent-release",
     workspaceId: "w",
 });
 
@@ -102,81 +104,52 @@ const props = (
     onChildSelect: () => {},
 });
 
-/** A connection that has just reconciled and then stays quiet until it is left. */
-const sync: HappyAgentSpacesDeps["sync"] = {
-    async *follow({ signal }) {
-        yield { kind: "reconcile" };
-        await new Promise((resolve) => signal.addEventListener("abort", resolve));
-    },
-    health: () => undefined,
-};
-
-it("keeps Focus's own row on screen when Happy is folded", async () => {
-    // The window's list does not name Focus; the sidebar document's answer does.
-    const html = [
-        "<nav>",
-        "  <happy-search/>",
-        "  <happy-create/>",
-        '  <happy-space id="happy">',
-        '    <happy-space id="agent-focus"/>',
-        "  </happy-space>",
-        '  <happy-space id="focus"/>',
-        "</nav>",
-    ].join("\n");
-    const daemon = fakeHappyAgentDaemonCreate();
-    daemon.client.listSpaces = vi.fn(async () => ({ cursor: "0", spaces: [happy], sections: [] }));
-    daemon.client.reportSpaceAttention = vi.fn(async () => ({ batch: null }));
-    daemon.client.getSpaceSidebar = vi.fn(async () => ({
-        artifactId: "sidebar",
-        version: 1,
-        html,
-        spaces: [happy, focus],
-    }));
-    const store = happyAgentSpacesStoreCreate({ client: daemon.client, sync });
-    function Spaces(own: { store: HappyAgentSpacesStore }) {
-        const snapshot = useSyncExternalStore(own.store.subscribe, own.store.get, own.store.get);
-        return <HappyAgentSpacesSidebar {...props(own.store, snapshot)} />;
-    }
-    const view = render(<Spaces store={store} />);
-    const row = (id: string) => view.container.querySelector<HTMLElement>(`[data-item-id="${id}"]`);
-    try {
-        await waitFor(() => expect(row("space:focus")).not.toBeNull());
-        expect(row("space:happy")?.getAttribute("aria-expanded")).toBe("false");
-        expect(row("session:agent-focus")).toBeNull();
-        // A top-level row carries no depth.
-        expect(row("space:focus")?.dataset.depth).toBeUndefined();
-        expect(row("space:focus")?.textContent).toContain("Focus");
-    } finally {
-        view.unmount();
-        store[Symbol.dispose]();
-    }
+/** The snapshot of a window holding Happy, any other rows, and the given sidebar document. */
+const snapshotOf = (
+    html: string,
+    others: readonly HappyAgentSpace[] = [],
+): HappyAgentSpacesSidebarProps["snapshot"] => ({
+    ...happyAgentSpacesStoreNoop.get(),
+    spaces: new Map([happy, ...others].map((entry) => [entry.id, entry])),
+    sidebar: { artifactId: "sidebar", version: 1, html, agentIcons: new Map(), seed: false },
 });
 
-it("shows Happy's subtasks without nesting a second Focus under it", () => {
-    const html = [
-        "<nav>",
-        "  <happy-search/>",
-        "  <happy-create/>",
-        '  <happy-space id="happy"/>',
-        '  <happy-space id="focus"/>',
-        "</nav>",
-    ].join("\n");
+const nav = (happyRow: string[]) =>
+    ["<nav>", "  <happy-search/>", "  <happy-create/>", ...happyRow, "</nav>"].join("\n");
+
+it("shows Focus nested under Happy when Happy is unfolded, and not when it folds", () => {
+    const nested = (expanded: boolean) =>
+        nav([
+            `  <happy-space id="happy"${expanded ? ' expanded="true"' : ""}>`,
+            '    <happy-space id="agent-focus"/>',
+            "  </happy-space>",
+        ]);
+    const view = render(
+        <HappyAgentSpacesSidebar {...props(happyAgentSpacesStoreNoop, snapshotOf(nested(true)))} />,
+    );
+    const row = (id: string) => view.container.querySelector<HTMLElement>(`[data-item-id="${id}"]`);
+    expect(row("space:happy")?.getAttribute("aria-expanded")).toBe("true");
+    expect(row("session:agent-focus")?.dataset.depth).toBe("1");
+
+    view.rerender(
+        <HappyAgentSpacesSidebar
+            {...props(happyAgentSpacesStoreNoop, snapshotOf(nested(false)))}
+        />,
+    );
+    expect(row("space:happy")?.getAttribute("aria-expanded")).toBe("false");
+    expect(row("session:agent-focus")).toBeNull();
+    // Nowhere else in the sidebar either.
+    expect(view.container.textContent).not.toContain("agent-focus");
+});
+
+it("nests Focus with Happy's other subtasks when they are shown", () => {
     const sidebarSessionsRevealWrite = vi.fn();
     const view = render(
         <HappyAgentSpacesSidebar
             {...props(
                 { ...happyAgentSpacesStoreNoop, sidebarSessionsRevealWrite },
-                {
-                    ...happyAgentSpacesStoreNoop.get(),
-                    spaces: new Map([happy, focus].map((entry) => [entry.id, entry])),
-                    sidebar: {
-                        artifactId: "sidebar",
-                        version: 1,
-                        html,
-                        agentIcons: new Map(),
-                        seed: false,
-                    },
-                },
+                // The window may still hold Focus's own row; it nests all the same.
+                snapshotOf(nav(['  <happy-space id="happy"/>']), [focus]),
             )}
         />,
     );
@@ -186,7 +159,41 @@ it("shows Happy's subtasks without nesting a second Focus under it", () => {
     fireEvent.click(within(view.getByRole("menu")).getByText("Show subtasks"));
     expect(sidebarSessionsRevealWrite).toHaveBeenCalledTimes(1);
     const written = sidebarSessionsRevealWrite.mock.calls[0]![0] as string;
+    expect(written).toContain('<happy-space id="agent-focus"/>');
     expect(written).toContain('<happy-space id="agent-errand"/>');
-    expect(written).not.toContain('id="agent-focus"');
-    expect(written).toContain('<happy-space id="focus"/>');
+});
+
+/** A connection that has just reconciled and then stays quiet until it is left. */
+const sync: HappyAgentSpacesDeps["sync"] = {
+    async *follow({ signal }) {
+        yield { kind: "reconcile" };
+        await new Promise((resolve) => signal.addEventListener("abort", resolve));
+    },
+    health: () => undefined,
+};
+
+it("draws a row the sidebar document names though the window's list lacks it", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.client.listSpaces = vi.fn(async () => ({ cursor: "0", spaces: [happy], sections: [] }));
+    daemon.client.reportSpaceAttention = vi.fn(async () => ({ batch: null }));
+    daemon.client.getSpaceSidebar = vi.fn(async () => ({
+        artifactId: "sidebar",
+        version: 1,
+        html: nav(['  <happy-space id="happy"/>', '  <happy-space id="release"/>']),
+        spaces: [happy, release],
+    }));
+    const store = happyAgentSpacesStoreCreate({ client: daemon.client, sync });
+    function Spaces(own: { store: HappyAgentSpacesStore }) {
+        const snapshot = useSyncExternalStore(own.store.subscribe, own.store.get, own.store.get);
+        return <HappyAgentSpacesSidebar {...props(own.store, snapshot)} />;
+    }
+    const view = render(<Spaces store={store} />);
+    const row = (id: string) => view.container.querySelector<HTMLElement>(`[data-item-id="${id}"]`);
+    try {
+        await waitFor(() => expect(row("space:release")).not.toBeNull());
+        expect(row("space:release")?.textContent).toContain("Release");
+    } finally {
+        view.unmount();
+        store[Symbol.dispose]();
+    }
 });
