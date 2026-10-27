@@ -488,6 +488,11 @@ const claudeSessionLow = usageWith("claude", {
     ...CLAUDE,
     session: { label: "Session", usedPercent: 85, resets: "resets 6:20 PM" },
 });
+const claudeBothLow = usageWith("claude", {
+    week: { label: "Week", usedPercent: 88, resets: "resets Thu 6:00 PM" },
+    session: { label: "Session", usedPercent: 92, resets: "resets 6:20 PM" },
+    updatedAt: NOW - 3 * MINUTE,
+});
 const claudeWeekSpent = usageWith("claude", {
     ...CLAUDE,
     week: { label: "Week", usedPercent: 100, resets: "resets Thu 6:00 PM", blocking: true },
@@ -568,7 +573,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="06"
                 label="Header hovered"
-                detail="The whole header is one button: pointing anywhere on it, rings included, highlights the line the way a hovered model row is highlighted."
+                detail="The whole header is one button: pointing anywhere on it, a usage ring included, highlights the line the way a hovered model row is highlighted."
                 stage="surface"
             >
                 <Open preview={{ accountButtonHover: "claude" }} />
@@ -606,7 +611,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09"
                 label="Default account and a named one"
-                detail="Codex runs on Current CLI. Claude runs on work@example.com, the configured account's friendly name. Each header shows what is left of its account's week, then its session; the rest of the usage lives in the account panel."
+                detail="Codex runs on Current CLI. Claude runs on work@example.com, the configured account's friendly name. A header shows a ring only while its account runs low: Codex has room, so it shows none; work@example.com's week has room but only 7% of its session is left, so Claude's header shows that one window, in red. The rest of the usage lives in the account panel."
                 stage="surface"
             >
                 <Open selection={OPUS_EXTRA} />
@@ -622,7 +627,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09d"
                 label="Header usage running low"
-                detail="Claude runs on a long address with 18% of its week left, in yellow, and 5% of its session, in red. The address ends in an ellipsis; the rings and the chevron keep the right edge, level with every line's. Pointing at a ring names its window and when it starts over. Grok has no reading, so its header has no rings."
+                detail="Claude runs on a long address with 18% of its week left and 5% of its session. Both are low, but the week wins: one yellow ring for the week, never two. The address ends in an ellipsis; the ring and the chevron keep the right edge, level with every line's. Pointing at the ring names its window, what is left, and when it starts over. Grok has no reading, so its header has no ring."
                 stage="surface"
             >
                 <Open
@@ -970,6 +975,14 @@ export function ComposerModelControlPage() {
                 stage="surface"
             >
                 <Pill preview={{ usageWarningOpen: true }} usageWatch={claudeWeekLow} />
+            </Specimen>
+            <Specimen
+                number="34"
+                label="Pill, week and session both low"
+                detail="12% of the week and 8% of the session are left. The week wins: one yellow ring for the week, and the red session waits in the menu."
+                stage="surface"
+            >
+                <Pill usageWatch={claudeBothLow} />
             </Specimen>
         </ComponentPage>
     );
