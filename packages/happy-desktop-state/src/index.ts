@@ -16,7 +16,6 @@ export * from "./conversation/loadable.js";
 export * from "./appearance/appearanceStore.js";
 export * from "./appearance/customTheme.js";
 export * from "./keepAwake/keepAwakeStore.js";
-export * from "./browserLogins/browserLoginsStore.js";
 export * from "./commandPalette/commandPaletteStore.js";
 export * from "./experiments/experimentsStore.js";
 export * from "./happyAgent/happyAgentStemCellsSettingsStore.js";
@@ -278,35 +277,5 @@ export {
     type BrowserPasswordSettingsWriter,
     type BrowserPasswordSettingsSnapshot,
     type BrowserPasswordSettingsOutput,
-    type BrowserPasswordImportId,
-    type BrowserPasswordImportSite,
-    type BrowserPasswordImportProposal,
+    type BrowserPasswordSettingsReceived,
 } from "./browserLogins/browserPasswordSettingsStore.js";
-export type {
-    BrowserImportProfileId,
-    BrowserImportProposalId,
-    BrowserImportSiteId,
-    BrowserImportLoginId,
-    BrowserImportCookieDomainId,
-    BrowserImportBrowser,
-    BrowserImportCapability,
-    BrowserImportProfileSnapshot,
-    BrowserImportCatalog,
-    BrowserImportSiteSnapshot,
-    BrowserImportCookieDomainSnapshot,
-    BrowserImportLoginSnapshot,
-    BrowserImportProposal,
-    BrowserImportSelection,
-    BrowserImportResult,
-    BrowserImportProgress,
-    BrowserImportEvent,
-} from "./browserImport/browserImportTypes.js";
-export {
-    browserImportStoreCreate,
-    browserImportStoreOwnedCreate,
-    type BrowserImportSnapshot,
-    type BrowserImportStore,
-    type BrowserImportOutput,
-    type BrowserImportWriter,
-    type BrowserImportStoreOptions,
-} from "./browserImport/browserImportStore.js";

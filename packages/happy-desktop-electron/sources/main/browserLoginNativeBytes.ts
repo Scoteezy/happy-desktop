@@ -6,7 +6,7 @@ import koffi from "koffi";
  * aborts the whole process there. Decoding a fixed-length array copies into
  * a caged Uint8Array instead, on every platform.
  */
-export function browserImportNativeBytesCopy(pointer: unknown, length: number): Buffer {
+export function browserLoginNativeBytesCopy(pointer: unknown, length: number): Buffer {
     if (length === 0) return Buffer.alloc(0);
     const bytes: unknown = koffi.decode(pointer, koffi.array("uint8_t", length, "Typed"));
     if (!(bytes instanceof Uint8Array) || bytes.length !== length) {

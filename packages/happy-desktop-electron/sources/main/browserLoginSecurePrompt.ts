@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { join } from "node:path";
 import { isMainThread } from "node:worker_threads";
 import type { BrowserWindow } from "electron";
-import { browserImportNativeBytesCopy } from "./browserImportNativeBytes";
+import { browserLoginNativeBytesCopy } from "./browserLoginNativeBytes";
 
 const maximumPasswordBytes = 65_536;
 let promptPending = false;
@@ -20,11 +20,11 @@ function promptWindowRequire(window: BrowserWindow): void {
 }
 
 /**
- * Main-only native input, invoked only after a person commits an import selection.
+ * Main-only native input, invoked only after a person picks a saved login.
  * The NSS caller owns the returned UTF-8 buffer and must wipe it in finally.
  * Neither this module nor its errors expose the value to Electron's renderer.
  */
-export async function browserImportSecurePrompt(
+export async function browserLoginSecurePrompt(
     window: BrowserWindow,
     label: string,
 ): Promise<Buffer | null> {
@@ -86,7 +86,7 @@ async function macPrompt(window: BrowserWindow, label: string): Promise<Buffer |
             alert,
             selector("setInformativeText:"),
             nsText(
-                `Enter the primary password for ${label || "this Firefox profile"}. It is used only to unlock the sites you selected.`,
+                `Enter the primary password for ${label || "this Firefox profile"}. It is used only to unlock the login you chose.`,
             ),
         );
         objectWithObject(alert, selector("addButtonWithTitle:"), nsText("Continue"));
@@ -111,7 +111,7 @@ async function macPrompt(window: BrowserWindow, label: string): Promise<Buffer |
         const pointer = object(value, selector("UTF8String"));
         if (!pointer) throw new Error();
         // Copy directly from native bytes: do not materialize a JS password string.
-        return browserImportNativeBytesCopy(pointer, length);
+        return browserLoginNativeBytesCopy(pointer, length);
     } catch {
         throw new Error("The browser primary-password prompt could not complete.");
     } finally {
@@ -145,7 +145,7 @@ try {
     # dialog. Do not change the person's registry or wait on an invisible console.
     $consolePrompting = Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\PowerShell\\1\\ShellIds' -Name ConsolePrompting -ErrorAction SilentlyContinue
     if ($consolePrompting.ConsolePrompting) { throw 'NativePromptUnavailable' }
-    $credential = Get-Credential -UserName 'Browser primary password' -Message ("Enter the primary password for " + $label + ". This unlocks only the selected sites in Happy.")
+    $credential = Get-Credential -UserName 'Browser primary password' -Message ("Enter the primary password for " + $label + ". This unlocks only the login you chose in Happy.")
     if ($null -eq $credential) { $output.WriteByte(0) }
     elseif ($credential.Password.Length -gt ${maximumPasswordBytes}) { $output.WriteByte(2) }
     else {

@@ -1,47 +1,41 @@
 import { spawn } from "node:child_process";
-import { createDecipheriv, createHash, pbkdf2Sync, timingSafeEqual } from "node:crypto";
+import { createDecipheriv, pbkdf2Sync } from "node:crypto";
 import { open } from "node:fs/promises";
 import { basename, isAbsolute, join } from "node:path";
 import koffi, { type LibraryHandle } from "koffi";
-import { browserImportKeychainPasswordRead } from "./browserImportKeychain";
-import { browserImportNativeBytesCopy } from "./browserImportNativeBytes";
-import { browserImportNssTrustRequire } from "./browserImportNssTrust";
+import {
+    BrowserLoginKeychainError,
+    browserLoginKeychainPasswordRead,
+} from "./browserLoginKeychain";
+import { browserLoginNativeBytesCopy } from "./browserLoginNativeBytes";
+import { browserLoginNssTrustRequire } from "./browserLoginNssTrust";
 
 /** Source-browser cryptography is main-only. Buffers returned here belong to the caller, which must wipe them. */
-export type BrowserImportChromiumBrowser = "chrome" | "arc" | "brave" | "edge";
 
-export interface BrowserImportChromiumCookie {
-    readonly domain: string;
-    /** Exact SQLite host_key, including its leading dot: Chromium hashes these bytes. */
-    readonly sourceHost: string;
-    readonly databaseVersion: number;
-    readonly encryptedValue: Buffer;
-    readonly value: string;
-}
-
-export interface BrowserImportChromiumPassword {
+export interface BrowserLoginChromiumPassword {
     readonly origin: string;
     readonly encryptedPassword: Buffer;
 }
 
-export interface BrowserImportChromiumDecryptor {
-    passwordDecrypt(input: BrowserImportChromiumPassword): Promise<Buffer>;
-    cookieDecrypt(input: BrowserImportChromiumCookie): Promise<Buffer>;
+export interface BrowserLoginChromiumDecryptor {
+    passwordDecrypt(input: BrowserLoginChromiumPassword): Promise<Buffer>;
     dispose(): void;
 }
 
-export interface BrowserImportFirefoxLogin {
+export interface BrowserLoginFirefoxLogin {
     readonly origin: string;
     readonly encryptedUsername: string;
     readonly encryptedPassword: string;
 }
 
-export interface BrowserImportFirefoxDecryptor {
-    loginDecrypt(input: BrowserImportFirefoxLogin): Promise<{ username: Buffer; password: Buffer }>;
+export interface BrowserLoginFirefoxDecryptor {
+    loginDecrypt(input: BrowserLoginFirefoxLogin): Promise<{ username: Buffer; password: Buffer }>;
+    /** The account name alone, to label a login in the picker. */
+    usernameDecrypt(input: Omit<BrowserLoginFirefoxLogin, "encryptedPassword">): Promise<Buffer>;
     dispose(): void;
 }
 
-export interface BrowserImportFirefoxOptions {
+export interface BrowserLoginFirefoxOptions {
     readonly profilePath: string;
     /** Discovered from the installed Firefox application, never supplied by a renderer. */
     readonly nssLibraryPath: string;
@@ -52,53 +46,48 @@ export interface BrowserImportFirefoxOptions {
     }) => Promise<Buffer | null>;
 }
 
-export class BrowserImportFirefoxPrimaryPasswordRequiredError extends Error {
+export class BrowserLoginFirefoxPrimaryPasswordRequiredError extends Error {
     readonly code = "firefox-primary-password-required";
     constructor() {
-        super(
-            "Firefox requires its primary password before these selected logins can be imported.",
-        );
+        super("Firefox requires its primary password to use this login.");
     }
 }
 
-export class BrowserImportAppBoundError extends Error {
+export class BrowserLoginAppBoundError extends Error {
     readonly code = "browser-app-bound-encryption";
     constructor() {
-        super(
-            "This browser protects these records with app-bound encryption. Its cookies cannot be imported; export its passwords to CSV instead.",
-        );
+        super("This browser protects its saved logins with app-bound encryption.");
     }
 }
 
-export class BrowserImportCryptoCancelledError extends Error {
-    readonly code = "browser-import-cancelled";
+/** The Keychain refused, or the person denied, the browser's key. */
+export class BrowserLoginKeyRefusedError extends Error {
+    readonly code = "browser-login-key-refused";
     constructor() {
-        super("Browser import was canceled.");
+        super("The Keychain did not unlock this browser's saved logins.");
+    }
+}
+
+export class BrowserLoginCryptoCancelledError extends Error {
+    readonly code = "browser-login-cancelled";
+    constructor() {
+        super("Using the saved login was canceled.");
     }
 }
 
 const maximumEncryptedBytes = 1024 * 1024;
 const maximumSecretBytes = 65_536;
-const safeStorageNames: Readonly<
-    Record<BrowserImportChromiumBrowser, { service: string; account: string }>
-> = {
-    chrome: { service: "Chrome Safe Storage", account: "Chrome" },
-    arc: { service: "Arc Safe Storage", account: "Arc" },
-    brave: { service: "Brave Safe Storage", account: "Brave" },
-    edge: { service: "Microsoft Edge Safe Storage", account: "Microsoft Edge" },
-};
 
 /** Call only after site selection. A browser key is unlocked lazily, once per context. */
-export async function browserImportChromiumDecryptorCreate(options: {
-    readonly browser: BrowserImportChromiumBrowser;
+export async function browserLoginChromiumDecryptorCreate(options: {
+    /** The Keychain service of the browser's key, from Happy's own browser table. */
+    readonly keychainService?: string;
     readonly selectedSites: readonly string[];
     readonly localStatePath?: string;
-}): Promise<BrowserImportChromiumDecryptor> {
+}): Promise<BrowserLoginChromiumDecryptor> {
     const selected = selectionRequire(options.selectedSites);
     platformRequire();
-    if (process.platform === "win32" && options.browser === "chrome")
-        throw new BrowserImportAppBoundError();
-    if (!Object.hasOwn(safeStorageNames, options.browser)) throw unavailable();
+    if (process.platform === "darwin" && !options.keychainService) throw unavailable();
     const controller = new AbortController();
     let key: Buffer | null = null;
     let keyPending: Promise<Buffer> | null = null;
@@ -113,7 +102,7 @@ export async function browserImportChromiumDecryptorCreate(options: {
             keyPending = (async () => {
                 const derived =
                     process.platform === "darwin"
-                        ? await macKeyRead(options.browser, controller.signal)
+                        ? await macKeyRead(options.keychainService!, controller.signal)
                         : await windowsKeyRead(options.localStatePath, controller.signal);
                 if (controller.signal.aborted) {
                     derived.fill(0);
@@ -129,7 +118,7 @@ export async function browserImportChromiumDecryptorCreate(options: {
         live();
         encryptedRequire(encrypted);
         const prefix = encrypted.subarray(0, 3).toString("ascii");
-        if (prefix === "v20") throw new BrowserImportAppBoundError();
+        if (prefix === "v20") throw new BrowserLoginAppBoundError();
         try {
             if (process.platform === "darwin") {
                 const unlocked = await keyRead();
@@ -153,7 +142,11 @@ export async function browserImportChromiumDecryptorCreate(options: {
             }
             return result;
         } catch (error) {
-            if (error instanceof BrowserImportAppBoundError) throw error;
+            if (
+                error instanceof BrowserLoginAppBoundError ||
+                error instanceof BrowserLoginKeyRefusedError
+            )
+                throw error;
             if (controller.signal.aborted) throw cancelled();
             throw decryptionFailed();
         }
@@ -174,30 +167,6 @@ export async function browserImportChromiumDecryptorCreate(options: {
             }
             return result;
         },
-        async cookieDecrypt(input) {
-            live();
-            selectedRequire(selected, input.domain);
-            if (
-                typeof input.sourceHost !== "string" ||
-                input.sourceHost.length === 0 ||
-                input.sourceHost.length > 4096 ||
-                !Number.isSafeInteger(input.databaseVersion) ||
-                input.databaseVersion < 0
-            )
-                throw decryptionFailed();
-            if (input.encryptedValue.length === 0) {
-                if (Buffer.byteLength(input.value, "utf8") > maximumSecretBytes)
-                    throw decryptionFailed();
-                return Buffer.from(input.value, "utf8");
-            }
-            const plaintext = await decrypt(input.encryptedValue);
-            try {
-                live();
-                return chromiumCookieValue(plaintext, input.sourceHost, input.databaseVersion);
-            } finally {
-                plaintext.fill(0);
-            }
-        },
         dispose() {
             controller.abort();
             key?.fill(0);
@@ -207,18 +176,17 @@ export async function browserImportChromiumDecryptorCreate(options: {
     };
 }
 
-async function macKeyRead(
-    browser: BrowserImportChromiumBrowser,
-    signal: AbortSignal,
-): Promise<Buffer> {
+async function macKeyRead(service: string, signal: AbortSignal): Promise<Buffer> {
     interactiveAccessRequire();
-    const names = safeStorageNames[browser];
     let secret: Buffer;
     try {
-        secret = await browserImportKeychainPasswordRead(names.service, names.account, signal);
-    } catch {
+        // By service alone: the account name differs between browsers and builds.
+        secret = await browserLoginKeychainPasswordRead(service, signal);
+    } catch (error) {
         if (signal.aborted) throw cancelled();
-        throw unavailable();
+        throw error instanceof BrowserLoginKeychainError
+            ? new BrowserLoginKeyRefusedError()
+            : unavailable();
     }
     try {
         // The Keychain returns the stored bytes exactly; nothing is trimmed.
@@ -404,29 +372,7 @@ function chromiumGcmDecrypt(encrypted: Buffer, key: Buffer): Buffer {
     }
 }
 
-function chromiumCookieValue(
-    plaintext: Buffer,
-    sourceHost: string,
-    databaseVersion: number,
-): Buffer {
-    const offset = databaseVersion >= 24 ? 32 : 0;
-    if (offset) {
-        const expected = createHash("sha256").update(sourceHost, "utf8").digest();
-        try {
-            if (
-                plaintext.length < offset ||
-                !timingSafeEqual(expected, plaintext.subarray(0, offset))
-            )
-                throw decryptionFailed();
-        } finally {
-            expected.fill(0);
-        }
-    }
-    if (plaintext.length - offset > maximumSecretBytes) throw decryptionFailed();
-    return Buffer.from(plaintext.subarray(offset));
-}
-
-// NSS has process-global key-slot state. A single live import owns it until dispose.
+// NSS has process-global key-slot state. A single live read owns it until dispose.
 let firefoxContextActive = false;
 let nssShutdownFailed = false;
 let retainedNssLibrary: LibraryHandle | null = null;
@@ -437,9 +383,9 @@ interface NssItem {
     len: number;
 }
 
-export async function browserImportFirefoxDecryptorCreate(
-    options: BrowserImportFirefoxOptions,
-): Promise<BrowserImportFirefoxDecryptor> {
+export async function browserLoginFirefoxDecryptorCreate(
+    options: BrowserLoginFirefoxOptions,
+): Promise<BrowserLoginFirefoxDecryptor> {
     const selected = selectionRequire(options.selectedSites);
     platformRequire();
     interactiveAccessRequire();
@@ -451,15 +397,13 @@ export async function browserImportFirefoxDecryptorCreate(
             (process.platform === "darwin" ? "libnss3.dylib" : "nss3.dll")
     )
         throw unavailable();
-    await browserImportNssTrustRequire(options.nssLibraryPath);
+    await browserLoginNssTrustRequire(options.nssLibraryPath);
     if (nssShutdownFailed || retainedNssLibrary)
         throw new Error(
-            "Firefox import is unavailable in this app session. Reopen Happy to try again.",
+            "Firefox logins are unavailable in this app session. Reopen Happy to try again.",
         );
     if (firefoxContextActive)
-        throw new Error(
-            "Another Firefox import is using its password database. Finish it before importing another profile.",
-        );
+        throw new Error("Another Firefox login is being read. Try again in a moment.");
     firefoxContextActive = true;
     let library: LibraryHandle | null = null;
     let initialized = false;
@@ -524,7 +468,7 @@ export async function browserImportFirefoxDecryptorCreate(
         const empty = Buffer.alloc(1);
         let unlocked = needLogin(slot) === 0 || passwordCheck(slot, empty) === 0;
         if (!unlocked && !options.primaryPasswordRequest)
-            throw new BrowserImportFirefoxPrimaryPasswordRequiredError();
+            throw new BrowserLoginFirefoxPrimaryPasswordRequiredError();
         for (let attempt = 1; !unlocked && attempt <= 3; attempt += 1) {
             const password = await options.primaryPasswordRequest!({ attempt });
             if (password === null) throw cancelled();
@@ -540,8 +484,7 @@ export async function browserImportFirefoxDecryptorCreate(
                 terminated?.fill(0);
             }
         }
-        if (!unlocked)
-            throw new Error("Firefox did not accept its primary password. Nothing was imported.");
+        if (!unlocked) throw new Error("Firefox did not accept its primary password.");
 
         const itemType = koffi.struct({
             type: "unsigned int",
@@ -567,7 +510,7 @@ export async function browserImportFirefoxDecryptorCreate(
                     (!output.data && output.len !== 0)
                 )
                     throw decryptionFailed();
-                return browserImportNativeBytesCopy(output.data, output.len);
+                return browserLoginNativeBytesCopy(output.data, output.len);
             } finally {
                 encrypted.fill(0);
                 if (output.data) freeItem(output, 0);
@@ -575,6 +518,15 @@ export async function browserImportFirefoxDecryptorCreate(
         }
 
         return {
+            async usernameDecrypt(input) {
+                if (disposed) throw cancelled();
+                selectedRequire(selected, input.origin);
+                try {
+                    return valueDecrypt(input.encryptedUsername);
+                } catch {
+                    throw decryptionFailed();
+                }
+            },
             async loginDecrypt(input) {
                 if (disposed) throw cancelled();
                 selectedRequire(selected, input.origin);
@@ -593,13 +545,13 @@ export async function browserImportFirefoxDecryptorCreate(
     } catch (error) {
         dispose();
         if (
-            error instanceof BrowserImportFirefoxPrimaryPasswordRequiredError ||
-            error instanceof BrowserImportCryptoCancelledError
+            error instanceof BrowserLoginFirefoxPrimaryPasswordRequiredError ||
+            error instanceof BrowserLoginCryptoCancelledError
         )
             throw error;
         // Native exceptions must never carry paths, buffers, passwords or NSS diagnostics.
         throw new Error(
-            "Firefox could not unlock these selected logins. Check its primary password and installed application, then try again.",
+            "Firefox could not unlock this login. Check its primary password and installed application, then try again.",
         );
     }
 }
@@ -610,12 +562,12 @@ function selectionRequire(sites: readonly string[]): ReadonlySet<string> {
         sites.length > 20_000 ||
         sites.some((site) => typeof site !== "string" || site.length === 0 || site.length > 4096)
     )
-        throw new Error("Choose the sites to import before unlocking this browser.");
+        throw new Error("Choose a saved login before unlocking this browser.");
     return new Set(sites);
 }
 
 function selectedRequire(selected: ReadonlySet<string>, site: string): void {
-    if (!selected.has(site)) throw new Error("This site was not selected for import.");
+    if (!selected.has(site)) throw new Error("This site was not chosen.");
 }
 
 function encryptedRequire(encrypted: Buffer): void {
@@ -644,7 +596,7 @@ function base64Require(encoded: string): Buffer {
 
 function platformRequire(): void {
     if (process.platform !== "darwin" && process.platform !== "win32")
-        throw new Error("Direct browser import is available on macOS and Windows.");
+        throw new Error("Browser logins are available on macOS and Windows.");
 }
 
 function interactiveAccessRequire(): void {
@@ -657,13 +609,11 @@ function interactiveAccessRequire(): void {
 }
 
 function unavailable(): Error {
-    return new Error(
-        "The selected browser's encryption key could not be unlocked. Nothing was imported.",
-    );
+    return new Error("The browser's encryption key could not be unlocked.");
 }
 function decryptionFailed(): Error {
-    return new Error("This selected browser record could not be decrypted. Nothing was imported.");
+    return new Error("This saved login could not be decrypted.");
 }
-function cancelled(): BrowserImportCryptoCancelledError {
-    return new BrowserImportCryptoCancelledError();
+function cancelled(): BrowserLoginCryptoCancelledError {
+    return new BrowserLoginCryptoCancelledError();
 }

@@ -23,8 +23,6 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopRuntime } from "./desktopRuntime";
 import { BrowserPasswords } from "./browserPasswords";
-import { BrowserImportController } from "./browserImport";
-import { BrowserImportTargets } from "./browserImportTargets";
 import { browserPasswordGuestAttach } from "./browserPasswordGuest";
 import { desktopInstanceMenuTargets } from "./applicationMenu";
 import {
@@ -58,7 +56,6 @@ import {
     type DesktopBrowserPopup,
     type DesktopBrowserNetwork,
     type DesktopBrowserNetworkMissing,
-    type DesktopBrowserProxyTarget,
     type DesktopBrowserStatus,
     type DesktopBrowserTunnelFailure,
     type DesktopCloudAuthConfiguration,
@@ -127,8 +124,9 @@ if (process.platform !== "darwin" && process.platform !== "linux" && process.pla
     app.exit(1);
 }
 /*
- * A signed release holds Keychain-wrapped secrets such as saved browser passwords,
- * so no other process may attach a debugger to it. The fuses already refuse Node's
+ * A signed release unlocks the person's saved browser logins through their Keychain
+ * and holds a picked password while it fills it, so no other process may attach a
+ * debugger to it. The fuses already refuse Node's
  * own inspector flags; Chromium's remote debugging has no fuse and is refused here,
  * before the DevTools endpoint opens.
  */
@@ -429,8 +427,6 @@ let desktopUpdater: DesktopUpdater | undefined;
 const browserProxies = new Map<string, HappyAgentBrowser>();
 /** Workspace-browser profiles opened this launch; never a live artifact profile. */
 const browserNetworkPartitions = new Set<string>();
-/** The agent Happy Agent last named as using each network profile, by partition. */
-const browserNetworkOwners = new Map<string, DesktopBrowserProxyTarget>();
 /** The isolated world inline guests are measured in, apart from the page's own. */
 const guestFitWorld = 1_000;
 let htmlPreviewProxy: HtmlPreviewProxyHandle | undefined;
@@ -448,8 +444,6 @@ let browserProxyOperation = Promise.resolve();
 // In a hidden-window run, showing a window leaves it hidden (hiddenWindows.ts).
 const windowLifecycle = new DesktopWindowLifecycle<BrowserWindow>();
 let browserPasswords: BrowserPasswords | undefined;
-let browserImport: BrowserImportController | undefined;
-let browserImportTargets: BrowserImportTargets | undefined;
 const browserPasswordGuests = new Map<
     number,
     { readonly owner: WebContents; readonly pickerOpen: () => void }
@@ -1033,8 +1027,8 @@ function browserGuestAttach(window: BrowserWindow): void {
             const passwords = browserPasswordGuestAttach({
                 guest,
                 window,
-                vault: browserPasswords.vault,
-                loginsChanged: browserPasswords.loginsChanged,
+                logins: browserPasswords.logins,
+                saveTarget: browserPasswords.onePassword,
             });
             browserPasswordGuests.set(guest.id, {
                 owner: window.webContents,
@@ -1708,8 +1702,8 @@ void app
         );
         const desktopRoot = join(app.getPath("userData"), "desktop");
         browserPasswords = new BrowserPasswords({
-            path: join(desktopRoot, "browser-passwords.json"),
-            windowCurrent: () => windowLifecycle.get(),
+            onePasswordPath: join(desktopRoot, "one-password.json"),
+            version: app.getVersion(),
             windowRequire: (event) => {
                 const window = windowLifecycle.get();
                 if (
@@ -1718,7 +1712,7 @@ void app
                     window.webContents !== event.sender ||
                     event.senderFrame !== event.sender.mainFrame
                 )
-                    throw new Error("Only Happy's current window can manage browser passwords.");
+                    throw new Error("Only Happy's current window can use saved logins.");
                 return window;
             },
             pickerOpen: (owner, guestId) => {
@@ -1728,36 +1722,8 @@ void app
                 passwords.pickerOpen();
             },
         });
-        browserPasswords.install();
-        browserImportTargets = new BrowserImportTargets({
-            path: join(desktopRoot, "browser-import-targets.json"),
-            ownerActive: (owner, signal) => runtime.browserNetworkOwnerActive(owner, signal),
-        });
-        browserImport = new BrowserImportController({
-            windowCurrent: () => windowLifecycle.get(),
-            windowRequire: (event) => {
-                const window = windowLifecycle.get();
-                if (
-                    !window ||
-                    window.isDestroyed() ||
-                    window.webContents !== event.sender ||
-                    event.senderFrame !== event.sender.mainFrame
-                )
-                    throw new Error("Only Happy's current window can import browser data.");
-                return window;
-            },
-            targets: browserImportTargets,
-            vault: browserPasswords.vault,
-            loginsChanged: browserPasswords.loginsChanged,
-            // Every packaged build is made by electron-builder with the
-            // enableCookieEncryption fuse on; a checkout's Electron has it off.
-            cookieStoreEncrypted: app.isPackaged,
-        });
-        browserImport.install();
-        app.once("will-quit", () => {
-            browserImport?.dispose();
-            browserPasswords?.dispose();
-        });
+        await browserPasswords.install();
+        app.once("will-quit", () => browserPasswords?.dispose());
         desktopWindowStateStore = await DesktopWindowStateStore.create(
             join(desktopRoot, "window-state.json"),
         );
@@ -1833,7 +1799,7 @@ void app
             ...(app.isPackaged
                 ? {
                       inProcessDisabledReason:
-                          "Off in installed Happy: it holds saved passwords and imported sessions.",
+                          "Off in installed Happy: it can unlock your saved browser logins.",
                   }
                 : {}),
             daemon: () => {
@@ -2077,39 +2043,20 @@ void app
                 desktopReactDevtoolsMessageValidate(raw);
             if (message) desktopProfilerController.reactMessage(message);
         });
-        ipcMain.handle(desktopIpc.browserNetworkResolve, async (event, rawTarget: unknown) => {
+        ipcMain.handle(desktopIpc.browserNetworkResolve, (event, target: unknown) => {
             desktopDaemonSenderRequire(event.sender);
             if (event.senderFrame !== event.sender.mainFrame)
                 throw new Error("Only Happy can open a browser tab.");
-            const target = desktopBrowserProxyTargetValidate(rawTarget);
-            const networkId = await runtime.browserNetworkResolve(
-                target,
+            return runtime.browserNetworkResolve(
+                desktopBrowserProxyTargetValidate(target),
                 AbortSignal.timeout(10_000),
             );
-            // Happy Agent itself named this agent's network: that pairing, not
-            // one the renderer reports, keeps the profile an import destination.
-            browserNetworkOwners.set(
-                HappyAgentBrowser.partition({ connectionId: target.connectionId, networkId }),
-                target,
-            );
-            return networkId;
         });
-        ipcMain.handle(desktopIpc.browserNetworkProfileOpen, async (event, rawNetwork: unknown) => {
+        ipcMain.handle(desktopIpc.browserNetworkProfileOpen, (event, network: unknown) => {
             desktopDaemonSenderRequire(event.sender);
             if (event.senderFrame !== event.sender.mainFrame)
                 throw new Error("Only Happy can configure a browser profile.");
-            const network = desktopBrowserNetworkValidate(rawNetwork);
-            const partition = await browserProxyApply(network);
-            const owner =
-                network.artifactId === undefined ? browserNetworkOwners.get(partition) : undefined;
-            // A profile a workspace browser opened receives imported
-            // sessions, now and after later launches.
-            if (owner && browserImportTargets)
-                void browserImportTargets.remember(network, owner).then(
-                    () => browserImport?.targetsChanged(),
-                    () => undefined,
-                );
-            return partition;
+            return browserProxyApply(desktopBrowserNetworkValidate(network));
         });
         ipcMain.handle(
             desktopIpc.guestFitMeasure,

@@ -109,29 +109,6 @@ export function TooltipPage() {
                     <DimensionRule label="bubble starts at the trigger's leading edge · 4 px clear below it" />
                 </div>
             </Specimen>
-
-            <Specimen
-                detail="A trigger beside a dialog's trailing edge ends its bubble at its own trailing edge, so the dialog never clips it."
-                label="End alignment"
-                number="05"
-                stage="surface"
-            >
-                <div style={{ display: "flex", flexDirection: "column", gap: "48px" }}>
-                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "64px" }}>
-                        <Tooltip
-                            align="end"
-                            label="Only the sites you choose are imported."
-                            open
-                            placement="bottom"
-                        >
-                            <Button size="small" variant="secondary">
-                                End
-                            </Button>
-                        </Tooltip>
-                    </div>
-                    <DimensionRule label="bubble ends at the trigger's trailing edge · 4 px clear below it" />
-                </div>
-            </Specimen>
         </ComponentPage>
     );
 }

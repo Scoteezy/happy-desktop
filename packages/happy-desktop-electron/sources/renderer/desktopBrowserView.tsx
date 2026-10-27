@@ -123,7 +123,7 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             this.command({ action: "stop" });
             this.props.browserLoadingChanged(false);
         },
-        ...(window.happyDesktop?.browserPasswordsAvailable
+        ...(window.happyDesktop?.browserPasswordPickerOpen
             ? {
                   browserPasswordPick: () => {
                       const view = this.element;

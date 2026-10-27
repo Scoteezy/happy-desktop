@@ -21,7 +21,7 @@ export interface DesktopDebugControllerOptions {
     /**
      * When set, the main and renderer debuggers are disabled for this process's
      * lifetime with this reason. Both run inside Happy's own processes, where an
-     * attached client can reach saved passwords and imported sessions.
+     * attached client can reach the saved browser logins Happy unlocks.
      */
     readonly inProcessDisabledReason?: string;
 }

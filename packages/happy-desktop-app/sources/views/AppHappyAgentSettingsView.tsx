@@ -1,8 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type {
     AppearanceStore,
-    BrowserLoginsStore,
-    BrowserImportStore,
     BrowserPasswordSettingsStore,
     HappyAgentAttentionStore,
     HappyAgentCompletionSound,
@@ -30,8 +28,6 @@ import type {
 } from "happy-desktop-state";
 import {
     EXPERIMENTAL_FEATURES,
-    browserLoginsStoreCreate,
-    browserImportStoreCreate,
     browserPasswordSettingsStoreOwnedCreate,
     HAPPY_AGENT_CHANGE_TIERS_MAX,
     HAPPY_AGENT_INSTRUCTIONS_MAX_BYTES,
@@ -85,7 +81,6 @@ import {
     HappyAgentProfilerSettings,
     HappyAgentProfileSettings,
     HappyAgentPasswordSettings,
-    BrowserImportDialog,
     HappyAgentSecretSettings,
     HappyAgentSettingsShell,
     HappyAgentTaskSettings,
@@ -351,7 +346,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     "file-tiers": "Which changed files are listed apart",
     instructions: "Agent guidance and permission review for this machine",
     secrets: "Environment variables for agents",
-    passwords: "Saved browser logins on this device",
+    passwords: "Saved logins from your browsers and 1Password",
     providers: "Model providers and the models they offer",
     usage: "What each provider account has spent",
 };
@@ -370,22 +365,18 @@ const usageAnalyticsAbsent: UsageAnalyticsStore = {
     usageAnalyticsUpdate: () => undefined,
 };
 
-/** Separate machine-local surfaces; the stores contain metadata and intent only. */
+/** This machine's saved-login settings; Happy itself stores no password. */
 export interface AppBrowserPasswords {
-    readonly logins: BrowserLoginsStore;
     readonly settings: BrowserPasswordSettingsStore;
-    readonly browserImport: BrowserImportStore;
 }
 
 const browserPasswordsAbsent: AppBrowserPasswords = {
-    logins: browserLoginsStoreCreate(),
     settings: browserPasswordSettingsStoreOwnedCreate().store,
-    browserImport: browserImportStoreCreate(),
 };
 
 export interface AppHappyAgentSettingsViewProps {
     appearance: AppearanceStore;
-    /** This device's vault, shared by local and remote Happy Agent connections. */
+    /** This machine's saved-login settings, shared by local and remote connections. */
     browserPasswords?: AppBrowserPasswords;
     /** Managed Happy Agent controls, present only in the native desktop shell. */
     daemon?: AppHappyAgentDaemonStore;
@@ -441,20 +432,10 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         props.appearance.get,
     );
     const browserPasswords = props.browserPasswords ?? browserPasswordsAbsent;
-    const browserLogins = useSyncExternalStore(
-        browserPasswords.logins.subscribe,
-        browserPasswords.logins.get,
-        browserPasswords.logins.get,
-    );
     const browserPasswordSettings = useSyncExternalStore(
         browserPasswords.settings.subscribe,
         browserPasswords.settings.get,
         browserPasswords.settings.get,
-    );
-    const browserImport = useSyncExternalStore(
-        browserPasswords.browserImport.subscribe,
-        browserPasswords.browserImport.get,
-        browserPasswords.browserImport.get,
     );
     const experimentsStore = props.experiments ?? experimentsStoreNoop;
     const gptLiveStore = props.gptLive ?? gptLiveStoreNoop;
@@ -752,16 +733,8 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             activeCategoryId={section}
             categories={categories}
             description={CATEGORY_DESCRIPTIONS[section]}
-            onCategorySelect={(id) => {
-                if (browserPasswords.browserImport.get().pending) return;
-                browserPasswords.browserImport.importClose();
-                props.onCategorySelect(id);
-            }}
-            onClose={() => {
-                if (browserPasswords.browserImport.get().pending) return;
-                browserPasswords.browserImport.importClose();
-                props.onClose();
-            }}
+            onCategorySelect={props.onCategorySelect}
+            onClose={props.onClose}
             title={categories.find((category) => category.id === section)?.label ?? "Settings"}
             windowControls={props.platform === "desktop"}
             windowFullScreen={windowState.fullScreen}
@@ -1234,41 +1207,22 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     {...(unavailable === undefined ? {} : { unavailable })}
                 />
             ) : section === "passwords" ? (
-                <>
-                    <HappyAgentPasswordSettings
-                        available={browserPasswordSettings.available}
-                        loading={browserPasswordSettings.loading}
-                        pending={browserPasswordSettings.pending}
-                        error={browserPasswordSettings.error}
-                        logins={[...browserLogins.logins.values()].map((login) => ({
-                            id: login.id,
-                            origin: login.origin,
-                            username: login.username,
-                            updatedAt: new Date(login.updatedAt).toLocaleString(),
-                        }))}
-                        proposal={browserPasswordSettings.proposal}
-                        selectedOrigins={browserPasswordSettings.selectedOrigins}
-                        onBrowserImportChoose={() => browserPasswords.browserImport.importOpen()}
-                        onImportChoose={() => browserPasswords.settings.importChoose()}
-                        onImportSiteSelect={(origin, selected) =>
-                            browserPasswords.settings.importSiteSelect(origin, selected)
-                        }
-                        onImportCommit={() => browserPasswords.settings.importCommit()}
-                        onImportCancel={() => browserPasswords.settings.importCancel()}
-                        onLoginRemove={(id) => {
-                            const login = [...browserLogins.logins.values()].find(
-                                (entry) => entry.id === id,
-                            );
-                            if (login) browserPasswords.logins.loginRemove(login.id);
-                        }}
-                        onLoginReveal={(id) => {
-                            const login = [...browserLogins.logins.values()].find(
-                                (entry) => entry.id === id,
-                            );
-                            if (login) browserPasswords.settings.loginReveal(login.id);
-                        }}
-                    />
-                </>
+                <HappyAgentPasswordSettings
+                    available={browserPasswordSettings.available}
+                    error={browserPasswordSettings.error}
+                    loading={browserPasswordSettings.loading}
+                    onePasswordAccount={browserPasswordSettings.onePasswordAccount}
+                    onePasswordAccountDraft={browserPasswordSettings.onePasswordAccountDraft}
+                    onePasswordInstalled={browserPasswordSettings.onePasswordInstalled}
+                    onOnePasswordAccountDraftChange={(value) =>
+                        browserPasswords.settings.onePasswordAccountDraftUpdate(value)
+                    }
+                    onOnePasswordConnect={() => browserPasswords.settings.onePasswordConnect()}
+                    onOnePasswordDisconnect={() =>
+                        browserPasswords.settings.onePasswordDisconnect()
+                    }
+                    pending={browserPasswordSettings.pending}
+                />
             ) : section === "secrets" ? (
                 <HappyAgentSecretSettings
                     loading={secrets.loading}
@@ -1400,35 +1354,6 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
     return (
         <HappyAgentVersionProvider lastKnownVersion={host?.version}>
             {content}
-            <BrowserImportDialog
-                snapshot={browserImport}
-                onClose={() => browserPasswords.browserImport.importClose()}
-                onProfileSelect={(id) => browserPasswords.browserImport.profileSelect(id)}
-                onCookieSiteSelect={(id, selected) =>
-                    browserPasswords.browserImport.cookieSiteSelect(id, selected)
-                }
-                onCookieSitesSelect={(ids, selected) =>
-                    browserPasswords.browserImport.cookieSitesSelect(ids, selected)
-                }
-                onCookieDomainSelect={(id, selected) =>
-                    browserPasswords.browserImport.cookieDomainSelect(id, selected)
-                }
-                onPasswordSiteSelect={(id, selected) =>
-                    browserPasswords.browserImport.passwordSiteSelect(id, selected)
-                }
-                onPasswordSitesSelect={(ids, selected) =>
-                    browserPasswords.browserImport.passwordSitesSelect(ids, selected)
-                }
-                onPasswordLoginSelect={(id, selected) =>
-                    browserPasswords.browserImport.passwordLoginSelect(id, selected)
-                }
-                onImportCommit={() => browserPasswords.browserImport.importCommit()}
-                onPasswordCsvChoose={() => {
-                    browserPasswords.browserImport.importClose();
-                    if (!browserPasswords.browserImport.get().open)
-                        browserPasswords.settings.importChoose();
-                }}
-            />
         </HappyAgentVersionProvider>
     );
 }

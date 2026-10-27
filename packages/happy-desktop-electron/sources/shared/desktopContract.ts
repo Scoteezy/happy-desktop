@@ -4,13 +4,7 @@ import type {
     DesktopReactDevtoolsCommand,
     DesktopReactDevtoolsMessage,
 } from "./desktopProfiler";
-import type {
-    BrowserLoginId,
-    BrowserLoginSnapshot,
-    BrowserPasswordImportId,
-    BrowserPasswordImportProposal,
-    CustomTheme,
-} from "happy-desktop-state";
+import type { CustomTheme } from "happy-desktop-state";
 
 export type DesktopMode = "local";
 
@@ -423,6 +417,18 @@ export interface DesktopGuestKeyEvent {
     readonly shiftKey: boolean;
     readonly type: "keydown" | "keyup";
 }
+
+/** Saved-login settings: which password manager is connected, never a login. */
+export interface DesktopBrowserPasswordSettings {
+    /** Whether the 1Password app is installed with its SDK integration library. */
+    readonly onePasswordInstalled: boolean;
+    /** The 1Password account Happy reads logins from, or null when none is connected. */
+    readonly onePasswordAccount: string | null;
+}
+
+export type DesktopBrowserOnePasswordConnectResult =
+    | { readonly type: "connected"; readonly settings: DesktopBrowserPasswordSettings }
+    | { readonly type: "failed"; readonly message: string };
 
 /**
  * `disabled` is the build's permanent refusal, with its reason in `error`: a
@@ -850,36 +856,14 @@ export interface HappyDesktopBridge {
     browserNetworkResolve?(target: DesktopBrowserProxyTarget): Promise<string>;
     /** Returns the partition of a network's profile, opening it the first time. */
     browserNetworkProfileOpen?(network: DesktopBrowserNetwork): Promise<string>;
-    /** Machine-local password metadata. No bridge method returns a credential value. */
-    readonly browserPasswordsAvailable?: boolean;
-    /** Browser-profile import: source and destination metadata only. */
-    browserImportOpen?(): Promise<import("happy-desktop-state").BrowserImportCatalog>;
-    browserImportProfileSelect?(
-        id: import("happy-desktop-state").BrowserImportProfileId,
-    ): Promise<import("happy-desktop-state").BrowserImportProposal>;
-    browserImportCommit?(
-        selection: import("happy-desktop-state").BrowserImportSelection,
-    ): Promise<import("happy-desktop-state").BrowserImportResult>;
-    browserImportClose?(): Promise<void>;
-    browserImportSubscribe?(
-        listener: (event: import("happy-desktop-state").BrowserImportEvent) => void,
-    ): () => void;
-    browserLoginsRead?(): Promise<readonly BrowserLoginSnapshot[]>;
-    browserLoginsSubscribe?(
-        listener: (logins: readonly BrowserLoginSnapshot[]) => void,
-    ): () => void;
-    browserLoginRemove?(id: BrowserLoginId): Promise<void>;
-    /** Touch ID and reveal both happen in main-owned native UI. */
-    browserLoginReveal?(id: BrowserLoginId): Promise<void>;
-    browserPasswordImportChoose?(): Promise<BrowserPasswordImportProposal | null>;
-    browserPasswordImportCommit?(
-        id: BrowserPasswordImportId,
-        origins: readonly string[],
-    ): Promise<void>;
-    browserPasswordImportCancel?(id: BrowserPasswordImportId): Promise<void>;
-    browserPasswordImportExpiredSubscribe?(
-        listener: (id: BrowserPasswordImportId) => void,
-    ): () => void;
+    /**
+     * Saved-login settings. Happy stores no password, and no bridge method
+     * returns one: a login is filled only after a native picker choice.
+     */
+    browserPasswordSettingsRead?(): Promise<DesktopBrowserPasswordSettings>;
+    /** 1Password asks the person to approve Happy before this resolves. */
+    browserOnePasswordConnect?(account: string): Promise<DesktopBrowserOnePasswordConnectResult>;
+    browserOnePasswordDisconnect?(): Promise<DesktopBrowserPasswordSettings>;
     /** Opens a native credential picker; only a native menu choice can fill. */
     browserPasswordPickerOpen?(guestId: number): Promise<void>;
     /**
@@ -1079,19 +1063,9 @@ export const desktopIpc = {
     appearanceSet: "happy:appearance:set",
     browserNetworkResolve: "happy:browser:network-resolve",
     browserNetworkProfileOpen: "happy:browser:network-profile-open",
-    browserLoginsRead: "happy:browser-passwords:list",
-    browserImportOpen: "happy:browser-import:open",
-    browserImportProfileSelect: "happy:browser-import:profile-select",
-    browserImportCommit: "happy:browser-import:commit",
-    browserImportClose: "happy:browser-import:close",
-    browserImportChanged: "happy:browser-import:changed",
-    browserLoginsChanged: "happy:browser-passwords:changed",
-    browserLoginRemove: "happy:browser-passwords:remove",
-    browserLoginReveal: "happy:browser-passwords:reveal",
-    browserPasswordImportChoose: "happy:browser-passwords:import-choose",
-    browserPasswordImportCommit: "happy:browser-passwords:import-commit",
-    browserPasswordImportCancel: "happy:browser-passwords:import-cancel",
-    browserPasswordImportExpired: "happy:browser-passwords:import-expired",
+    browserPasswordSettingsRead: "happy:browser-passwords:settings-read",
+    browserOnePasswordConnect: "happy:browser-passwords:one-password-connect",
+    browserOnePasswordDisconnect: "happy:browser-passwords:one-password-disconnect",
     browserPasswordPickerOpen: "happy:browser-passwords:picker-open",
     guestFitMeasure: "happy:guest:fit-measure",
     browserNetworkPopupRequested: "happy:browser:network-popup-requested",

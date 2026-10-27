@@ -1,62 +1,48 @@
-import type { BrowserLoginId } from "./browserLoginsStore.js";
-
-declare const importIdBrand: unique symbol;
-export type BrowserPasswordImportId = string & { readonly [importIdBrand]: true };
-
-/** Metadata only. CSV contents and credential values remain in desktop main. */
-export interface BrowserPasswordImportSite {
-    readonly origin: string;
-    readonly usernames: readonly string[];
-    readonly count: number;
-}
-
-export interface BrowserPasswordImportProposal {
-    readonly id: BrowserPasswordImportId;
-    readonly sites: readonly BrowserPasswordImportSite[];
-    readonly skipped: number;
-    readonly expiresAt: number;
-}
-
+/**
+ * Saved-login settings: which 1Password account Happy reads logins from. Happy
+ * stores no password, so there is no list of logins here, only this choice.
+ */
 export interface BrowserPasswordSettingsSnapshot {
+    /** Whether this host reads saved logins at all (the macOS and Windows desktop app). */
     readonly available: boolean;
     readonly loading: boolean;
+    readonly onePasswordInstalled: boolean;
+    /** The connected 1Password account, or null when none is. */
+    readonly onePasswordAccount: string | null;
+    /** The account name being typed before connecting. */
+    readonly onePasswordAccountDraft: string;
     readonly pending: boolean;
     readonly error?: string;
-    readonly proposal?: BrowserPasswordImportProposal;
-    readonly selectedOrigins: ReadonlySet<string>;
+}
+
+export interface BrowserPasswordSettingsReceived {
+    readonly onePasswordInstalled: boolean;
+    readonly onePasswordAccount: string | null;
 }
 
 export interface BrowserPasswordSettingsOutput {
-    importChooseRequested(): void;
-    importCommitRequested(id: BrowserPasswordImportId, origins: readonly string[]): void;
-    importCancelRequested(id: BrowserPasswordImportId): void;
-    loginRevealRequested(id: BrowserLoginId): void;
+    onePasswordConnectRequested(account: string): void;
+    onePasswordDisconnectRequested(): void;
 }
 
 export interface BrowserPasswordSettingsStore {
     get(): BrowserPasswordSettingsSnapshot;
     subscribe(listener: () => void): () => void;
-    importChoose(): void;
-    importSiteSelect(origin: string, selected: boolean): void;
-    importCommit(): void;
-    importCancel(): void;
-    loginReveal(id: BrowserLoginId): void;
+    onePasswordAccountDraftUpdate(value: string): void;
+    onePasswordConnect(): void;
+    onePasswordDisconnect(): void;
     [Symbol.dispose](): void;
 }
 
 export interface BrowserPasswordSettingsWriter {
-    loginsLoaded(): void;
+    settingsReceived(settings: BrowserPasswordSettingsReceived): void;
     operationFailed(message: string): void;
-    operationFinished(): void;
-    loginRemoveFailed(message: string): void;
-    importProposed(proposal: BrowserPasswordImportProposal | null): void;
-    importCommitted(): void;
-    importExpired(id: BrowserPasswordImportId): void;
 }
 
 export function browserPasswordSettingsStoreOwnedCreate(
     options: {
         readonly available?: boolean;
+        readonly initial?: BrowserPasswordSettingsReceived;
         readonly output?: Partial<BrowserPasswordSettingsOutput>;
     } = {},
 ): {
@@ -64,11 +50,14 @@ export function browserPasswordSettingsStoreOwnedCreate(
     readonly writer: BrowserPasswordSettingsWriter;
 } {
     const output = options.output ?? {};
+    const available = options.available ?? false;
     let snapshot: BrowserPasswordSettingsSnapshot = {
-        available: options.available ?? false,
-        loading: options.available ?? false,
+        available,
+        loading: available && options.initial === undefined,
+        onePasswordInstalled: options.initial?.onePasswordInstalled ?? false,
+        onePasswordAccount: options.initial?.onePasswordAccount ?? null,
+        onePasswordAccountDraft: "",
         pending: false,
-        selectedOrigins: new Set(),
     };
     let disposed = false;
     const listeners = new Set<() => void>();
@@ -78,7 +67,6 @@ export function browserPasswordSettingsStoreOwnedCreate(
         for (const listener of listeners) listener();
     };
     const ready = () => !disposed && snapshot.available && !snapshot.loading && !snapshot.pending;
-    const start = () => set({ ...snapshot, error: undefined, pending: true });
     const store: BrowserPasswordSettingsStore = {
         get: () => snapshot,
         subscribe(listener) {
@@ -87,75 +75,38 @@ export function browserPasswordSettingsStoreOwnedCreate(
                 listeners.delete(listener);
             };
         },
-        importChoose() {
-            if (!ready() || snapshot.proposal) return;
-            start();
-            output.importChooseRequested?.();
+        onePasswordAccountDraftUpdate(value) {
+            if (disposed) return;
+            set({ ...snapshot, onePasswordAccountDraft: value, error: undefined });
         },
-        importSiteSelect(origin, selected) {
-            if (!ready() || !snapshot.proposal?.sites.some((site) => site.origin === origin))
-                return;
-            const selectedOrigins = new Set(snapshot.selectedOrigins);
-            if (selected) selectedOrigins.add(origin);
-            else selectedOrigins.delete(origin);
-            set({ ...snapshot, selectedOrigins });
+        onePasswordConnect() {
+            const account = snapshot.onePasswordAccountDraft.trim();
+            if (!ready() || !snapshot.onePasswordInstalled || account === "") return;
+            set({ ...snapshot, pending: true, error: undefined });
+            output.onePasswordConnectRequested?.(account);
         },
-        importCommit() {
-            if (!ready() || !snapshot.proposal || snapshot.selectedOrigins.size === 0) return;
-            const { id } = snapshot.proposal;
-            const origins = [...snapshot.selectedOrigins];
-            start();
-            output.importCommitRequested?.(id, origins);
-        },
-        importCancel() {
-            if (disposed || snapshot.pending || !snapshot.proposal) return;
-            const { id } = snapshot.proposal;
-            set({ ...snapshot, proposal: undefined, selectedOrigins: new Set(), error: undefined });
-            output.importCancelRequested?.(id);
-        },
-        loginReveal(id) {
-            if (!ready()) return;
-            start();
-            output.loginRevealRequested?.(id);
+        onePasswordDisconnect() {
+            if (!ready() || snapshot.onePasswordAccount === null) return;
+            set({ ...snapshot, pending: true, error: undefined });
+            output.onePasswordDisconnectRequested?.();
         },
         [Symbol.dispose]() {
-            if (disposed) return;
-            if (snapshot.proposal) output.importCancelRequested?.(snapshot.proposal.id);
             disposed = true;
             listeners.clear();
         },
     };
     const writer: BrowserPasswordSettingsWriter = {
-        loginsLoaded: () => set({ ...snapshot, loading: false }),
+        settingsReceived: (settings) =>
+            set({
+                ...snapshot,
+                ...settings,
+                loading: false,
+                pending: false,
+                error: undefined,
+                onePasswordAccountDraft:
+                    settings.onePasswordAccount === null ? snapshot.onePasswordAccountDraft : "",
+            }),
         operationFailed: (error) => set({ ...snapshot, loading: false, pending: false, error }),
-        operationFinished: () => set({ ...snapshot, pending: false, error: undefined }),
-        loginRemoveFailed: (error) => set({ ...snapshot, error }),
-        importProposed: (proposal) =>
-            set({
-                ...snapshot,
-                proposal: proposal ?? undefined,
-                selectedOrigins: new Set(),
-                pending: false,
-                error: undefined,
-            }),
-        importCommitted: () =>
-            set({
-                ...snapshot,
-                proposal: undefined,
-                selectedOrigins: new Set(),
-                pending: false,
-                error: undefined,
-            }),
-        importExpired(id) {
-            if (snapshot.proposal?.id !== id) return;
-            set({
-                ...snapshot,
-                proposal: undefined,
-                selectedOrigins: new Set(),
-                pending: false,
-                error: "The password import expired. Choose the CSV again.",
-            });
-        },
     };
     return { store, writer };
 }

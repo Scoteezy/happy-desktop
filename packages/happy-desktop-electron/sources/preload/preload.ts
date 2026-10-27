@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { BrowserLoginSnapshot, BrowserPasswordImportId } from "happy-desktop-state";
 import {
     buildIdentityArgument,
     debugMetricsArgument,
@@ -90,47 +89,19 @@ const bridge: HappyDesktopBridge = {
     browserNetworkResolve: (target) => ipcRenderer.invoke(desktopIpc.browserNetworkResolve, target),
     browserNetworkProfileOpen: (network) =>
         ipcRenderer.invoke(desktopIpc.browserNetworkProfileOpen, network),
-    browserLoginsRead: () => ipcRenderer.invoke(desktopIpc.browserLoginsRead),
-    browserPasswordsAvailable: process.platform === "darwin" || process.platform === "win32",
-    browserImportOpen: () => ipcRenderer.invoke(desktopIpc.browserImportOpen),
-    browserImportProfileSelect: (id) =>
-        ipcRenderer.invoke(desktopIpc.browserImportProfileSelect, id),
-    browserImportCommit: (selection) =>
-        ipcRenderer.invoke(desktopIpc.browserImportCommit, selection),
-    browserImportClose: () => ipcRenderer.invoke(desktopIpc.browserImportClose),
-    browserImportSubscribe(
-        listener: (event: import("happy-desktop-state").BrowserImportEvent) => void,
-    ) {
-        const receive = (
-            _event: Electron.IpcRendererEvent,
-            event: import("happy-desktop-state").BrowserImportEvent,
-        ) => listener(event);
-        ipcRenderer.on(desktopIpc.browserImportChanged, receive);
-        return () => ipcRenderer.removeListener(desktopIpc.browserImportChanged, receive);
-    },
-    browserLoginsSubscribe(listener: (logins: readonly BrowserLoginSnapshot[]) => void) {
-        const receive = (
-            _event: Electron.IpcRendererEvent,
-            logins: readonly BrowserLoginSnapshot[],
-        ) => listener(logins);
-        ipcRenderer.on(desktopIpc.browserLoginsChanged, receive);
-        return () => ipcRenderer.removeListener(desktopIpc.browserLoginsChanged, receive);
-    },
-    browserLoginRemove: (id) => ipcRenderer.invoke(desktopIpc.browserLoginRemove, id),
-    browserLoginReveal: (id) => ipcRenderer.invoke(desktopIpc.browserLoginReveal, id),
-    browserPasswordImportChoose: () => ipcRenderer.invoke(desktopIpc.browserPasswordImportChoose),
-    browserPasswordImportCommit: (id, origins) =>
-        ipcRenderer.invoke(desktopIpc.browserPasswordImportCommit, id, origins),
-    browserPasswordImportCancel: (id) =>
-        ipcRenderer.invoke(desktopIpc.browserPasswordImportCancel, id),
-    browserPasswordImportExpiredSubscribe(listener: (id: BrowserPasswordImportId) => void) {
-        const receive = (_event: Electron.IpcRendererEvent, id: BrowserPasswordImportId) =>
-            listener(id);
-        ipcRenderer.on(desktopIpc.browserPasswordImportExpired, receive);
-        return () => ipcRenderer.removeListener(desktopIpc.browserPasswordImportExpired, receive);
-    },
-    browserPasswordPickerOpen: (guestId) =>
-        ipcRenderer.invoke(desktopIpc.browserPasswordPickerOpen, guestId),
+    // Saved logins are read from other browsers on macOS and Windows only.
+    ...(process.platform === "darwin" || process.platform === "win32"
+        ? {
+              browserPasswordSettingsRead: () =>
+                  ipcRenderer.invoke(desktopIpc.browserPasswordSettingsRead),
+              browserOnePasswordConnect: (account: string) =>
+                  ipcRenderer.invoke(desktopIpc.browserOnePasswordConnect, account),
+              browserOnePasswordDisconnect: () =>
+                  ipcRenderer.invoke(desktopIpc.browserOnePasswordDisconnect),
+              browserPasswordPickerOpen: (guestId: number) =>
+                  ipcRenderer.invoke(desktopIpc.browserPasswordPickerOpen, guestId),
+          }
+        : {}),
     guestFitMeasure: (guestId, previous) =>
         ipcRenderer.invoke(desktopIpc.guestFitMeasure, guestId, previous),
     browserNetworkCommand: (partition, guestId, command) =>

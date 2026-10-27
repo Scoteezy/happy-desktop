@@ -2,73 +2,11 @@ import { useState } from "react";
 import {
     HappyAgentPasswordSettings,
     HappyAgentSettingsShell,
-    type HappyAgentPasswordImportProposal,
-    type HappyAgentPasswordLogin,
     type HappyAgentPasswordSettingsProps,
 } from "../../src";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
 
 export const componentNumber = "P-012d";
-
-// Deliberately metadata only: no password field or value exists in these fixtures.
-const logins: readonly HappyAgentPasswordLogin[] = [
-    {
-        id: "docs-personal",
-        origin: "https://docs.example.com",
-        username: "alex@example.com",
-        updatedAt: "18 June 2026, 10:24",
-    },
-    {
-        id: "docs-work",
-        origin: "https://docs.example.com",
-        username: "alex@work.example",
-        updatedAt: "17 June 2026, 14:08",
-    },
-    {
-        id: "studio",
-        origin: "https://studio.example.org:8443",
-        username: "alex",
-        updatedAt: "16 June 2026, 09:40",
-    },
-    {
-        id: "no-username",
-        origin: "https://account.example.net",
-        username: "",
-        updatedAt: "15 June 2026, 12:12",
-    },
-];
-
-const proposal: HappyAgentPasswordImportProposal = {
-    sites: [
-        {
-            origin: "https://docs.example.com",
-            usernames: ["alex@example.com", "alex@work.example"],
-            count: 2,
-        },
-        { origin: "https://studio.example.org:8443", usernames: ["alex"], count: 1 },
-        { origin: "https://account.example.net", usernames: [], count: 1 },
-    ],
-    skipped: 5,
-};
-
-const largeLogins: readonly HappyAgentPasswordLogin[] = Array.from(
-    { length: 4000 },
-    (_, index) => ({
-        id: `metadata-${String(index)}`,
-        origin: `https://site-${String(index)}.example.com`,
-        username: `account-${String(index)}@example.com`,
-        updatedAt: "18 June 2026, 10:24",
-    }),
-);
-
-const largeProposal: HappyAgentPasswordImportProposal = {
-    sites: largeLogins.map((login) => ({
-        origin: login.origin,
-        usernames: [login.username],
-        count: 1,
-    })),
-    skipped: 12,
-};
 
 const noop = () => {};
 
@@ -80,11 +18,8 @@ function PasswordSettingsSpecimen(props: {
     readonly window?: { readonly width: number; readonly height: number };
     readonly settings?: Partial<HappyAgentPasswordSettingsProps>;
 }) {
-    // Blueprint interaction state only. The application supplies store-owned selection.
-    const [selection, selectionSet] = useState<ReadonlySet<string>>(
-        props.settings?.selectedOrigins ?? new Set(),
-    );
-    const [importOpen, importOpenSet] = useState(props.settings?.proposal !== undefined);
+    // Blueprint interaction state only. The application supplies the store's draft.
+    const [draft, draftSet] = useState(props.settings?.onePasswordAccountDraft ?? "");
     return (
         <FullScreenSpecimen
             detail={props.detail}
@@ -93,8 +28,6 @@ function PasswordSettingsSpecimen(props: {
             screen={props.screen}
             window={props.window ?? { width: 720, height: 640 }}
         >
-            {/* Layout containment gives fixed overlays this specimen's desktop
-                viewport, so every fixture keeps its own modal and scrim. */}
             <div style={{ display: "flex", contain: "layout paint" }}>
                 <HappyAgentSettingsShell
                     activeCategoryId="passwords"
@@ -102,34 +35,20 @@ function PasswordSettingsSpecimen(props: {
                         { id: "general", icon: "settings", label: "General" },
                         { id: "passwords", icon: "lock", label: "Passwords" },
                     ]}
-                    description="Your encrypted vault on this device"
+                    description="Saved logins from your browsers and 1Password"
                     onCategorySelect={noop}
                     onClose={noop}
                     title="Passwords"
                 >
                     <HappyAgentPasswordSettings
                         available
-                        logins={logins}
-                        onBrowserImportChoose={noop}
-                        onImportCancel={() => importOpenSet(false)}
-                        onImportChoose={() => {
-                            selectionSet(new Set());
-                            importOpenSet(true);
-                        }}
-                        onImportCommit={noop}
-                        onImportSiteSelect={(origin, selected) =>
-                            selectionSet((current) => {
-                                const next = new Set(current);
-                                if (selected) next.add(origin);
-                                else next.delete(origin);
-                                return next;
-                            })
-                        }
-                        onLoginRemove={noop}
-                        onLoginReveal={noop}
+                        onePasswordAccount={null}
+                        onePasswordInstalled
+                        onOnePasswordAccountDraftChange={draftSet}
+                        onOnePasswordConnect={noop}
+                        onOnePasswordDisconnect={noop}
                         {...props.settings}
-                        proposal={importOpen ? (props.settings?.proposal ?? proposal) : undefined}
-                        selectedOrigins={selection}
+                        onePasswordAccountDraft={draft}
                     />
                 </HappyAgentSettingsShell>
             </div>
@@ -141,131 +60,56 @@ export function HappyAgentPasswordSettingsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Metadata-only password management, native reveal, and explicit per-site import; virtualized lists at desktop sizes."
+            summary="What the saved-login picker reads and what Happy never stores, and the 1Password connection."
             title="Passwords settings"
         >
             <PasswordSettingsSpecimen
-                detail="1100 × 760 desktop window; origin, username, timestamp, native reveal, and remove"
-                label="Saved login metadata"
+                detail="1100 × 760 desktop window; 1Password installed, not connected"
+                label="Not connected"
                 number="01"
                 screen="01-passwords-1100x760"
                 window={{ width: 1100, height: 760 }}
             />
             <PasswordSettingsSpecimen
-                detail="720 × 640 minimum desktop window; one device vault shared across networks"
-                label="Saved logins — minimum desktop"
+                detail="720 × 640 minimum desktop window"
+                label="Not connected — minimum desktop"
                 number="02"
                 screen="01-passwords-720x640"
             />
             <PasswordSettingsSpecimen
-                detail="Import remains available with an empty vault"
-                label="Empty vault"
+                detail="An account name typed; Connect waits for 1Password's approval"
+                label="Connecting"
                 number="03"
-                settings={{ logins: [] }}
+                settings={{ onePasswordAccountDraft: "my.1password.com", pending: true }}
             />
             <PasswordSettingsSpecimen
-                detail="Reading metadata disables secure actions without replacing existing row identities"
-                label="Loading"
+                detail="The connected account and the way to disconnect it"
+                label="Connected"
                 number="04"
-                settings={{ loading: true, logins: [] }}
-            />
-            <PasswordSettingsSpecimen
-                detail="Native authentication or a secure write is underway; duplicate actions are disabled"
-                label="Pending secure action"
-                number="05"
-                settings={{ pending: true }}
-            />
-            <PasswordSettingsSpecimen
-                detail="Failure remains visible alongside saved metadata"
-                label="Vault action error"
-                number="06"
-                settings={{ error: "Touch ID was cancelled. Your saved logins are unchanged." }}
-            />
-            <PasswordSettingsSpecimen
-                detail="Native desktop availability on macOS and Windows with an explicit Windows Chrome CSV explanation"
-                label="Desktop vault unavailable"
-                number="07"
-                settings={{ available: false, logins: [] }}
-            />
-            <PasswordSettingsSpecimen
-                detail="640 px modal at 1100 × 760; nothing is selected by default"
-                label="Import — desktop window"
-                number="08a"
-                screen="02-import-1100x760"
+                screen="02-connected-1100x760"
+                settings={{ onePasswordAccount: "my.1password.com" }}
                 window={{ width: 1100, height: 760 }}
-                settings={{ proposal }}
             />
             <PasswordSettingsSpecimen
-                detail="640 px modal; no sites preselected and import disabled until the person chooses"
-                label="Import — minimum window"
-                number="08b"
-                screen="02-import-720x640"
-                settings={{ proposal }}
-            />
-            <PasswordSettingsSpecimen
-                detail="Explicit commit names the login count; selected sites, excluded sites, and skipped entries stay visible"
-                label="Import — selected site"
-                number="09"
-                settings={{ proposal, selectedOrigins: new Set([proposal.sites[0]!.origin]) }}
-            />
-            <PasswordSettingsSpecimen
-                detail="A pending commit locks site selection and dismissal"
-                label="Import — pending"
-                number="10"
+                detail="1Password refused or was not set up; the account name stays for a retry"
+                label="Connect failed"
+                number="05"
                 settings={{
-                    proposal,
-                    selectedOrigins: new Set([proposal.sites[0]!.origin]),
-                    pending: true,
+                    onePasswordAccountDraft: "my.1password.com",
+                    error: "1Password did not connect. In 1Password, turn on Settings › Developer › Integrate with other apps, check the account name, and approve Happy when asked.",
                 }}
             />
             <PasswordSettingsSpecimen
-                detail="Selection remains intact when the import fails"
-                label="Import — error"
-                number="11"
-                settings={{
-                    proposal,
-                    selectedOrigins: new Set([proposal.sites[0]!.origin]),
-                    error: "The source browser could not be unlocked. Try importing again.",
-                }}
+                detail="Without the 1Password app there is nothing to connect"
+                label="1Password not installed"
+                number="06"
+                settings={{ onePasswordInstalled: false }}
             />
             <PasswordSettingsSpecimen
-                detail="Unsupported records are counted; an empty proposal cannot be committed"
-                label="Import — no supported sites"
-                number="12"
-                settings={{ proposal: { sites: [], skipped: 7 } }}
-            />
-            <PasswordSettingsSpecimen
-                detail="360 px shared confirmation dialog; no password is rendered"
-                label="Remove login confirmation"
-                number="13"
-                settings={{ initialRemoveLoginId: logins[0]!.id }}
-            />
-            <PasswordSettingsSpecimen
-                detail="4,000 metadata entries use a bounded mounted row count; arrow keys, Home, and End navigate the list"
-                label="Large vault"
-                number="14"
-                settings={{ logins: largeLogins }}
-            />
-            <PasswordSettingsSpecimen
-                detail="4,000 candidate sites remain virtualized and start unselected"
-                label="Large import proposal"
-                number="15"
-                settings={{ proposal: largeProposal }}
-            />
-            <PasswordSettingsSpecimen
-                detail="Unbounded account metadata truncates with full text in its title; controls remain whole"
-                label="Long metadata"
-                number="16"
-                settings={{
-                    logins: [
-                        {
-                            id: "long-metadata",
-                            origin: "https://a-very-long-workspace-hostname.enterprise.example.com:8443",
-                            username: "alexandra.long-account-name+workspace@example.com",
-                            updatedAt: "18 June 2026, 10:24",
-                        },
-                    ],
-                }}
+                detail="A host that reads no saved logins still says what Happy never does"
+                label="Unavailable"
+                number="07"
+                settings={{ available: false }}
             />
         </ComponentPage>
     );

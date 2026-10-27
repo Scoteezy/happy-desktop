@@ -1,6 +1,6 @@
 import koffi, { type LibraryHandle } from "koffi";
 
-import { browserImportNativeBytesCopy } from "./browserImportNativeBytes";
+import { browserLoginNativeBytesCopy } from "./browserLoginNativeBytes";
 
 type NativeFunction = ReturnType<LibraryHandle["func"]>;
 
@@ -11,7 +11,7 @@ const kCFStringEncodingUTF8 = 0x08000100;
 const maximumSecretBytes = 16 * 1024;
 
 /** A Keychain refusal: not found, denied, or canceled. Carries only the OS status. */
-export class BrowserImportKeychainError extends Error {
+export class BrowserLoginKeychainError extends Error {
     constructor(readonly status: number) {
         super("The Keychain did not return this browser's key.");
     }
@@ -31,8 +31,8 @@ interface KeychainApi {
     readonly secClass: unknown;
     readonly secClassGenericPassword: unknown;
     readonly secAttrService: unknown;
-    readonly secAttrAccount: unknown;
     readonly secReturnData: unknown;
+    readonly secReturnAttributes: unknown;
     readonly secMatchLimit: unknown;
     readonly secMatchLimitOne: unknown;
 }
@@ -68,8 +68,8 @@ function apiLoad(): KeychainApi {
         secClass: constant(security, "kSecClass"),
         secClassGenericPassword: constant(security, "kSecClassGenericPassword"),
         secAttrService: constant(security, "kSecAttrService"),
-        secAttrAccount: constant(security, "kSecAttrAccount"),
         secReturnData: constant(security, "kSecReturnData"),
+        secReturnAttributes: constant(security, "kSecReturnAttributes"),
         secMatchLimit: constant(security, "kSecMatchLimit"),
         secMatchLimitOne: constant(security, "kSecMatchLimitOne"),
     };
@@ -83,52 +83,81 @@ function apiLoad(): KeychainApi {
  * that prompt, so it runs on a worker thread and leaves every window live.
  * The caller owns the returned buffer and must wipe it.
  */
-export function browserImportKeychainPasswordRead(
+export function browserLoginKeychainPasswordRead(
     service: string,
-    account: string,
     signal: AbortSignal,
 ): Promise<Buffer> {
     if (process.platform !== "darwin")
         return Promise.reject(new Error("The Keychain is available on macOS only."));
+    return query(service, "data", signal) as Promise<Buffer>;
+}
+
+/**
+ * Whether the Keychain holds a browser's key at all. Only the item's
+ * attributes are asked for, which never prompts; a browser that left its
+ * profile folder behind but no key has nothing Happy could unlock.
+ */
+export async function browserLoginKeychainItemExists(service: string): Promise<boolean> {
+    if (process.platform !== "darwin") return true;
+    try {
+        await query(service, "attributes", new AbortController().signal);
+        return true;
+    } catch (error) {
+        return !(error instanceof BrowserLoginKeychainError && error.status === errSecItemNotFound);
+    }
+}
+
+function query(
+    service: string,
+    returning: "data" | "attributes",
+    signal: AbortSignal,
+): Promise<Buffer | null> {
     const api = apiLoad();
     const owned: unknown[] = [];
     const text = (value: string) => {
         const created = api.stringCreate(null, value, kCFStringEncodingUTF8);
-        if (!created) throw new BrowserImportKeychainError(errSecItemNotFound);
+        if (!created) throw new BrowserLoginKeychainError(errSecItemNotFound);
         owned.push(created);
         return created;
     };
     const releaseOwned = () => {
         for (const object of owned.splice(0)) api.release(object);
     };
-    let query: unknown;
+    let dictionary: unknown;
     try {
-        query = api.dictionaryCreate(null, 0, api.keyCallBacks, api.valueCallBacks);
-        if (!query) throw new BrowserImportKeychainError(errSecItemNotFound);
-        owned.push(query);
-        api.dictionarySet(query, api.secClass, api.secClassGenericPassword);
-        api.dictionarySet(query, api.secAttrService, text(service));
-        api.dictionarySet(query, api.secAttrAccount, text(account));
-        api.dictionarySet(query, api.secReturnData, api.booleanTrue);
-        api.dictionarySet(query, api.secMatchLimit, api.secMatchLimitOne);
+        dictionary = api.dictionaryCreate(null, 0, api.keyCallBacks, api.valueCallBacks);
+        if (!dictionary) throw new BrowserLoginKeychainError(errSecItemNotFound);
+        owned.push(dictionary);
+        api.dictionarySet(dictionary, api.secClass, api.secClassGenericPassword);
+        api.dictionarySet(dictionary, api.secAttrService, text(service));
+        api.dictionarySet(
+            dictionary,
+            returning === "data" ? api.secReturnData : api.secReturnAttributes,
+            api.booleanTrue,
+        );
+        api.dictionarySet(dictionary, api.secMatchLimit, api.secMatchLimitOne);
     } catch (error) {
         releaseOwned();
         return Promise.reject(error);
     }
     return new Promise((resolve, reject) => {
         const result: unknown[] = [null];
-        api.copyMatching.async(query, result, (error: unknown, status: number) => {
+        api.copyMatching.async(dictionary, result, (error: unknown, status: number) => {
             releaseOwned();
             const data = result[0];
             let secret: Buffer | undefined;
             try {
                 if (error || status !== errSecSuccess || !data)
-                    throw new BrowserImportKeychainError(error ? errSecItemNotFound : status);
+                    throw new BrowserLoginKeychainError(error ? errSecItemNotFound : status);
+                if (returning === "attributes") {
+                    resolve(null);
+                    return;
+                }
                 const length = Number(api.dataLength(data));
                 if (!Number.isSafeInteger(length) || length <= 0 || length > maximumSecretBytes)
-                    throw new BrowserImportKeychainError(errSecItemNotFound);
+                    throw new BrowserLoginKeychainError(errSecItemNotFound);
                 // Copy out of the CFData before releasing it: no JS view outlives it.
-                secret = browserImportNativeBytesCopy(api.dataBytes(data), length);
+                secret = browserLoginNativeBytesCopy(api.dataBytes(data), length);
                 if (signal.aborted) throw signal.reason ?? new Error("Canceled.");
                 resolve(secret);
             } catch (failure) {

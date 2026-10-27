@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { realpath } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 
 /** Mozilla Corporation's Apple Developer Team ID, which signs every Firefox build. */
@@ -22,11 +22,23 @@ function inside(root: string, path: string): boolean {
 }
 
 /**
+ * Verified libraries by path, with the file identity they were verified at.
+ * The picker reads Firefox every time it opens; a full signature check of the
+ * bundle takes seconds, so it is repeated only after the install changes.
+ */
+const verified = new Map<string, string>();
+
+async function identity(path: string): Promise<string> {
+    const [library, folder] = await Promise.all([stat(path), stat(dirname(path))]);
+    return [library.ino, library.size, library.mtimeMs, library.ctimeMs, folder.mtimeMs].join(":");
+}
+
+/**
  * NSS runs inside Happy's own process, with its Keychain and privacy grants.
  * Load it only from a system-wide Firefox install whose code is Mozilla's, so
  * a library another program placed on disk never runs as Happy.
  */
-export async function browserImportNssTrustRequire(nssLibraryPath: string): Promise<void> {
+export async function browserLoginNssTrustRequire(nssLibraryPath: string): Promise<void> {
     const refused = () =>
         new Error(
             "Happy could not verify that Firefox is Mozilla's own install. Reinstall Firefox from mozilla.org and try again.",
@@ -39,6 +51,19 @@ export async function browserImportNssTrustRequire(nssLibraryPath: string): Prom
     }
     // A symbolic link could swap the library after it was verified.
     if (resolved !== nssLibraryPath) throw refused();
+    let current: string;
+    try {
+        current = await identity(resolved);
+    } catch {
+        throw refused();
+    }
+    if (verified.get(resolved) === current) return;
+    await signatureRequire(resolved, refused);
+    if ((await identity(resolved).catch(() => undefined)) !== current) throw refused();
+    verified.set(resolved, current);
+}
+
+async function signatureRequire(resolved: string, refused: () => Error): Promise<void> {
     if (process.platform === "darwin") {
         const bundle = dirname(dirname(dirname(resolved)));
         if (

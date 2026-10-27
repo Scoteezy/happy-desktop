@@ -7,7 +7,6 @@ import {
     type WebContents,
     type WebFrameMain,
 } from "electron";
-import type { BrowserLoginSnapshot } from "happy-desktop-state";
 import {
     browserPasswordGuestChannel,
     browserPasswordGuestDeliveryChannel,
@@ -15,7 +14,14 @@ import {
     type BrowserPasswordGuestField,
     type BrowserPasswordGuestFieldKind,
 } from "../shared/browserPasswordGuestContract";
-import type { BrowserLoginVault } from "./browserLoginVault";
+import { BrowserLoginCryptoCancelledError } from "./browserLoginCrypto";
+import {
+    browserLoginRelation,
+    BrowserLoginUseError,
+    type BrowserLoginCandidate,
+    type BrowserLoginSaveTarget,
+    type BrowserLoginSourceList,
+} from "./browserLoginSources";
 
 interface GuestDocument {
     readonly frame: WebFrameMain;
@@ -38,8 +44,10 @@ interface SaveCandidate {
 export interface BrowserPasswordGuestOptions {
     readonly guest: WebContents;
     readonly window: BrowserWindow;
-    readonly vault: BrowserLoginVault;
-    readonly loginsChanged: (entries: readonly BrowserLoginSnapshot[]) => void;
+    /** Every source's saved logins for one page origin, read on demand. */
+    readonly logins: (origin: string) => Promise<BrowserLoginSourceList>;
+    /** Where a newly typed password may be saved; nothing is offered when it is not connected. */
+    readonly saveTarget: BrowserLoginSaveTarget;
 }
 
 /**
@@ -50,7 +58,7 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
     pickerOpen(): void;
     dispose(): void;
 } {
-    const { guest, window, vault, loginsChanged } = options;
+    const { guest, window, logins, saveTarget } = options;
     const guestIpc = guest.ipc;
     // will-attach-webview owns the sandbox, isolated-world and preload settings;
     // Electron has no public API for re-reading a guest's WebPreferences here.
@@ -163,14 +171,17 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         }
     }
 
-    async function errorShow(message: string): Promise<void> {
+    /** One short native sheet, as the browser's other prompts are; never OS error text. */
+    async function errorShow(message: string, detail?: string): Promise<void> {
         if (!owned()) return;
         try {
             await dialog.showMessageBox(window, {
                 type: "error",
-                title: "Saved passwords",
+                title: "Saved logins",
                 message,
+                ...(detail ? { detail } : {}),
                 buttons: ["OK"],
+                noLink: true,
             });
         } catch {
             /* Window closed. Never forward OS errors or credential-bearing exceptions. */
@@ -205,28 +216,23 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         // This captured origin is never reused for filling the next document.
         void (async () => {
             try {
-                // Signing in with a login that is already saved offers nothing;
-                // a known account with a new password is offered as an update.
-                const status = await vault.loginStatus({
-                    origin: proposed.origin,
-                    username: proposed.username,
-                    password: proposed.password,
-                });
+                // Happy never stores a password. A new one is offered only to a
+                // connected password manager, and only when it lacks this account.
                 if (
-                    status === "saved" ||
+                    !saveTarget.connected() ||
+                    (await saveTarget.has(proposed.origin, proposed.username)) ||
                     controller.signal.aborted ||
                     !owned() ||
                     Date.now() >= expiresAt ||
                     !proposed.password
                 )
                     return;
-                const update = status === "changed";
                 const result = await dialog.showMessageBox(window, {
                     type: "question",
-                    title: "Saved passwords",
-                    message: update ? "Update saved password?" : "Save password?",
-                    detail: `${proposed.origin}\n${nativeText(proposed.username) || "No username"}`,
-                    buttons: [update ? "Update password" : "Save password", "Not now"],
+                    title: saveTarget.label,
+                    message: `Save to ${saveTarget.label}?`,
+                    detail: `${proposed.origin}\n${nativeText(proposed.username) || "No username"}\n\nHappy itself never stores passwords.`,
+                    buttons: [`Save to ${saveTarget.label}`, "Not now"],
                     defaultId: 1,
                     cancelId: 1,
                     noLink: true,
@@ -240,16 +246,14 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
                     !proposed.password
                 )
                     return;
-                const entries = await vault.loginsSave([
-                    {
-                        origin: proposed.origin,
-                        username: proposed.username,
-                        password: proposed.password,
-                    },
-                ]);
-                if (owned()) loginsChanged(entries);
+                await saveTarget.save({
+                    origin: proposed.origin,
+                    username: proposed.username,
+                    password: proposed.password,
+                });
             } catch {
-                if (!controller.signal.aborted) await errorShow("The password could not be saved.");
+                if (!controller.signal.aborted)
+                    await errorShow(`The password could not be saved to ${saveTarget.label}.`);
             } finally {
                 clearTimeout(timer);
                 proposed.password = "";
@@ -296,12 +300,12 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         expected: GuestDocument,
         fieldId: string,
         fieldKind: BrowserPasswordGuestFieldKind,
-        entry: BrowserLoginSnapshot,
+        candidate: BrowserLoginCandidate,
         expiresAt: number,
         pickerId: number,
     ): Promise<void> {
-        // Focus is required up to the unlock. A Keychain prompt during the unlock
-        // takes focus away from Happy, so afterwards only presence is required.
+        // Focus is required up to the unlock. A Keychain or 1Password prompt during
+        // the unlock takes focus away from Happy, so afterwards only presence is.
         const eligible = (focused: boolean) =>
             current(expected) &&
             expected.fieldId === fieldId &&
@@ -309,33 +313,19 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
             pickerId === pickerGeneration &&
             Date.now() < expiresAt &&
             window.isVisible() &&
-            (!focused || window.isFocused());
+            (!focused || window.isFocused()) &&
+            browserLoginRelation(expected.origin, candidate.origin) === candidate.relation;
         try {
-            if (fieldKind === "username") {
-                // The first step of a two-step sign-in needs only the account name,
-                // which the vault keeps unencrypted: nothing is unlocked or sent secret.
-                const requestId = eligible(true) ? await fieldProbe(expected, fieldId) : null;
-                if (!requestId || !eligible(true) || entry.origin !== expected.origin) return;
-                send(expected.frame, {
-                    type: "fill",
-                    token: expected.token,
-                    requestId,
-                    fieldId,
-                    origin: expected.origin,
-                    username: entry.username,
-                    password: null,
-                    expiresAt: Math.min(expiresAt, Date.now() + 2000),
-                });
-                return;
-            }
             if (!eligible(true) || !(await fieldProbe(expected, fieldId)) || !eligible(true))
                 return;
-            await vault.loginUse(entry.id, expected.origin, async (login) => {
-                if (!eligible(false) || login.origin !== expected.origin) return;
-                // Keychain access can outlive either the field or its document. Probe
-                // again after unlock, then check main's origin immediately before send.
+            // The source decrypts this one record and keeps nothing; the
+            // plaintext lives only for this callback.
+            await candidate.use(fieldKind, window, async (login) => {
+                if (!eligible(false)) return;
+                // Unlocking can outlive either the field or its document. Probe
+                // again afterwards, then check main's origin immediately before send.
                 const requestId = await fieldProbe(expected, fieldId);
-                if (!requestId || !eligible(false) || login.origin !== expected.origin) return;
+                if (!requestId || !eligible(false)) return;
                 send(expected.frame, {
                     type: "fill",
                     token: expected.token,
@@ -343,12 +333,17 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
                     fieldId,
                     origin: expected.origin,
                     username: login.username,
-                    password: login.password,
+                    password: fieldKind === "password" ? login.password : null,
                     expiresAt: Math.min(expiresAt, Date.now() + 2000),
                 });
             });
-        } catch {
-            await errorShow("The saved password could not be filled.");
+        } catch (error) {
+            // Only a login the person picked reports a failure, in one sentence.
+            if (error instanceof BrowserLoginCryptoCancelledError) return;
+            await errorShow(
+                "The login could not be filled",
+                error instanceof BrowserLoginUseError ? error.message : undefined,
+            );
         }
     }
 
@@ -374,47 +369,44 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
         pickerPending = true;
         void (async () => {
             try {
-                const entries = await vault.loginsRead();
+                const { candidates } = await logins(expected.origin);
                 if (!current(expected) || pickerId !== pickerGeneration || !window.isFocused())
                     return;
-                const matching = entries.filter((entry) => entry.origin === expected.origin);
-                if (automatic && matching.length === 0) return;
+                if (automatic && candidates.length === 0) return;
                 let chosen = false;
                 let openedAt = Number.POSITIVE_INFINITY;
                 const expiresAt = Date.now() + 60_000;
-                const nativeMenu = Menu.buildFromTemplate([
-                    { label: expected.origin, enabled: false },
-                    { type: "separator" },
-                    ...(fieldId === null || fieldKind === null
-                        ? [{ label: "Click a sign-in field first", enabled: false }]
-                        : matching.length === 0
-                          ? [{ label: "No saved passwords for this site", enabled: false }]
-                          : matching.map((entry) => ({
-                                label: nativeLabel(entry.username) || "No username",
-                                click: () => {
-                                    // This closure is never exposed through IPC, a bridge,
-                                    // an application menu command, or an agent/tool API.
-                                    // A click that lands before the menu could be read
-                                    // (a double click, a menu opened under the pointer)
-                                    // is not a choice, as in Chrome's own picker.
-                                    if (
-                                        chosen ||
-                                        pickerId !== pickerGeneration ||
-                                        Date.now() - openedAt < 500
-                                    )
-                                        return;
-                                    chosen = true;
-                                    void nativeLoginChosen(
-                                        expected,
-                                        fieldId,
-                                        fieldKind,
-                                        entry,
-                                        expiresAt,
-                                        pickerId,
-                                    );
-                                },
-                            }))),
-                ]);
+                const nativeMenu = Menu.buildFromTemplate(
+                    browserLoginPickerTemplate({
+                        origin: expected.origin,
+                        fieldReady: fieldId !== null && fieldKind !== null,
+                        candidates,
+                        choose: (candidate) => {
+                            // This closure is never exposed through IPC, a bridge,
+                            // an application menu command, or an agent/tool API.
+                            // A click that lands before the menu could be read
+                            // (a double click, a menu opened under the pointer)
+                            // is not a choice, as in Chrome's own picker.
+                            if (
+                                chosen ||
+                                fieldId === null ||
+                                fieldKind === null ||
+                                pickerId !== pickerGeneration ||
+                                Date.now() - openedAt < 500
+                            )
+                                return;
+                            chosen = true;
+                            void nativeLoginChosen(
+                                expected,
+                                fieldId,
+                                fieldKind,
+                                candidate,
+                                expiresAt,
+                                pickerId,
+                            );
+                        },
+                    }),
+                );
                 menu = nativeMenu;
                 const timer = setTimeout(() => {
                     try {
@@ -434,7 +426,7 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
                     },
                 });
             } catch {
-                await errorShow("Saved passwords could not be opened.");
+                /* Every source fails closed to no logins; there is nothing to report. */
             } finally {
                 if (pickerId === pickerGeneration) pickerPending = false;
             }
@@ -629,6 +621,57 @@ export function browserPasswordGuestAttach(options: BrowserPasswordGuestOptions)
     guest.once("destroyed", dispose);
     window.once("closed", dispose);
     return { pickerOpen, dispose };
+}
+
+/**
+ * The picker: logins for this exact site first, then related sites under their
+ * own label, each named by account (or item title), site, and source; then
+ * one line saying that Happy stores no password.
+ */
+export function browserLoginPickerTemplate(options: {
+    readonly origin: string;
+    /** A sign-in field is focused, so a login can be filled. */
+    readonly fieldReady: boolean;
+    readonly candidates: readonly BrowserLoginCandidate[];
+    readonly choose: (candidate: BrowserLoginCandidate) => void;
+}): Electron.MenuItemConstructorOptions[] {
+    const item = (candidate: BrowserLoginCandidate): Electron.MenuItemConstructorOptions => ({
+        label: nativeLabel(
+            [
+                candidate.name,
+                ...(candidate.relation === "related" ? [new URL(candidate.origin).host] : []),
+                candidate.source,
+            ].join(" · "),
+        ),
+        enabled: options.fieldReady,
+        click: () => options.choose(candidate),
+    });
+    const exact = options.candidates.filter((candidate) => candidate.relation === "exact");
+    const related = options.candidates.filter((candidate) => candidate.relation === "related");
+    return [
+        {
+            label: options.fieldReady
+                ? new URL(options.origin).host
+                : "Click a sign-in field to fill it",
+            enabled: false,
+        },
+        { type: "separator" },
+        ...(options.candidates.length === 0
+            ? [{ label: "No saved logins for this site", enabled: false }]
+            : exact.map(item)),
+        ...(related.length > 0
+            ? [
+                  ...(exact.length > 0 ? [{ type: "separator" as const }] : []),
+                  { label: "Related sites", enabled: false },
+                  ...related.map(item),
+              ]
+            : []),
+        { type: "separator" },
+        {
+            label: "Happy reads these from your browsers and never stores passwords.",
+            enabled: false,
+        },
+    ];
 }
 
 function identifier(value: unknown): value is string {
