@@ -1,4 +1,4 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
     happyAgentProviderUsageStoreCreate,
     type HappyAgentProviderUsageEntry,
@@ -7,13 +7,20 @@ import {
 } from "./happyAgentProviderUsageStore.js";
 
 /* The store holds the latest reading and follows the source only while
- * something watches. It starts following with every new watcher, however
- * recent its reading: a refresh asked for on opening answers only through
- * the source's later readings. */
+ * something watches, and for a short while after, so a remounted watcher takes
+ * over a source still following. Once the source has stopped, it starts again
+ * with the next watcher however recent the reading: a refresh asked for on
+ * opening answers only through the source's later readings. */
+
+afterEach(() => {
+    vi.useRealTimers();
+});
 
 function sourceCreate() {
     const listeners = new Set<(reading: HappyAgentProviderUsageSourceReading) => void>();
     const refresh = vi.fn<(providerIds: readonly string[]) => void>();
+    const tokensRelease = vi.fn();
+    const tokensFollow = vi.fn(() => tokensRelease);
     let subscriptions = 0;
     const source: HappyAgentProviderUsageSource = {
         subscribe(listener) {
@@ -22,10 +29,13 @@ function sourceCreate() {
             return () => listeners.delete(listener);
         },
         refresh,
+        tokensFollow,
     };
     return {
         source,
         refresh,
+        tokensFollow,
+        tokensRelease,
         subscriptions: () => subscriptions,
         live: () => listeners.size,
         emit(reading: HappyAgentProviderUsageSourceReading) {
@@ -40,13 +50,65 @@ const CLAUDE: HappyAgentProviderUsageEntry = {
     usage: { capturedAt: 1_000, fiveHour: { usedPercent: 20 } },
 };
 
-it("follows the source again for every new watcher, even right after a reading", () => {
+it("keeps following for a remounted watcher instead of starting the source again", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const fake = sourceCreate();
+    const store = happyAgentProviderUsageStoreCreate({ source: fake.source });
+
+    // Each conversation opened in turn unmounts one model pill and mounts another.
+    let release = store.subscribe(() => undefined);
+    fake.emit({ loading: false, loadedAt: Date.now(), providers: [CLAUDE] });
+    for (let opened = 0; opened < 3; opened += 1) {
+        release();
+        vi.advanceTimersByTime(2_000);
+        release = store.subscribe(() => undefined);
+    }
+    expect(fake.subscriptions()).toBe(1);
+    expect(fake.live()).toBe(1);
+    expect(store.get().providers).toEqual([CLAUDE]);
+
+    // Nobody came back, so the source stops.
+    release();
+    vi.advanceTimersByTime(29_999);
+    expect(fake.live()).toBe(1);
+    vi.advanceTimersByTime(1);
+    expect(fake.live()).toBe(0);
+    store[Symbol.dispose]();
+});
+
+it("stops a lingering source at once when disposed", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const fake = sourceCreate();
+    const store = happyAgentProviderUsageStoreCreate({ source: fake.source });
+    store.subscribe(() => undefined)();
+    expect(fake.live()).toBe(1);
+    store[Symbol.dispose]();
+    expect(fake.live()).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+});
+
+it("passes token following on to the source", () => {
+    const fake = sourceCreate();
+    const store = happyAgentProviderUsageStoreCreate({ source: fake.source });
+    const release = store.tokensFollow();
+    expect(fake.tokensFollow).toHaveBeenCalledTimes(1);
+    release();
+    expect(fake.tokensRelease).toHaveBeenCalledTimes(1);
+
+    store[Symbol.dispose]();
+    store.tokensFollow()();
+    expect(fake.tokensFollow).toHaveBeenCalledTimes(1);
+});
+
+it("follows the source again for a watcher after it stopped, even right after a reading", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const fake = sourceCreate();
     const store = happyAgentProviderUsageStoreCreate({ source: fake.source });
 
     const release = store.subscribe(() => undefined);
     fake.emit({ loading: false, loadedAt: Date.now(), providers: [CLAUDE] });
     release();
+    vi.advanceTimersByTime(30_000);
     expect(fake.live()).toBe(0);
 
     const again = store.subscribe(() => undefined);

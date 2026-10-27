@@ -255,8 +255,10 @@ const USAGE_AGE_TICK_MS = 15_000;
  * Feeds the picker's accounts from the provider-usage store. The picker holds
  * the subscription for as long as it is mounted, so its closed pill can warn of
  * a running-out account: the store answers at once with the reading it already
- * holds, follows the daemon's changes, and passes on the refresh requests the
- * picker makes as its menu opens.
+ * holds, follows the daemon's account changes, and passes on the refresh
+ * requests the picker makes as its menu opens. The picker shows no token
+ * counts, so it does not follow them, and the store keeps following across the
+ * remount of every conversation opened in turn rather than reading again.
  */
 export function happyAgentComposerModelUsageWatch(
     store: HappyAgentProviderUsageStore,

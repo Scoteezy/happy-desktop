@@ -17,7 +17,7 @@ type ProviderUsageUpdatedPayload = happyAgentProtocol.ProviderUsageUpdatedPayloa
 
 /** A daemon older than protocol 29 announces no usage changes, so it is read this often. */
 const LEGACY_POLL_MS = 60_000;
-/** Token counts move with every finished run; they are read again at most this often. */
+/** Token counts move with every finished run; while followed, they are read again at most this often. */
 const TOKENS_READ_MS = 10_000;
 /** An account the daemon read more recently than this is not read again on request. */
 const REFRESH_OLDER_THAN_MS = 300_000;
@@ -44,8 +44,14 @@ const WINDOWS: readonly UsageWindow[] = ["hour", "day", "week", "month"];
  * complete replacement of its entry, so the latest one wins. The whole list is
  * read again whenever what was followed may have been missed — a new
  * bootstrap, a journal gap, a reconnect — and when the configured accounts
- * change. Finished runs are what move the token counts, which no account event
- * carries, so they prompt a read too, at most once per `TOKENS_READ_MS`.
+ * change.
+ *
+ * Finished runs are what move the token counts, which no account event
+ * carries. Only a surface that shows them follows them, through
+ * `tokensFollow`: the counts are read again when it arrives if the held ones
+ * are older than `TOKENS_READ_MS`, and while it stays, finished runs prompt a
+ * read at most that often. Nothing else reads the whole list for a finished
+ * run, so a picker that only warns of running-out accounts costs no reads.
  *
  * A daemon older than protocol 29 sends no such events and leaves the
  * freshness fields off its entries; while one is answering, the list is read
@@ -57,7 +63,21 @@ export function happyAgentUsageSourceCreate(
 ): HappyAgentProviderUsageSource {
     /** The last read came from a daemon without account events or the refresh route. */
     let legacy = false;
+    /** How many surfaces are showing token counts now. */
+    let tokensFollowers = 0;
+    /** Each live subscription's way to bring stale token counts up to date. */
+    const tokensStale = new Set<() => void>();
     return {
+        tokensFollow() {
+            tokensFollowers += 1;
+            for (const catchUp of tokensStale) catchUp();
+            let released = false;
+            return () => {
+                if (released) return;
+                released = true;
+                tokensFollowers -= 1;
+            };
+        },
         refresh(providerIds) {
             if (legacy) return;
             // Progress and results arrive as account events. A daemon that
@@ -169,8 +189,13 @@ export function happyAgentUsageSourceCreate(
                 }
                 tokensTimer = setTimeout(() => {
                     tokensTimer = undefined;
-                    usageRead();
+                    if (tokensFollowers > 0) usageRead();
                 }, wait);
+            };
+
+            /** Until the first read lands, that read is the fresh one. */
+            const tokensCatchUp = (): void => {
+                if (read !== undefined && Date.now() - lastReadAt >= TOKENS_READ_MS) usageRead();
             };
 
             const changeApply = (payload: ProviderUsageUpdatedPayload): void => {
@@ -210,15 +235,17 @@ export function happyAgentUsageSourceCreate(
                         const event = update.event;
                         if (event.type === "provider.usage.updated") changeApply(event.payload);
                         else if (event.type === "config.updated") usageRead();
-                        else if (event.type === "run.finished") tokensRead();
+                        else if (event.type === "run.finished" && tokensFollowers > 0) tokensRead();
                     }
                 }
             };
 
             listener({ loading: true, providers });
+            tokensStale.add(tokensCatchUp);
             void follow().catch(() => undefined);
             return () => {
                 if (signal.aborted) return;
+                tokensStale.delete(tokensCatchUp);
                 controller.abort();
                 clearTimeout(tokensTimer);
                 clearInterval(pollTimer);

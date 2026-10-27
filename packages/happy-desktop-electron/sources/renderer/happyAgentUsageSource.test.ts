@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import {
     connectHappyAgent,
+    happyAgentProviderUsageStoreCreate,
     type HappyAgentConnection,
     type HappyAgentProviderUsageSourceReading,
     type happyAgentProtocol,
@@ -271,6 +272,9 @@ it("reads token counts again after a run finishes, at most once in a while", asy
     const h = harness(daemon);
     await vi.waitFor(() => expect(h.claude()).toBeDefined());
     const agent = daemon.agentSeed(daemon.projectSeed().id);
+    // Counts this fresh are not read again for a surface that starts showing them.
+    closers.push(h.source.tokensFollow());
+    expect(daemon.callCount("getUsage")).toBe(1);
 
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     vi.advanceTimersByTime(20_000);
@@ -284,6 +288,89 @@ it("reads token counts again after a run finishes, at most once in a while", asy
     expect(daemon.callCount("getUsage")).toBe(2);
     await vi.advanceTimersByTimeAsync(5_000);
     await vi.waitFor(() => expect(daemon.callCount("getUsage")).toBe(3));
+});
+
+it("reads nothing for finished runs while nobody shows token counts", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    usageSet(daemon, [entry({ providerId: "claude", refreshedAt: 1_700_000_000_000 })]);
+    const h = harness(daemon);
+    await vi.waitFor(() => expect(h.claude()).toBeDefined());
+    const agent = daemon.agentSeed(daemon.projectSeed().id);
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    for (const id of ["r1", "r2", "r3"]) {
+        vi.advanceTimersByTime(20_000);
+        daemon.eventEmit("run.finished", { agentId: agent.id, run: fakeRun({ id }) });
+    }
+    await vi.advanceTimersByTimeAsync(20_000);
+    // Account changes still arrive, after the runs that finished before them.
+    daemon.eventEmit(
+        "provider.usage.updated",
+        change({
+            providerId: "claude",
+            usage: accountUsage(71, 1_700_000_100_000),
+            refreshedAt: 1_700_000_100_000,
+        }),
+    );
+    await vi.waitFor(() => expect(h.claude()?.usage?.fiveHour?.usedPercent).toBe(71));
+    expect(daemon.callCount("getUsage")).toBe(1);
+});
+
+it("reads stale token counts once a surface starts showing them, and stops with it", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    usageSet(daemon, [entry({ providerId: "claude", refreshedAt: 1_700_000_000_000 })]);
+    const h = harness(daemon);
+    await vi.waitFor(() => expect(h.claude()).toBeDefined());
+    const agent = daemon.agentSeed(daemon.projectSeed().id);
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    vi.advanceTimersByTime(20_000);
+    const release = h.source.tokensFollow();
+    await vi.waitFor(() => expect(daemon.callCount("getUsage")).toBe(2));
+
+    release();
+    vi.advanceTimersByTime(20_000);
+    daemon.eventEmit("run.finished", { agentId: agent.id, run: fakeRun({ id: "r1" }) });
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(daemon.callCount("getUsage")).toBe(2);
+});
+
+it("reads once across the model pill of every conversation opened in turn", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    usageSet(daemon, [entry({ providerId: "claude", refreshedAt: 1_700_000_000_000 })]);
+    const connection = connectHappyAgent({
+        endpoint: "http://happy-agent.test/",
+        token: "token",
+        client: daemon.client,
+        wait: () => new Promise((resolve) => setTimeout(resolve, 0)),
+    });
+    openConnections.push(connection);
+    const store = happyAgentProviderUsageStoreCreate({
+        source: happyAgentUsageSourceCreate(daemon.client, connection.sync),
+    });
+    closers.push(() => store[Symbol.dispose]());
+    const agent = daemon.agentSeed(daemon.projectSeed().id);
+
+    // Opening a conversation unmounts the last composer's pill and mounts the next one's.
+    let pill = store.subscribe(() => undefined);
+    await vi.waitFor(() => expect(store.get().providers).toHaveLength(1));
+    for (const id of ["r1", "r2", "r3"]) {
+        pill();
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        pill = store.subscribe(() => undefined);
+        daemon.eventEmit("run.finished", { agentId: agent.id, run: fakeRun({ id }) });
+    }
+    daemon.eventEmit(
+        "provider.usage.updated",
+        change({
+            providerId: "claude",
+            usage: accountUsage(71, 1_700_000_100_000),
+            refreshedAt: 1_700_000_100_000,
+        }),
+    );
+    await vi.waitFor(() => expect(store.get().providers[0]?.usage?.fiveHour?.usedPercent).toBe(71));
+    expect(daemon.callCount("getUsage")).toBe(1);
+    pill();
 });
 
 it("does not poll a daemon that announces its changes", async () => {

@@ -1691,6 +1691,7 @@ const usageOpenSubscribes = new WeakMap<
 /**
  * Subscribes the Usage category to the store and asks the daemon to read again
  * every account it last read a while ago, once each time the category opens.
+ * The category shows token counts, so it follows them while open.
  * Identity contract: one function per store, so React keeps the subscription
  * (and sends no second request) for as long as the category stays open.
  */
@@ -1701,8 +1702,12 @@ function usageOpenSubscribe(
     if (subscribe === undefined) {
         subscribe = (listener) => {
             const release = store.subscribe(listener);
+            const tokensRelease = store.tokensFollow();
             store.usageRefresh();
-            return release;
+            return () => {
+                tokensRelease();
+                release();
+            };
         };
         usageOpenSubscribes.set(store, subscribe);
     }

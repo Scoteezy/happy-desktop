@@ -306,6 +306,7 @@ const cases: readonly BenchmarkCase[] = [
                         return () => undefined;
                     },
                     refresh: () => undefined,
+                    tokensFollow: () => () => undefined,
                 },
             });
             const release = store.subscribe(() => undefined);
