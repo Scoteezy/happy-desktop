@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, win32 } from "node:path";
 import type { Client, ItemOverview, VaultOverview } from "@1password/sdk";
 import {
     browserLoginRelation,
@@ -12,31 +11,49 @@ import {
     type BrowserLoginSource,
     type BrowserLoginSourceList,
 } from "./browserLoginSources";
+import {
+    browserLoginLibraryTrustRequire,
+    type BrowserLoginLibraryPublisher,
+} from "./browserLoginLibraryTrust";
 import { browserLoginOriginNormalize } from "./browserLoginProfiles";
 
 /**
- * Where 1Password's desktop app ships the library its SDK talks to; the SDK
- * searches the same places. Without it there is nothing to connect to.
+ * AgileBits Inc., which signs 1Password: Apple Team ID 2BUA8C4S2C, as its
+ * installer's Developer ID shows, and `Agilebits` on Windows, where it signs
+ * through Microsoft Trusted Signing.
  */
-function sdkLibraryPaths(): readonly string[] {
+const agileBits: BrowserLoginLibraryPublisher = {
+    refusal:
+        "Happy could not verify that 1Password is AgileBits' own install. Reinstall 1Password from 1password.com and try again.",
+    appleTeamId: "2BUA8C4S2C",
+    appleIdentifiers: { bundle: "com.1password.1password", library: "libop_sdk_ipc_client" },
+    macBundle: (library) => (library === macLibrary ? macBundle : null),
+    windowsOrganizations: ["Agilebits", "AgileBits Inc."],
+    windowsLocation: (library, programFiles) =>
+        programFiles.some((root) => library.toLowerCase() === windowsLibrary(root).toLowerCase()),
+};
+
+const macBundle = "/Applications/1Password.app";
+const macLibrary = `${macBundle}/Contents/Frameworks/libop_sdk_ipc_client.dylib`;
+
+function windowsLibrary(programFiles: string): string {
+    return win32.join(programFiles, "1Password", "app", "8", "op_sdk_ipc_client.dll");
+}
+
+/**
+ * The one place Happy loads 1Password's SDK library from: the system-wide
+ * desktop app. The SDK would also search the person's own folders, where any
+ * program could leave a library; Happy hands it this path only after the
+ * signature check, and the patched SDK loads nothing else.
+ */
+function libraryPath(): string | null {
     switch (process.platform) {
         case "darwin":
-            return [
-                "/Applications/1Password.app/Contents/Frameworks/libop_sdk_ipc_client.dylib",
-                join(
-                    homedir(),
-                    "Applications/1Password.app/Contents/Frameworks/libop_sdk_ipc_client.dylib",
-                ),
-            ];
+            return macLibrary;
         case "win32":
-            return [
-                join(homedir(), "AppData/Local/1Password/op_sdk_ipc_client.dll"),
-                "C:/Program Files/1Password/app/8/op_sdk_ipc_client.dll",
-                "C:/Program Files (x86)/1Password/app/8/op_sdk_ipc_client.dll",
-                join(homedir(), "AppData/Local/1Password/app/8/op_sdk_ipc_client.dll"),
-            ];
+            return process.env.ProgramFiles ? windowsLibrary(process.env.ProgramFiles) : null;
         default:
-            return [];
+            return null;
     }
 }
 
@@ -83,7 +100,8 @@ export class BrowserLoginOnePassword implements BrowserLoginSource, BrowserLogin
     }
 
     installed(): boolean {
-        return sdkLibraryPaths().some((path) => existsSync(path));
+        const path = libraryPath();
+        return path !== null && existsSync(path);
     }
 
     accountGet(): string | null {
@@ -100,6 +118,8 @@ export class BrowserLoginOnePassword implements BrowserLoginSource, BrowserLogin
         if (!accountValid(name)) throw new Error("Enter your 1Password account name.");
         if (!this.installed())
             throw new Error("Install the 1Password app and sign in to it, then connect again.");
+        const library = libraryPath()!;
+        await browserLoginLibraryTrustRequire(library, agileBits);
         const client = this.clientCreate(name);
         try {
             await (await client).vaults.list();
@@ -146,14 +166,20 @@ export class BrowserLoginOnePassword implements BrowserLoginSource, BrowserLogin
         return { candidates };
     }
 
+    /**
+     * Whether 1Password already keeps this login. Item overviews carry no
+     * account name, so only a single item for exactly this origin is opened
+     * to compare it; several mean the person already manages this site there.
+     */
     async has(origin: string, username: string): Promise<boolean> {
+        const exact = (await this.logins()).filter(
+            (item) => itemMatch(item, origin)?.relation === "exact",
+        );
+        if (exact.length === 0) return false;
+        if (exact.length > 1) return true;
         const client = await this.clientGet();
-        const matching = (await this.logins()).filter((item) => itemMatch(item, origin));
-        for (const item of matching) {
-            const full = await client.items.get(item.vaultId, item.id);
-            if (field(full.fields, "username") === username) return true;
-        }
-        return false;
+        const item = await client.items.get(exact[0]!.vaultId, exact[0]!.id);
+        return field(item.fields, "username") === username;
     }
 
     async save(login: { origin: string; username: string; password: string }): Promise<void> {
@@ -249,9 +275,12 @@ export class BrowserLoginOnePassword implements BrowserLoginSource, BrowserLogin
     }
 
     private async clientCreate(account: string): Promise<Client> {
+        const library = libraryPath();
+        if (!library) throw new Error("1Password is not installed.");
+        await browserLoginLibraryTrustRequire(library, agileBits);
         const sdk = await import("@1password/sdk");
         return sdk.createClient({
-            auth: new sdk.DesktopAuth(account),
+            auth: new sdk.DesktopAuth(account, library),
             integrationName: "Happy",
             integrationVersion: this.options.integrationVersion,
         });

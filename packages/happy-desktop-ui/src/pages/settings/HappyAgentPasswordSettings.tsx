@@ -1,33 +1,9 @@
 import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { Button } from "../../Button";
-import { DataDisclosure, type DataDisclosureGroup } from "../../DataDisclosure";
 import { FormRow } from "../../FormRow";
 import { TextField } from "../../TextField";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
-
-/** What the saved-login picker does and, above all, what Happy never does with a password. */
-const PASSWORD_DISCLOSURE: readonly DataDisclosureGroup[] = [
-    {
-        kind: "shared",
-        title: "What Happy does",
-        items: [
-            "Reads the logins saved for the site you are on, only when you open the picker",
-            "Decrypts only the login you pick, and fills it into that page",
-            "Offers to save a new password to 1Password, when you connected it",
-        ],
-    },
-    {
-        kind: "withheld",
-        title: "What Happy never does",
-        items: [
-            "Store a password: there is no Happy vault",
-            "Import your passwords in bulk",
-            "Copy sessions or cookies from your browsers",
-            "Give a password to an agent",
-        ],
-    },
-];
 
 export interface HappyAgentPasswordSettingsProps {
     /** Whether this host reads saved logins at all. */
@@ -50,23 +26,12 @@ export interface HappyAgentPasswordSettingsProps {
  */
 export function HappyAgentPasswordSettings(props: HappyAgentPasswordSettingsProps) {
     return (
-        <>
-            <HappyAgentSettingsSection
-                description="Click a sign-in field, or the key in the browser's toolbar, to pick a login saved in your browsers or 1Password."
-                title="Saved logins"
-            >
-                {props.available ? null : (
-                    <Banner tone="neutral" title="Available in Happy for macOS and Windows">
-                        Saved logins are read from your browsers on this computer.
-                    </Banner>
-                )}
-                <DataDisclosure
-                    data-testid="happy-agent-settings-password-disclosure"
-                    groups={PASSWORD_DISCLOSURE}
-                />
-            </HappyAgentSettingsSection>
+        <HappyAgentSettingsSection
+            description="Happy fills logins from your browsers and 1Password on demand. It never stores passwords, imports them in bulk, or copies sessions."
+            title="Saved logins"
+        >
             {props.available ? (
-                <HappyAgentSettingsSection title="1Password">
+                <>
                     {props.error ? (
                         <Banner tone="danger" title="1Password did not connect">
                             {props.error}
@@ -85,8 +50,8 @@ export function HappyAgentPasswordSettings(props: HappyAgentPasswordSettingsProp
                                     Disconnect
                                 </Button>
                             }
-                            description={props.onePasswordAccount}
-                            label="Connected"
+                            description={`Connected as ${props.onePasswordAccount}`}
+                            label="1Password"
                         />
                     ) : props.onePasswordInstalled ? (
                         <FormRow
@@ -117,20 +82,24 @@ export function HappyAgentPasswordSettings(props: HappyAgentPasswordSettingsProp
                                     </Button>
                                 </Box>
                             }
-                            description="The name at the top of 1Password's sidebar. First turn on Settings › Developer › Integrate with other apps in 1Password."
+                            description="Your account name, as shown at the top of 1Password's sidebar."
                             htmlFor="happy-agent-settings-one-password-account"
-                            label="Account"
+                            label="1Password"
                             layout="stacked"
                         />
                     ) : (
                         <FormRow
                             control={null}
-                            description="Install the 1Password app to pick its logins here and save new passwords to it."
-                            label="Not installed"
+                            description="Install the 1Password app to use its logins here."
+                            label="1Password"
                         />
                     )}
-                </HappyAgentSettingsSection>
-            ) : null}
-        </>
+                </>
+            ) : (
+                <Banner tone="neutral" title="Available in Happy for macOS and Windows">
+                    Saved logins are read from your browsers on this computer.
+                </Banner>
+            )}
+        </HappyAgentSettingsSection>
     );
 }

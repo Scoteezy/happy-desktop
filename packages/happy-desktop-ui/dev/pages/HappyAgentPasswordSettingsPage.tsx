@@ -60,7 +60,7 @@ export function HappyAgentPasswordSettingsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="What the saved-login picker reads and what Happy never stores, and the 1Password connection."
+            summary="The one-sentence promise about saved logins, and the 1Password connection."
             title="Passwords settings"
         >
             <PasswordSettingsSpecimen

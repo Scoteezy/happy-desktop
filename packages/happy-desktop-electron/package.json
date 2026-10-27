@@ -85,10 +85,14 @@
     "build": {
         "appId": "com.slopus.happy",
         "productName": "Happy",
-        "asar": true,
+        "asar": {
+            "smartUnpack": false
+        },
         "npmRebuild": false,
         "asarUnpack": [
-            "node_modules/**/*"
+            "node_modules/**/*.node",
+            "node_modules/**/*.dylib",
+            "node_modules/**/*.dll"
         ],
         "electronFuses": {
             "runAsNode": false,

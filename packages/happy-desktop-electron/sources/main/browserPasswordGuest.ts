@@ -635,17 +635,20 @@ export function browserLoginPickerTemplate(options: {
     readonly candidates: readonly BrowserLoginCandidate[];
     readonly choose: (candidate: BrowserLoginCandidate) => void;
 }): Electron.MenuItemConstructorOptions[] {
-    const item = (candidate: BrowserLoginCandidate): Electron.MenuItemConstructorOptions => ({
-        label: nativeLabel(
-            [
-                candidate.name,
-                ...(candidate.relation === "related" ? [new URL(candidate.origin).host] : []),
-                candidate.source,
-            ].join(" · "),
-        ),
-        enabled: options.fieldReady,
-        click: () => options.choose(candidate),
-    });
+    const item = (candidate: BrowserLoginCandidate): Electron.MenuItemConstructorOptions => {
+        // The account name comes from the stored login, so it is cut short and
+        // can never push the site or source out of view.
+        const login = `${nativePart(candidate.name, 40)} · ${nativePart(candidate.source, 80)}`;
+        return {
+            label: nativeLabel(
+                candidate.relation === "related"
+                    ? `${nativePart(new URL(candidate.origin).host, 80)} — ${login}`
+                    : login,
+            ),
+            enabled: options.fieldReady,
+            click: () => options.choose(candidate),
+        };
+    };
     const exact = options.candidates.filter((candidate) => candidate.relation === "exact");
     const related = options.candidates.filter((candidate) => candidate.relation === "related");
     return [
@@ -696,4 +699,12 @@ function nativeLabel(value: string): string {
 function nativeText(value: string): string {
     // Untrusted account names cannot inject line breaks or invisible bidi controls.
     return value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, " ").slice(0, 256);
+}
+
+/** One part of a label: untrusted text cut to `length` characters, ending in an ellipsis when cut. */
+function nativePart(value: string, length: number): string {
+    const characters = [...nativeText(value).trim()];
+    return characters.length > length
+        ? `${characters.slice(0, length - 1).join("")}…`
+        : characters.join("");
 }

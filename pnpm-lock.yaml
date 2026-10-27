@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@1password/sdk@0.5.0':
+    hash: 2e4f928ede8f17a9edec4a9fb10a3d2154c221605a17755c679d15ca908c9b0e
+    path: patches/@1password__sdk@0.5.0.patch
   react-dom@19.2.7:
     hash: 14e2cfa7d72d4064e573a384fedfcdcc7589b6d08ab00ac90e41ef11f9496979
     path: patches/react-dom@19.2.7.patch
@@ -155,7 +158,7 @@ importers:
     dependencies:
       '@1password/sdk':
         specifier: 0.5.0
-        version: 0.5.0
+        version: 0.5.0(patch_hash=2e4f928ede8f17a9edec4a9fb10a3d2154c221605a17755c679d15ca908c9b0e)
       '@sinclair/typebox':
         specifier: ^0.34.49
         version: 0.34.52
@@ -5866,7 +5869,7 @@ snapshots:
 
   '@1password/sdk-core@0.5.0': {}
 
-  '@1password/sdk@0.5.0':
+  '@1password/sdk@0.5.0(patch_hash=2e4f928ede8f17a9edec4a9fb10a3d2154c221605a17755c679d15ca908c9b0e)':
     dependencies:
       '@1password/sdk-core': 0.5.0
 
