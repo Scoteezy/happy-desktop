@@ -338,12 +338,16 @@ export {
     type SidebarHeaderAction,
     type SidebarItem,
     type SidebarItemAction,
+    type SidebarItemChange,
+    type SidebarItemChangeKind,
+    type SidebarSeparatorPinEdge,
     type SidebarNumberShortcutTarget,
     type SidebarProps,
     type SidebarReorder,
     type SidebarSearch,
     type SidebarSection,
 } from "./Sidebar";
+export { SidebarChanges, type SidebarChangesProps } from "./SidebarChanges";
 export {
     SidebarProposal,
     type SidebarProposalProps,

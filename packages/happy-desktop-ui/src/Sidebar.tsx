@@ -37,7 +37,7 @@ import { ScrollArea } from "./Scrollbar";
 import { SidebarSectionContext, SidebarSectionTail } from "./SidebarSectionDetails";
 import { TextField } from "./TextField";
 import { sidebarSectionsReuser } from "./sidebarSectionsReuser";
-import { Octicon } from "./vectorIcons/VectorIcon";
+import { Ionicon } from "./vectorIcons/VectorIcon";
 import { SidebarWidget } from "./SidebarWidget";
 /** One control on a row: its glyph, what it does, and when it shows. */
 export type SidebarItemAction = {
@@ -205,6 +205,54 @@ export type SidebarItem = {
      * go without the sidebar claiming they already went there.
      */
     voiceFocus?: boolean;
+    /**
+     * A change someone proposed for this row and the person has not answered:
+     * the row wears its kind as a backdrop and a mark at its trailing edge.
+     * The mark accepts it, through `onItemChangeAccept`.
+     */
+    change?: SidebarItemChange;
+    /**
+     * A `separator` the person pinned. `top`: everything above it holds still
+     * and only what is below scrolls; `bottom`: everything below it holds still
+     * at the foot of the column. A pinned rule runs edge to edge, where a plain
+     * one is as wide as a selected row's straight edge. The sidebar measures
+     * whether a pin can hold — the rows left to scroll must keep at least half
+     * the scrollport — and when it cannot, the rule keeps its plain width, the
+     * column scrolls as usual, and pointing at the separator says why. That measure is never part of the item.
+     */
+    pin?: SidebarSeparatorPinEdge;
+};
+/**
+ * What a proposed change does to one row. A move is drawn twice: `move` where
+ * the row stands now, dimmed, and `arrive` where it would land, as its own
+ * row, washed like an insert, with an arrow pointing back at it. `insert`
+ * is a row that is not in the sidebar yet, drawn where it would go. `remove`
+ * takes a row out of the sidebar without archiving it: a space or session
+ * hidden, or a heading deleted on its own.
+ */
+/** Which end of the column a pinned separator holds still. */
+export type SidebarSeparatorPinEdge = "top" | "bottom";
+export type SidebarItemChangeKind = "move" | "arrive" | "insert" | "archive" | "remove";
+export type SidebarItemChange = {
+    kind: SidebarItemChangeKind;
+    /**
+     * What will happen, said in full above the row while its mark is pointed
+     * at: "Moving here from Desktop", "Archiving". A row without one wears the
+     * change's backdrop and no mark, as the rows of a block do under the
+     * heading that carries it.
+     */
+    label?: string;
+    /**
+     * One change that spans a whole section: the heading is its `head`, every
+     * row it folds is a `member`, and adjacent rows of one block are drawn as
+     * a single backdrop rather than one per row.
+     */
+    block?: "head" | "member";
+    /**
+     * The row an `arrive` row leaves, by ID, when this sidebar draws it.
+     * Pointing at the mark lights it.
+     */
+    from?: string;
 };
 /**
  * Left inset of the row content at depth 0: `--happy-sidebar-row-leading`,
@@ -538,6 +586,16 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     onItemAction?: (id: string) => void;
     /** Invoked when a row's name-side `secondaryAction` control is used. */
     onItemSecondaryAction?: (id: string) => void;
+    /** The person accepted one row's proposed `change` from its mark. */
+    onItemChangeAccept?: (id: string) => void;
+    /** The person declined one row's proposed `change`, from the ✕ beside its explanation. */
+    onItemChangeReject?: (id: string) => void;
+    /**
+     * Floats over the foot of the rows, above the footer, inside the column:
+     * the answer to everything proposed at once. The rows keep room under
+     * their last one so none is ever out of reach behind it.
+     */
+    bodyFloat?: ReactNode;
     /**
      * Enables arranging the pinned `actions` and reports the one move a drag or
      * a keyboard move made. Without it the pinned rows are fixed, which is what
@@ -621,6 +679,38 @@ function showsLeadingSlot(item: SidebarItem): boolean {
     if (item.kind === "person" || item.kind === "agent" || item.kind === "project") return true;
     return item.icon !== undefined || item.emoji !== undefined;
 }
+/**
+ * The change each row is drawn with. A row's nested rows are part of its
+ * change: they carry its kind as members of its block, and the row heads that
+ * block. Read from the stated rows, folded ones included, so a row unfolds
+ * with its children already washed or dimmed on the very first frame. A row
+ * that states its own change keeps it, and so do the rows nested under it.
+ */
+function changesInherited(items: readonly SidebarItem[]): ReadonlyMap<string, SidebarItemChange> {
+    const changes = new Map<string, SidebarItemChange>();
+    // The rows above with a change, nearest last, at the depth each stands.
+    const stack: { depth: number; kind: SidebarItemChangeKind }[] = [];
+    for (const [index, item] of items.entries()) {
+        const depth = item.depth ?? 0;
+        while (stack.length > 0 && stack[stack.length - 1]!.depth >= depth) stack.pop();
+        const parent = stack[stack.length - 1];
+        const nests = (items[index + 1]?.depth ?? 0) > depth;
+        const own = item.change;
+        const change: SidebarItemChange | undefined = own
+            ? nests && own.block === undefined
+                ? { ...own, block: "head" }
+                : own
+            : parent
+              ? { kind: parent.kind, block: "member" }
+              : undefined;
+        if (change) {
+            changes.set(item.id, change);
+            stack.push({ depth, kind: change.kind });
+        }
+    }
+    return changes;
+}
+
 /** One row as it is drawn: the row itself, and whether it has a tree to fold. */
 interface SidebarVisibleRow {
     readonly item: SidebarItem;
@@ -1196,6 +1286,8 @@ interface SidebarTreeConnectorsProps {
     readonly drag?: SidebarDrag;
     readonly listId: SidebarListId;
     readonly onElement: (key: string, element: HTMLSpanElement | null) => void;
+    /** The pinned block a parent stands in, whose stem holds still with it. */
+    readonly pinAreaOf?: (id: string) => SidebarSeparatorPinEdge | undefined;
 }
 
 /**
@@ -1227,6 +1319,12 @@ function SidebarTreeConnectors(props: SidebarTreeConnectorsProps) {
                 rows.length === props.items.length
                     ? rows.map((row) => row.getBoundingClientRect().height)
                     : props.items.map(() => firstHeight);
+            // A row may stand apart by a margin of its own — the floor above a
+            // block pinned to the bottom — which is not gap between rows.
+            const margins =
+                rows.length === props.items.length
+                    ? rows.map((row) => parseFloat(getComputedStyle(row).marginTop) || 0)
+                    : props.items.map(() => 0);
             const treeStyle = getComputedStyle(tree);
             const treeHeight =
                 tree.getBoundingClientRect().height -
@@ -1236,13 +1334,15 @@ function SidebarTreeConnectors(props: SidebarTreeConnectorsProps) {
                 parseFloat(treeStyle.borderBottomWidth);
             const rowGap =
                 props.items.length > 1
-                    ? (treeHeight - heights.reduce((sum, height) => sum + height, 0)) /
+                    ? (treeHeight -
+                          heights.reduce((sum, height) => sum + height, 0) -
+                          margins.reduce((sum, margin) => sum + margin, 0)) /
                       (props.items.length - 1)
                     : 0;
             const rowTops: number[] = [];
-            heights.reduce((top, height) => {
-                rowTops.push(top);
-                return top + height + rowGap;
+            heights.reduce((top, height, index) => {
+                rowTops.push(top + margins[index]!);
+                return top + margins[index]! + height + rowGap;
             }, 0);
             const rowCenter = (index: number): number =>
                 rowTops[index]! + heights[index]! / 2 + rowDragShift(props.drag, index);
@@ -1308,6 +1408,7 @@ function SidebarTreeConnectors(props: SidebarTreeConnectorsProps) {
                                 : undefined
                         }
                         data-parent-id={group.parentId}
+                        data-pin-area={props.pinAreaOf?.(group.parentId)}
                         data-happy-desktop-ui="sidebar-tree-connector"
                         key={group.parentId}
                         ref={(element) => props.onElement(key, element)}
@@ -1404,6 +1505,156 @@ function SidebarRowAction(props: { action: SidebarItemAction; onAction: () => vo
     );
 }
 
+/** The glyph each kind of change wears: where a row goes, that it is put away, or that it is new. */
+const CHANGE_ICONS: Record<Exclude<SidebarItemChangeKind, "arrive">, IconName> = {
+    move: "arrow-right",
+    archive: "archive",
+    remove: "eye-off",
+    insert: "check",
+};
+
+/**
+ * Why a pinned separator's pin is not holding: a note shown while the
+ * separator is pointed at or focused. The rule's width is the only sign that a
+ * separator is pinned; whether the pin holds is measured by the sidebar and
+ * set on the separator as `data-pin-tall`, so the note is always drawn and
+ * shown only then, and a measure never renders anything.
+ */
+function SidebarSeparatorPinNote(props: { readonly pin: SidebarSeparatorPinEdge }) {
+    return (
+        <span
+            className="happy-sidebar__separator-pin-note"
+            data-happy-desktop-ui="sidebar-separator-pin-note"
+            role="tooltip"
+        >
+            <span className="happy-sidebar__separator-pin-note-title">Pin section too tall.</span>{" "}
+            Pinning isn’t taking effect because the section{" "}
+            {props.pin === "top" ? "above" : "below"} is too tall. Try moving this separator{" "}
+            {props.pin === "top" ? "up" : "down"}.
+        </span>
+    );
+}
+
+/**
+ * Reads the rows where they rest, as if no pinned block were holding: held
+ * rows stand at their place in the column rather than where the scroll offset
+ * has left them, so distances read across a holding rule are the ones the
+ * rows would travel. Released and restored in the same task, restyled with no
+ * row transitions, so nothing paints or glides in between.
+ */
+function pinsReleasedRead<T>(near: Element, read: () => T): T {
+    const nav = near.closest<HTMLElement>(".happy-sidebar");
+    if (!nav || (!nav.hasAttribute("data-pin-top") && !nav.hasAttribute("data-pin-bottom")))
+        return read();
+    nav.setAttribute("data-pin-switch", "");
+    nav.setAttribute("data-pin-measuring", "");
+    const value = read();
+    nav.removeAttribute("data-pin-measuring");
+    void nav.offsetHeight;
+    nav.removeAttribute("data-pin-switch");
+    return value;
+}
+
+/**
+ * Lights or unlights the row an `arrive` mark's row comes from. Imperative
+ * because it is pointer feedback between two rows already on screen: an
+ * attribute React never renders, set and cleared by the mark's own events.
+ */
+function changeSourceLight(near: HTMLElement, from: string | undefined, lit: boolean) {
+    if (from === undefined) return;
+    const row = Array.from(
+        near.closest(".happy-sidebar")?.querySelectorAll("[data-item-id]") ?? [],
+    ).find((node) => node.getAttribute("data-item-id") === from);
+    // A whole section leaving lights as the one block it is drawn as.
+    for (
+        let node: Element | null | undefined = row;
+        node && (node === row || node.getAttribute("data-change-block") === "member");
+        node = node.nextElementSibling
+    )
+        node.toggleAttribute("data-change-source", lit);
+}
+
+/**
+ * A row's proposed change, as one mark in the row's trailing column: the glyph
+ * of what would happen to it, which accepts that one change. Pointed at or
+ * focused, it says in full what will happen in a note above the row, ending
+ * just left of the mark so the row itself stays readable, with a ✕ that
+ * declines the change. A row a move brings here points back at itself and
+ * lights the row it leaves.
+ */
+function SidebarRowChange(props: {
+    change: SidebarItemChange;
+    onAccept?: () => void;
+    onReject?: () => void;
+}) {
+    const { change, onAccept: accept, onReject: reject } = props;
+    const light = (event: { currentTarget: HTMLElement }, lit: boolean) =>
+        changeSourceLight(event.currentTarget, change.from, lit);
+    const activate = (event: { currentTarget: HTMLElement }, act: () => void) => {
+        light(event, false);
+        act();
+    };
+    const keyActivate = (event: ReactKeyboardEvent<HTMLElement>, act: () => void) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        activate(event, act);
+    };
+    return (
+        /* Spans for the same reason as a row action: the row is the button. The
+           note stands outside the row's flow, so showing it moves nothing. */
+        // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- only keeps a click on the mark or its note from also opening the row; the mark answers keys itself
+        <span
+            className="happy-sidebar__item-change"
+            data-change={change.kind}
+            data-happy-desktop-ui="sidebar-item-change"
+            onBlur={(event) => light(event, false)}
+            onClick={(event) => event.stopPropagation()}
+            onFocus={(event) => light(event, true)}
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerEnter={(event) => light(event, true)}
+            onPointerLeave={(event) => light(event, false)}
+        >
+            <span
+                aria-label={change.label}
+                className="happy-sidebar__item-change-mark"
+                data-acceptable={accept ? "" : undefined}
+                onClick={accept ? (event) => activate(event, accept) : undefined}
+                onKeyDown={accept ? (event) => keyActivate(event, accept) : undefined}
+                role={accept ? "button" : "img"}
+                tabIndex={accept ? 0 : undefined}
+            >
+                {change.kind === "arrive" ? (
+                    <Ionicon name="arrow-back-outline" size={12} />
+                ) : (
+                    <Icon name={CHANGE_ICONS[change.kind]} size={12} />
+                )}
+            </span>
+            <span
+                className="happy-sidebar__item-change-note"
+                data-happy-desktop-ui="sidebar-item-change-note"
+            >
+                <span aria-hidden="true" className="happy-sidebar__item-change-note-text">
+                    {change.label}
+                </span>
+                {reject ? (
+                    <span
+                        aria-label="Keep as it is"
+                        className="happy-sidebar__item-change-note-reject"
+                        data-happy-desktop-ui="sidebar-item-change-reject"
+                        onClick={(event) => activate(event, reject)}
+                        onKeyDown={(event) => keyActivate(event, reject)}
+                        role="button"
+                        tabIndex={0}
+                    >
+                        <Icon name="close" size={12} />
+                    </span>
+                ) : null}
+            </span>
+        </span>
+    );
+}
+
 /** Where one listed row is, as of the render that drew it. */
 interface SidebarRowTarget {
     readonly item: SidebarItem;
@@ -1437,6 +1688,8 @@ interface SidebarRowHandlers {
     readonly renameRequest: (key: string) => boolean;
     readonly renameSubmit: (key: string, name: string) => void;
     readonly secondaryAction: (key: string) => void;
+    readonly changeAccept: (key: string) => void;
+    readonly changeReject: (key: string) => void;
     readonly select: (id: string) => void;
 }
 
@@ -1449,6 +1702,8 @@ const SidebarListRow = memo(function SidebarListRow({
     canCollapse,
     canRename,
     canSecondaryAction,
+    canChangeAccept,
+    canChangeReject,
     ...rest
 }: {
     handlers: SidebarRowHandlers;
@@ -1460,7 +1715,11 @@ const SidebarListRow = memo(function SidebarListRow({
     canCollapse: boolean;
     canRename: boolean;
     canSecondaryAction: boolean;
+    canChangeAccept: boolean;
+    canChangeReject: boolean;
     active: boolean;
+    /** See `SidebarRow.pinArea`. */
+    pinArea?: SidebarSeparatorPinEdge;
     /** See `SidebarRow.tabStop`. */
     tabStop?: boolean;
     activityPlacement?: SidebarActivityPlacement;
@@ -1504,6 +1763,8 @@ const SidebarListRow = memo(function SidebarListRow({
             onSecondaryAction={
                 canSecondaryAction ? () => handlers.secondaryAction(rowId) : undefined
             }
+            onChangeAccept={canChangeAccept ? () => handlers.changeAccept(rowId) : undefined}
+            onChangeReject={canChangeReject ? () => handlers.changeReject(rowId) : undefined}
             nodeRef={(node) => handlers.node(rowId, node)}
             onSelect={handlers.select}
         />
@@ -1546,6 +1807,15 @@ function SidebarRow({
     onAction?: () => void;
     /** Invoked by the control left of it; absent when the row offers no second one. */
     onSecondaryAction?: () => void;
+    /** Accepts the row's proposed change from its mark; absent, the mark only reports. */
+    onChangeAccept?: () => void;
+    /** Declines the row's proposed change, from the ✕ beside its explanation. */
+    onChangeReject?: () => void;
+    /**
+     * The block of a pinned separator the row stands in, the separator
+     * included: it holds still at that edge whenever the pin holds.
+     */
+    pinArea?: SidebarSeparatorPinEdge;
     /** Folds or unfolds this row; absent when the row has nothing to fold. */
     onCollapseToggle?: () => void;
     foldControlPlacement?: "leading" | "trailing";
@@ -1803,6 +2073,15 @@ function SidebarRow({
     const foldInBranch = () => !showsLeadingSlot(item()) && !activityLeading();
     // A trailing fold puts the row in fixed lanes: name and marks, then controls, then the fold.
     const lanes = props.foldControlPlacement === "trailing";
+    // A proposed change ends the row, on the trailing column every mark shares.
+    const changeMark = () =>
+        item().change?.label !== undefined ? (
+            <SidebarRowChange
+                change={item().change!}
+                onAccept={props.onChangeAccept}
+                onReject={props.onChangeReject}
+            />
+        ) : null;
     // The row is already a button, so its pointer disclosure stays a span.
     const foldControl = () =>
         props.onCollapseToggle ? (
@@ -1825,6 +2104,8 @@ function SidebarRow({
                opens nothing and folds nothing; it can still be carried, so it
                is a control that announces itself as a separator. */
             <button
+                data-pin={item().pin}
+                data-pin-area={props.pinArea}
                 aria-keyshortcuts={props.reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
                 aria-label="Separator"
                 aria-roledescription="separator"
@@ -1847,6 +2128,7 @@ function SidebarRow({
                 type="button"
             >
                 <span aria-hidden="true" className="happy-sidebar__separator-rule" />
+                {item().pin ? <SidebarSeparatorPinNote pin={item().pin!} /> : null}
             </button>
         );
     if (item().kind === "widget")
@@ -1863,6 +2145,7 @@ function SidebarRow({
                 data-grabbed={props.grabbed ? "" : undefined}
                 data-happy-desktop-ui="sidebar-item"
                 data-item-id={item().id}
+                data-pin-area={props.pinArea}
                 data-kind="widget"
                 onContextMenu={(event) => props.onContextMenu?.(item(), event)}
                 onKeyDown={props.onKeyDown}
@@ -1929,12 +2212,15 @@ function SidebarRow({
                 aria-keyshortcuts={props.reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
                 className="happy-sidebar__item happy-sidebar__section-item"
                 data-actionable={item().action && props.onAction ? "" : undefined}
+                data-change={item().change?.kind}
+                data-change-block={item().change?.block}
                 data-collapsed={item().collapsed ? "" : undefined}
                 data-dragging={props.dragging ? "" : undefined}
                 data-foldable={props.onCollapseToggle ? "" : undefined}
                 data-grabbed={props.grabbed ? "" : undefined}
                 data-happy-desktop-ui="sidebar-item"
                 data-item-id={item().id}
+                data-pin-area={props.pinArea}
                 data-kind="section"
                 onClick={() => props.onCollapseToggle?.()}
                 onContextMenu={(event) => props.onContextMenu?.(item(), event)}
@@ -1965,6 +2251,7 @@ function SidebarRow({
                         <SidebarRowAction action={item().action!} onAction={props.onAction} />
                     </span>
                 ) : null}
+                {changeMark()}
                 {props.onCollapseToggle ? (
                     <span
                         aria-hidden="true"
@@ -1989,6 +2276,8 @@ function SidebarRow({
             className={["happy-sidebar__item", props.className].filter(Boolean).join(" ")}
             data-active={props.active ? "" : undefined}
             data-archived={item().archived ? "" : undefined}
+            data-change={item().change?.kind}
+            data-change-block={item().change?.block}
             /* Both are needed and neither implies the other: a row that folds is
                styled as one whether it is open or shut, and a row still says it
                is shut while the pointer is elsewhere. */
@@ -1999,6 +2288,7 @@ function SidebarRow({
             data-fold-in-branch={props.onCollapseToggle && foldInBranch() ? "" : undefined}
             data-depth={depth() > 0 ? String(depth()) : undefined}
             data-item-id={item().id}
+            data-pin-area={props.pinArea}
             data-kind={item().kind}
             data-mentioned={mentioned() ? "" : undefined}
             data-happy-desktop-ui="sidebar-item"
@@ -2421,6 +2711,7 @@ function SidebarRow({
                 it shows; always shown, it is the row's last column and the delta
                 stands left of it. A row with nothing to fold keeps no empty
                 column: what it reports ends at the row's edge. */}
+            {changeMark()}
             {lanes ? foldControl() : null}
         </Row>
     );
@@ -2535,6 +2826,9 @@ export function Sidebar(props: SidebarProps) {
         "onItemIntent",
         "onItemAction",
         "onItemSecondaryAction",
+        "onItemChangeAccept",
+        "onItemChangeReject",
+        "bodyFloat",
         "onItemMenuSelect",
         "onItemCollapseToggle",
         "onItemReorder",
@@ -2998,6 +3292,265 @@ export function Sidebar(props: SidebarProps) {
     const [announceSlot, setAnnounceSlot] = useState(0);
     // Whether rows sit under the header; the header then fades into the list.
     const [scrolled, setScrolled] = useState(false);
+    /*
+     * The top of the rows never moves for something below it. The rows stand
+     * at least as tall as the bottom of what is on screen, so a fold, a row
+     * leaving or a change accepted near the end shortens them without the
+     * scrollport pulling everything down to its new end: the space they gave
+     * up stays, blank, where they were. It is let go only as the reader
+     * scrolls up away from it, which moves nothing they can see — the same
+     * held space the transcript keeps under its last message. At the top
+     * nothing is held: no shortening can move rows that are not scrolled, and
+     * a sidebar drawn at its full height, as a proposal is, keeps fitting its
+     * rows. Imperative because the scroll offset is DOM state; the identity is
+     * stable so the scrollport's ref is set once.
+     */
+    const [floor] = useState(() => {
+        let observer: ResizeObserver | undefined;
+        let mutations: MutationObserver | undefined;
+        let frame = 0;
+        let carry = 0;
+        const hold = (viewport: HTMLElement) => {
+            const content = viewport.querySelector<HTMLElement>(".happy-sidebar__body-content");
+            if (!content) return;
+            if (viewport.scrollTop <= 0) content.style.removeProperty("min-height");
+            else
+                content.style.setProperty(
+                    "min-height",
+                    `${String(viewport.scrollTop + viewport.clientHeight)}px`,
+                );
+        };
+        const styleSet = (node: HTMLElement, name: string, value: string | null) => {
+            if (value === null) {
+                if (node.style.getPropertyValue(name) !== "") node.style.removeProperty(name);
+            } else if (node.style.getPropertyValue(name) !== value)
+                node.style.setProperty(name, value);
+        };
+        const attributeSet = (node: Element, name: string, value: string | null) => {
+            if (value === null) {
+                if (node.hasAttribute(name)) node.removeAttribute(name);
+            } else if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+        };
+        /*
+         * Whether each pinned separator can hold. The rows left to scroll
+         * between the pinned blocks must keep at least half the scrollport; a
+         * block that would leave them less does not pin, and says so. With both
+         * edges pinned and too little left between them, the bottom block gives
+         * way first: the top is what the column is read from. Measured on the
+         * rows' resting layout (pins released for the reading, in the same
+         * task, so nothing paints in between, and restyled with no row
+         * transitions so the swap glides nothing) and written as attributes
+         * and custom properties only — the measure never renders.
+         */
+        const pinsMeasure = (viewport: HTMLElement) => {
+            const nav = viewport.closest<HTMLElement>(".happy-sidebar");
+            const content = viewport.querySelector<HTMLElement>(".happy-sidebar__body-content");
+            if (!nav || !content) return;
+            const top = content.querySelector<HTMLElement>(
+                '.happy-sidebar__separator[data-pin="top"][data-pin-area="top"]',
+            );
+            const bottom = content.querySelector<HTMLElement>(
+                '.happy-sidebar__separator[data-pin="bottom"][data-pin-area="bottom"]',
+            );
+            if (!top && !bottom) {
+                attributeSet(nav, "data-pin-top", null);
+                attributeSet(nav, "data-pin-bottom", null);
+                styleSet(nav, "--happy-sidebar-pin-top", null);
+                styleSet(nav, "--happy-sidebar-pin-bottom", null);
+                return;
+            }
+            nav.setAttribute("data-pin-switch", "");
+            nav.setAttribute("data-pin-measuring", "");
+            const origin = content.getBoundingClientRect().top;
+            const inset = parseFloat(getComputedStyle(content).paddingTop) || 0;
+            const height = viewport.clientHeight;
+            // A held block ends at its rule: the rows that scroll run right
+            // up to the hairline, as a conversation runs under its header,
+            // and the separator's room past the rule is theirs to pass under.
+            const ruleOf = (separator: HTMLElement) =>
+                (
+                    separator.querySelector<HTMLElement>(".happy-sidebar__separator-rule") ??
+                    separator
+                ).getBoundingClientRect();
+            const topHeight = top ? ruleOf(top).bottom - origin : 0;
+            const tree = bottom?.parentElement;
+            const end = tree ? tree.getBoundingClientRect().bottom - origin + inset : 0;
+            const bottomStart = bottom ? ruleOf(bottom).top - origin : 0;
+            const bottomHeight = bottom ? end - bottomStart : 0;
+            const offsets = [...content.querySelectorAll<HTMLElement>("[data-pin-area]")].map(
+                (row) => {
+                    const box = row.getBoundingClientRect();
+                    return { row, top: box.top - origin, bottom: box.bottom - origin };
+                },
+            );
+            nav.removeAttribute("data-pin-measuring");
+            const half = height / 2;
+            const topHolds = top !== null && topHeight <= half;
+            const bottomHolds =
+                bottom !== null &&
+                bottomHeight <= half &&
+                (!topHolds || height - topHeight - bottomHeight >= half);
+            // Holding moves the floor above a bottom block, which moves the
+            // edge it is measured from: measure once more when that changes.
+            const changed =
+                nav.getAttribute("data-pin-bottom") !==
+                (bottom ? (bottomHolds ? "hold" : "tall") : null);
+            attributeSet(nav, "data-pin-top", top ? (topHolds ? "hold" : "tall") : null);
+            attributeSet(nav, "data-pin-bottom", bottom ? (bottomHolds ? "hold" : "tall") : null);
+            if (top) attributeSet(top, "data-pin-tall", topHolds ? null : "");
+            if (bottom) attributeSet(bottom, "data-pin-tall", bottomHolds ? null : "");
+            styleSet(nav, "--happy-sidebar-pin-top", topHolds ? `${String(topHeight)}px` : null);
+            styleSet(
+                nav,
+                "--happy-sidebar-pin-bottom",
+                bottomHolds ? `${String(bottomHeight)}px` : null,
+            );
+            // Where each pinned row sticks: at its resting distance from the
+            // edge it is pinned to, so holding still is all it ever does.
+            for (const { row, top: rowTop, bottom: rowBottom } of offsets)
+                styleSet(
+                    row,
+                    "--happy-sidebar-pin-at",
+                    row.dataset.pinArea === "top"
+                        ? `${String(rowTop)}px`
+                        : `${String(end - rowBottom)}px`,
+                );
+            pinsScroll(viewport, nav, end);
+            void content.offsetHeight;
+            nav.removeAttribute("data-pin-switch");
+            if (changed) pinsSchedule(viewport);
+        };
+        /*
+         * While a row is carried its offset is its own `top`, so the pinned
+         * rows stop sticking and are carried along by the scroll offset
+         * instead, which is kept here.
+         */
+        const pinsScroll = (viewport: HTMLElement, nav: HTMLElement, end?: number) => {
+            if (!nav.hasAttribute("data-pin-top") && !nav.hasAttribute("data-pin-bottom")) return;
+            styleSet(nav, "--happy-sidebar-pin-scroll", `${String(viewport.scrollTop)}px`);
+            const bottomEnd = end ?? Number.parseFloat(nav.dataset.pinEnd ?? "0");
+            if (end !== undefined) nav.dataset.pinEnd = String(end);
+            styleSet(
+                nav,
+                "--happy-sidebar-pin-lift",
+                `${String(Math.min(0, viewport.scrollTop + viewport.clientHeight - bottomEnd))}px`,
+            );
+        };
+        const pinsSchedule = (viewport: HTMLElement) => {
+            if (frame !== 0) return;
+            frame = requestAnimationFrame(() => {
+                frame = 0;
+                pinsMeasure(viewport);
+            });
+        };
+        /*
+         * A drag and the glide that settles it move rows by their `top`,
+         * which on a sticking row is where it sticks, not an offset. For as
+         * long as either lasts the held rows are carried by the scroll offset
+         * instead (`data-pin-carry`), which reads the same at rest; they stick
+         * again, measured afresh, once the last glide on a held row is done.
+         * Set from the mutation that starts the drag or the drop, before that
+         * frame paints, and checked once a frame while it lasts.
+         */
+        const pinsCarry = (viewport: HTMLElement) => {
+            const nav = viewport.closest<HTMLElement>(".happy-sidebar");
+            const content = viewport.querySelector<HTMLElement>(".happy-sidebar__body-content");
+            if (!nav || !content) return;
+            const carried =
+                (nav.hasAttribute("data-pin-top") || nav.hasAttribute("data-pin-bottom")) &&
+                (content.hasAttribute("data-dragging") ||
+                    content.getAnimations({ subtree: true }).some((animation) => {
+                        const effect = animation.effect;
+                        if (!(effect instanceof KeyframeEffect)) return false;
+                        const target = effect.target;
+                        return (
+                            target instanceof HTMLElement &&
+                            (target.dataset.pinArea === "top" ||
+                                target.dataset.pinArea === "bottom") &&
+                            effect.getKeyframes().some((keyframe) => "top" in keyframe)
+                        );
+                    }));
+            // Swapping how the held rows stand changes their `top`, which the
+            // rows being arranged would glide: the swap is styled once with
+            // their transitions off (`data-pin-switch`), so it is never seen.
+            if (carried) {
+                if (!nav.hasAttribute("data-pin-carry")) {
+                    pinsScroll(viewport, nav);
+                    nav.setAttribute("data-pin-switch", "");
+                    nav.setAttribute("data-pin-carry", "");
+                    void content.offsetHeight;
+                    nav.removeAttribute("data-pin-switch");
+                }
+                if (carry === 0)
+                    carry = requestAnimationFrame(() => {
+                        carry = 0;
+                        pinsCarry(viewport);
+                    });
+            } else if (nav.hasAttribute("data-pin-carry")) {
+                nav.setAttribute("data-pin-switch", "");
+                nav.removeAttribute("data-pin-carry");
+                pinsMeasure(viewport);
+                void content.offsetHeight;
+                nav.removeAttribute("data-pin-switch");
+            }
+        };
+        return {
+            hold,
+            scroll: (viewport: HTMLElement) => {
+                hold(viewport);
+                const nav = viewport.closest<HTMLElement>(".happy-sidebar");
+                if (nav) pinsScroll(viewport, nav);
+            },
+            ref: (viewport: HTMLDivElement | null) => {
+                bodyViewport.current = viewport;
+                observer?.disconnect();
+                mutations?.disconnect();
+                cancelAnimationFrame(frame);
+                cancelAnimationFrame(carry);
+                frame = 0;
+                carry = 0;
+                observer = undefined;
+                mutations = undefined;
+                if (!viewport) return;
+                observer = new ResizeObserver(() => {
+                    hold(viewport);
+                    pinsSchedule(viewport);
+                });
+                observer.observe(viewport);
+                const content = viewport.querySelector<HTMLElement>(".happy-sidebar__body-content");
+                if (content) observer.observe(content);
+                // A drag moves rows by their `top`, and a drop or a fold
+                // changes which rows there are: both can move a pinned edge.
+                mutations = new MutationObserver((records) => {
+                    pinsCarry(viewport);
+                    // The held floor written on the rows' column is not one of them.
+                    if (
+                        records.every(
+                            (record) =>
+                                record.target === content && record.attributeName === "style",
+                        )
+                    )
+                        return;
+                    pinsSchedule(viewport);
+                });
+                if (content)
+                    mutations.observe(content, {
+                        attributeFilter: [
+                            "style",
+                            "data-pin",
+                            "data-pin-area",
+                            "data-collapsed",
+                            "data-dragging",
+                        ],
+                        attributes: true,
+                        childList: true,
+                        subtree: true,
+                    });
+                hold(viewport);
+                pinsMeasure(viewport);
+            },
+        };
+    });
     const moveAnnounce = (text: string): void => {
         const slot = announceSlot === 0 ? 1 : 0;
         setAnnounceSlot(slot);
@@ -3119,7 +3672,11 @@ export function Sidebar(props: SidebarProps) {
         // Keep pointer travel, peer distances, and the drop capture in the same
         // fractional CSS coordinates. offsetTop/offsetHeight round these values
         // and make displaced neighbours land short at fractional browser zoom.
-        const bounds = rows.map((row) => row.getBoundingClientRect());
+        // Held rows are read where they rest, so a step across a pinned rule
+        // is the distance the rows travel, whatever the scroll offset.
+        const bounds = pinsReleasedRead(event.currentTarget, () =>
+            rows.map((row) => row.getBoundingClientRect()),
+        );
         const top = (blockIndex: number): number => bounds[blocks[blockIndex]?.[0] ?? -1]?.top ?? 0;
         const bottom = (block: readonly number[]): number => {
             return bounds[block[block.length - 1] ?? -1]?.bottom ?? 0;
@@ -3132,7 +3689,9 @@ export function Sidebar(props: SidebarProps) {
         );
         const across =
             local.itemDragAcrossSections && listId !== ACTIONS_LIST && parentId === undefined
-                ? dropSlotsOf(event.currentTarget, listId, items[rowIndex]!.id, event.clientY)
+                ? pinsReleasedRead(event.currentTarget, () =>
+                      dropSlotsOf(event.currentTarget, listId, items[rowIndex]!.id, event.clientY),
+                  )
                 : undefined;
         previewHeldTops.current.clear();
         if (across) {
@@ -3902,6 +4461,10 @@ export function Sidebar(props: SidebarProps) {
                 void latest().act(key, ({ item }) =>
                     latest().local.onItemSecondaryAction?.(item.id),
                 ),
+            changeAccept: (key) =>
+                void latest().act(key, ({ item }) => latest().local.onItemChangeAccept?.(item.id)),
+            changeReject: (key) =>
+                void latest().act(key, ({ item }) => latest().local.onItemChangeReject?.(item.id)),
             select: (id) => {
                 if (dragClick.current) {
                     dragClick.current = false;
@@ -3938,6 +4501,7 @@ export function Sidebar(props: SidebarProps) {
             ref={interactionRef}
             data-back={local.onBack ? "" : undefined}
             data-actions-divider={local.actionsDivider ? "" : undefined}
+            data-float={local.bodyFloat ? "" : undefined}
             data-fold-control-reveal={local.foldControlReveal}
             data-happy-desktop-ui="sidebar"
             data-scrolled={scrolled ? "" : undefined}
@@ -4076,12 +4640,13 @@ export function Sidebar(props: SidebarProps) {
                 data-happy-desktop-ui="sidebar-body"
                 data-scrollbar-rows=""
                 viewportClassName="happy-sidebar__body-viewport"
-                viewportRef={bodyViewport}
+                viewportRef={floor.ref}
                 viewportProps={{
                     onScroll: (event) => {
                         const scrollTop = event.currentTarget.scrollTop;
                         setScrolled(scrollTop > 0);
                         dragScroll(scrollTop);
+                        floor.scroll(event.currentTarget);
                     },
                     // Only a mostly vertical turn: a sideways trackpad swipe folds nothing.
                     onWheel: (event) => {
@@ -4268,7 +4833,7 @@ export function Sidebar(props: SidebarProps) {
                             {local.bodyAccessory}
                         </div>
                     ) : null}
-                    {sections.map((section) => {
+                    {sections.map((section, sectionIndex) => {
                         // The rows as they stand on screen. Everything below —
                         // the tree connectors, a drag's units, a keyboard move —
                         // is stated against these rather than against the rows
@@ -4287,6 +4852,28 @@ export function Sidebar(props: SidebarProps) {
                               )
                             : 0;
                         const shownItems = shown.map((row) => row.item);
+                        // Each row's change, its children's taken from it.
+                        const changes = changesInherited(section.items);
+                        // Pins hold in the first list, the one the column
+                        // opens on: down to the separator pinned to the top,
+                        // and from the one pinned to the bottom to the end.
+                        const pinIndex = (edge: SidebarSeparatorPinEdge) =>
+                            sectionIndex === 0
+                                ? shownItems.findIndex(
+                                      (item) =>
+                                          item.kind === "separator" &&
+                                          item.pin === edge &&
+                                          (item.depth ?? 0) === 0,
+                                  )
+                                : -1;
+                        const pinTopAt = pinIndex("top");
+                        const pinBottomAt = pinIndex("bottom");
+                        const pinAreaOf = (index: number): SidebarSeparatorPinEdge | undefined =>
+                            index <= pinTopAt
+                                ? "top"
+                                : pinBottomAt > pinTopAt && index >= pinBottomAt
+                                  ? "bottom"
+                                  : undefined;
                         const sectionDrag = sectionDragOf(section.id, shownItems);
                         // The lift belongs to the live gesture while there is one
                         // — from the moment a row is touched, so the shadow has a
@@ -4416,7 +5003,7 @@ export function Sidebar(props: SidebarProps) {
                                                     aria-hidden="true"
                                                     className="happy-sidebar__section-action"
                                                     data-happy-desktop-ui="sidebar-section-fold"
-                                                    data-reveal="hover"
+                                                    data-reveal="always"
                                                     onClick={() =>
                                                         local.onSectionCollapseToggle?.(section.id)
                                                     }
@@ -4618,10 +5205,26 @@ export function Sidebar(props: SidebarProps) {
                                                 }
                                                 items={shownItems}
                                                 listId={section.id}
+                                                pinAreaOf={(id) =>
+                                                    pinAreaOf(
+                                                        shownItems.findIndex(
+                                                            (item) => item.id === id,
+                                                        ),
+                                                    )
+                                                }
                                                 onElement={(key, node) => {
                                                     if (node) connectorNodes.set(key, node);
                                                     else connectorNodes.delete(key);
                                                 }}
+                                            />
+                                        ) : null}
+                                        {pinTopAt >= 0 ? (
+                                            // Under the block pinned to the top, over the rows
+                                            // scrolling past: they never show through it.
+                                            <span
+                                                aria-hidden="true"
+                                                className="happy-sidebar__pin-cover"
+                                                data-edge="top"
                                             />
                                         ) : null}
                                         {shown.map(({ foldable, item }, index) => {
@@ -4650,6 +5253,9 @@ export function Sidebar(props: SidebarProps) {
                                                 listId: section.id,
                                             });
                                             const held = dragging && unitIndex === drag.from;
+                                            const change = changes.get(item.id);
+                                            const shownItem =
+                                                change !== item.change ? { ...item, change } : item;
                                             return (
                                                 <SidebarListRow
                                                     handlers={rowHandlers}
@@ -4677,6 +5283,15 @@ export function Sidebar(props: SidebarProps) {
                                                         local.onItemSecondaryAction !== undefined &&
                                                         item.secondaryAction !== undefined
                                                     }
+                                                    canChangeAccept={
+                                                        local.onItemChangeAccept !== undefined &&
+                                                        item.change !== undefined
+                                                    }
+                                                    canChangeReject={
+                                                        local.onItemChangeReject !== undefined &&
+                                                        item.change !== undefined
+                                                    }
+                                                    pinArea={pinAreaOf(index)}
                                                     active={item.id === local.activeItemId}
                                                     activityPlacement={local.activityPlacement}
                                                     foldControlPlacement={
@@ -4695,7 +5310,7 @@ export function Sidebar(props: SidebarProps) {
                                                     }
                                                     grabbed={held}
                                                     key={item.id}
-                                                    item={item}
+                                                    item={shownItem}
                                                     reorderable={reorderable}
                                                     shortcutActive={
                                                         item.shortcut !== undefined ||
@@ -4713,6 +5328,13 @@ export function Sidebar(props: SidebarProps) {
                                                 />
                                             );
                                         })}
+                                        {pinBottomAt > pinTopAt ? (
+                                            <span
+                                                aria-hidden="true"
+                                                className="happy-sidebar__pin-cover"
+                                                data-edge="bottom"
+                                            />
+                                        ) : null}
                                     </div>
                                 ) : null}
                                 {!section.headingOnly &&
@@ -4816,6 +5438,13 @@ export function Sidebar(props: SidebarProps) {
                         </ScrollArea>
                     ) : null}
                 </section>
+            ) : null}
+            {local.bodyFloat ? (
+                /* No height of its own: what it holds floats up over the foot of
+                   the rows, so it moves nothing above or below it. */
+                <div className="happy-sidebar__float" data-happy-desktop-ui="sidebar-float">
+                    {local.bodyFloat}
+                </div>
             ) : null}
             {local.footer ? (
                 <footer className="happy-sidebar__footer" data-happy-desktop-ui="sidebar-footer">

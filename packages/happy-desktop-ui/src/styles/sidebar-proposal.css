@@ -58,6 +58,7 @@
 /* Full height, no scroll of its own: the chat around it scrolls. The heading
    band belongs to a window's sidebar, not to a proposal of one. */
 .happy-sidebar-proposal__sidebar.happy-sidebar {
+    --happy-sidebar-floor: 0px;
     width: 100%;
     height: auto;
 }

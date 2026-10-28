@@ -17,6 +17,8 @@
 @import "./styles/change-stats.css";
 @import "./styles/sidebar.css";
 @import "./styles/sidebar-proposal.css";
+@import "./styles/sidebar-changes.css";
+@import "./styles/sidebar-pins.css";
 @import "./styles/sidebar-spaces.css";
 @import "./styles/app-shell.css";
 @import "./styles/channel-header.css";

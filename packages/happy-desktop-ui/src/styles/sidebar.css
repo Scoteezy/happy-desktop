@@ -13,6 +13,7 @@
 .happy-sidebar {
     --happy-surface-header-height: 56px;
     --happy-surface-footer-height: 40px;
+    --happy-sidebar-floor: 136px;
     display: flex;
     flex: none;
     flex-direction: column;
@@ -257,10 +258,9 @@
     min-height: 0;
 }
 
-/* No line between the header and the list. Once rows scroll under the header,
-   a short fade in the sidebar's own tone takes the edge instead; at the top
-   there is nothing. Masked rather than a gradient to transparent, which would
-   tint grey (see .happy-floating-dock__scrim). */
+/* No line between the header and the list at the top. Once rows scroll under
+   the header, a hairline runs across the whole sidebar at that edge; rows are
+   cut by it rather than faded. */
 .happy-sidebar__body::before {
     content: "";
     position: absolute;
@@ -268,10 +268,8 @@
     top: 0;
     right: 0;
     left: 0;
-    height: 16px;
-    background: var(--groupped-background);
-    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
-    mask-image: linear-gradient(to bottom, black, transparent);
+    height: 1px;
+    background: var(--divider);
     opacity: 0;
     pointer-events: none;
 }
@@ -288,14 +286,21 @@
 }
 
 /* Inner content wrapper carries the shared panel inset around the sections —
-   see --happy-panel-inset for what it promises. */
+   see --happy-panel-inset for what it promises. Under the last row it keeps a
+   permanent floor as tall as the tallest card that floats over the foot of the
+   column (the agent update card, 128px, 8px above the footer), so the rows can
+   always be scrolled clear of it, and nothing that floats there comes or goes
+   by moving a row. Border-box, because the sidebar holds its minimum height at
+   the bottom of what is on screen (see `Sidebar`). */
 .happy-sidebar__body-content {
     /* The anchor for the drop line, which is laid over the rows. */
     position: relative;
     display: flex;
     flex: 1 0 auto;
     flex-direction: column;
+    box-sizing: border-box;
     padding: var(--happy-panel-inset);
+    padding-bottom: calc(var(--happy-panel-inset) + var(--happy-sidebar-floor));
 }
 
 /* The pinned rows are their own column so a reorder drag measures them and
@@ -508,7 +513,6 @@
     cursor: pointer;
 }
 
-.happy-sidebar[data-fold-control-reveal="hover"] .happy-sidebar__section-fold,
 .happy-sidebar[data-fold-control-reveal="hover"] .happy-sidebar__item .happy-sidebar__item-fold {
     opacity: 0;
 }
@@ -965,7 +969,7 @@
 }
 
 .happy-sidebar__section-item-label {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     color: var(--text-secondary);
@@ -982,7 +986,8 @@
     color: var(--text);
 }
 
-/* The same 18px box, on the same trailing column, as a row's own fold. */
+/* The same 18px box, on the same trailing column, as a row's own fold. Like a
+   row's, it is foundational: always shown, never moved. */
 .happy-sidebar__section-item-fold {
     position: absolute;
     inset: calc(50% - 9px) var(--happy-sidebar-fold-inset) auto auto;
@@ -992,24 +997,33 @@
     width: 18px;
     height: 18px;
     color: var(--text-secondary);
-    opacity: 0;
-}
-
-.happy-sidebar__section-item:is(:hover, :focus-visible, [data-collapsed])
-    .happy-sidebar__section-item-fold {
-    opacity: 1;
 }
 
 /* A section is its title alone, no rule: that is a separator's look. The title
-   keeps clear of the fold's lane at all times, so showing the fold moves
-   nothing. */
+   keeps clear of the fold, which is always there. The heading's + is laid over
+   the title's end, just left of the fold, only while it shows, and the title
+   fades out under it over 16px, so showing it moves nothing. A heading with no
+   fold runs its title to the edge. */
 .happy-sidebar__section-item[data-foldable] {
     padding-right: calc(var(--happy-sidebar-fold-inset) + 22px);
 }
 
+.happy-sidebar__section-item[data-actionable]:is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    :has(.happy-sidebar__item-action:not([data-reveal="hover"]))
+) {
+    --happy-sidebar-heading-cover: linear-gradient(to left, transparent 20px, black 36px);
+}
+
+.happy-sidebar__section-item-label {
+    -webkit-mask-image: var(--happy-sidebar-heading-cover, none);
+    mask-image: var(--happy-sidebar-heading-cover, none);
+}
+
 /* The heading's own control, an 18px box on the column just before the fold's
-   (or on the fold's own column when the heading does not fold). The title keeps
-   clear of it too, so revealing it on hover moves nothing. */
+   (or on the fold's own column when the heading does not fold). */
 .happy-sidebar__section-item-action {
     position: absolute;
     inset: calc(50% - 9px) var(--happy-sidebar-fold-inset) auto auto;
@@ -1020,15 +1034,9 @@
     right: calc(var(--happy-sidebar-fold-inset) + 22px);
 }
 
-.happy-sidebar__section-item[data-actionable] {
-    padding-right: calc(var(--happy-sidebar-fold-inset) + 22px);
-}
-
-.happy-sidebar__section-item[data-actionable][data-foldable] {
-    padding-right: calc(var(--happy-sidebar-fold-inset) + 44px);
-}
-
-.happy-sidebar__section-item:is(:focus-visible, :focus-within)
+/* Shown for the keyboard, not left behind by a click: a heading clicked to
+   unfold keeps focus, and its control must not stay up after the pointer goes. */
+.happy-sidebar__section-item:is(:focus-visible, :has(:focus-visible))
     .happy-sidebar__item-action[data-reveal="hover"] {
     opacity: 1;
 }
@@ -1069,10 +1077,13 @@
     pointer-events: none;
 }
 
+/* As wide as the straight part of a selected row's edge: the row's box less
+   its corner radius at each end. A pinned rule runs wider (`sidebar-pins.css`). */
 .happy-sidebar__separator-rule {
     flex: 1;
     min-width: 0;
     height: 1px;
+    margin: 0 var(--happy-hover-radius);
     background: var(--divider);
 }
 
@@ -1270,44 +1281,17 @@
 }
 
 .happy-sidebar[data-fold-control-reveal="hover"]
-    .happy-sidebar__item:focus-within
+    .happy-sidebar__item:has(:focus-visible)
     > .happy-sidebar__item-fold {
     opacity: 1;
 }
 
-/* Revealed on hover, a row's fold is laid over its trailing edge, and what the
-   row reports there steps aside for as long as the fold shows; at rest the delta
-   ends the row. */
+/* The fold is foundational: a row that folds always shows it, as its last
+   column, flush right on the one column every fold in the sidebar shares. It
+   never hides, moves or changes places for anything transient — a change mark,
+   its note, a hover control — which all stand left of it. */
 .happy-sidebar[data-fold-control-reveal="hover"]
-    .happy-sidebar__item[data-fold-placement="trailing"]:not([data-fold-reveal="always"])
-    > .happy-sidebar__item-fold {
-    position: absolute;
-    inset: calc(50% - 9px) var(--happy-sidebar-fold-inset) auto auto;
-    margin-right: 0;
-}
-
-.happy-sidebar[data-fold-control-reveal="hover"]
-    .happy-sidebar__item[data-fold-placement="trailing"][data-foldable]:not(
-        [data-fold-reveal="always"]
-    ):is(:hover, :focus-visible, :has(:focus-visible))
-    > .happy-sidebar__item-trailing {
-    visibility: hidden;
-}
-
-/* A row with nothing trailing has no lane for the fold to cover, so its name
-   gives the fold room while it shows. */
-.happy-sidebar[data-fold-control-reveal="hover"]
-    .happy-sidebar__item[data-fold-placement="trailing"][data-foldable]:not(
-        [data-fold-reveal="always"]
-    ):not(:has(> .happy-sidebar__item-trailing)):is(:hover, :focus-visible, :has(:focus-visible))
-    > .happy-sidebar__item-main {
-    /* Clear of the fold's 18px box and 4px beyond, on the fold column. */
-    margin-right: calc(22px + var(--happy-sidebar-fold-inset) - var(--happy-panel-row-padding));
-}
-
-/* A row that keeps its fold in view has it as its last column, always shown. */
-.happy-sidebar[data-fold-control-reveal="hover"]
-    .happy-sidebar__item[data-fold-reveal="always"]
+    .happy-sidebar__item[data-fold-placement="trailing"]
     > .happy-sidebar__item-fold {
     opacity: 1;
 }

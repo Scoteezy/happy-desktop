@@ -10,8 +10,8 @@ import { flushSync } from "react-dom";
  * With trailing folds only a row that folds has a fold, and it sits at the
  * trailing edge on the same column as the headings' folds. What a row reports
  * follows its name STATUS_GAP after it; a row with nothing to fold keeps no
- * empty column. Hover fades the fold in over the row's edge without moving the
- * name or what the row reports.
+ * empty column. The fold is always shown and hover moves neither the name nor
+ * what the row reports.
  */
 const STATUS_GAP = 6;
 
@@ -128,7 +128,8 @@ it("keeps the fold on one column and the status right after the name, through ho
         }),
     );
     expect([...edges]).toHaveLength(1);
-    for (const fold of folds) expect(getComputedStyle(fold!).opacity).toBe("0");
+    // The fold is foundational: shown at rest as well as on hover.
+    for (const fold of folds) expect(getComputedStyle(fold!).opacity).toBe("1");
 
     // The status starts STATUS_GAP after the name, and a long name ellipsizes
     // before it rather than pushing it off the row.
