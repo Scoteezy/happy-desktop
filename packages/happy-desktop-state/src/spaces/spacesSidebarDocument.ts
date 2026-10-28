@@ -54,18 +54,6 @@ export type SidebarDocumentFoldRibbon = "hover" | "always";
 export type SidebarDocumentSeparatorPin = "top" | "bottom";
 
 /**
- * A separator as the shared grammar reads it once it carries the person's pin
- * (`@slopus/happy-agent-client` after 0.0.126, with health's
- * `capabilities.sidebarSeparatorPins`). Until this window depends on that
- * version its parser never sets `pin` and its writer leaves it out, so a pin
- * reads as absent and is not written; once it does, this is the grammar's own
- * separator and the intersection says nothing more.
- */
-type SpaceSidebarSeparator = Extract<SpaceSidebarItem, { readonly type: "separator" }> & {
-    readonly pin?: SidebarDocumentSeparatorPin;
-};
-
-/**
  * A node nested under a row or session: a session shown under its parent's
  * agent, by its agent ID, or a space attached there, by its space ID.
  */
@@ -164,11 +152,10 @@ export function sidebarDocumentViewOf(document: SpaceSidebarDocument): SidebarDo
                     collapsed: item.collapsed,
                 };
             case "separator": {
-                const separator: SpaceSidebarSeparator = item;
                 return {
                     kind: "separator",
-                    id: separator.id,
-                    ...(separator.pin ? { pin: separator.pin } : {}),
+                    id: item.id,
+                    ...(item.pin ? { pin: item.pin } : {}),
                 };
             }
             case "widget":
@@ -230,14 +217,12 @@ export function sidebarDocumentOf(view: SidebarDocumentView): SpaceSidebarDocume
                         label: item.label,
                         collapsed: item.collapsed,
                     };
-                case "separator": {
-                    const separator: SpaceSidebarSeparator = {
+                case "separator":
+                    return {
                         type: "separator",
                         id: item.id,
                         ...(item.pin ? { pin: item.pin } : {}),
                     };
-                    return separator;
-                }
                 case "widget":
                     return { type: "widget", id: item.id, html: item.html };
                 case "space":

@@ -16,7 +16,7 @@ import {
     type SpaceSection,
     type SpaceSidebarResponse,
 } from "@slopus/happy-agent-client";
-import type { HappyAgentHealth, HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
+import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import { UserError } from "../types.js";
@@ -158,15 +158,6 @@ function sidebarOf(
         ...capabilities,
     };
 }
-
-/**
- * Health's capabilities with the separator pins a newer daemon reports
- * (`@slopus/happy-agent-client` after 0.0.126); until this window depends on
- * that version its health type does not name them.
- */
-type HappyAgentSpacesCapabilities = NonNullable<HappyAgentHealth["capabilities"]> & {
-    readonly sidebarSeparatorPins?: boolean;
-};
 
 /** Prioritizing's open sidebar proposal, at its latest version. */
 export interface HappyAgentSpacesProposal {
@@ -503,12 +494,9 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     const sidebarOperational = (): boolean =>
         deps.sync.health()?.capabilities?.sidebarOperations === true;
     /** What the daemon lets this window offer in the document beyond moves and folds. */
-    const sidebarCapabilities = (): Pick<HappyAgentSpacesSidebarDocument, "separatorPins"> => {
-        const capabilities = deps.sync.health()?.capabilities as
-            | HappyAgentSpacesCapabilities
-            | undefined;
-        return { separatorPins: capabilities?.sidebarSeparatorPins === true };
-    };
+    const sidebarCapabilities = (): Pick<HappyAgentSpacesSidebarDocument, "separatorPins"> => ({
+        separatorPins: deps.sync.health()?.capabilities?.sidebarSeparatorPins === true,
+    });
     /** The held document with every unconfirmed edit and new work still being made on top. */
     const sidebarShown = (): string | undefined => {
         if (sidebarHeld === undefined) return undefined;
