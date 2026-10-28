@@ -257,8 +257,8 @@ function releasesLabel(count: number): string {
 
 /**
  * The notes above the panel. Features and Fixes share one list slot behind two
- * tabs; an empty kind is a disabled tab, and the card opens on whichever kind
- * has something to say, Features first.
+ * tabs, Features first. When one kind is empty there is nothing to switch to, so
+ * the other is named as a plain label instead of a lone tab.
  */
 function UpdateNotes(props: { readonly applying: boolean; readonly notes: SidebarUpdateNotes }) {
     const { notes } = props;
@@ -283,30 +283,37 @@ function UpdateNotes(props: { readonly applying: boolean; readonly notes: Sideba
                     <div className="happy-sidebar-update__notes-head">
                         <span className="happy-sidebar-update__eyebrow">{"What's new"}</span>
                         {notes.kind === "list" ? (
-                            <span
-                                aria-label="Kind of change"
-                                className="happy-sidebar-update__tabs"
-                                role="tablist"
-                            >
-                                <NotesTab
-                                    count={notes.features.total}
-                                    label="Features"
-                                    onSelect={() => setTab("features")}
-                                    selected={selectedTab === "features"}
-                                />
-                                <NotesTab
-                                    count={notes.fixes.total}
-                                    label="Fixes"
-                                    onSelect={() => setTab("fixes")}
-                                    selected={selectedTab === "fixes"}
-                                />
-                            </span>
+                            notes.features.total > 0 && notes.fixes.total > 0 ? (
+                                <span
+                                    aria-label="Kind of change"
+                                    className="happy-sidebar-update__tabs"
+                                    role="tablist"
+                                >
+                                    <NotesTab
+                                        count={notes.features.total}
+                                        label="Features"
+                                        onSelect={() => setTab("features")}
+                                        selected={selectedTab === "features"}
+                                    />
+                                    <NotesTab
+                                        count={notes.fixes.total}
+                                        label="Fixes"
+                                        onSelect={() => setTab("fixes")}
+                                        selected={selectedTab === "fixes"}
+                                    />
+                                </span>
+                            ) : (
+                                <span className="happy-sidebar-update__kind">
+                                    {selectedTab === "features" ? "Features" : "Fixes"}
+                                    <span className="happy-sidebar-update__tab-count">
+                                        {notes[selectedTab].total}
+                                    </span>
+                                </span>
+                            )
                         ) : null}
                     </div>
                     <span className="happy-sidebar-update__notes-meta" title={range}>
-                        {notes.kind === "list"
-                            ? `${range} · ${releasesLabel(notes.releaseCount)}`
-                            : range}
+                        {range}
                     </span>
                     {notes.kind === "list" ? (
                         <NotesList changelogUrl={notes.changelogUrl} list={notes[selectedTab]} />
@@ -346,7 +353,6 @@ function NotesTab(props: {
         <button
             aria-selected={props.selected}
             className="happy-sidebar-update__tab"
-            disabled={props.count === 0}
             onClick={props.onSelect}
             role="tab"
             type="button"

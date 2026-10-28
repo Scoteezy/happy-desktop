@@ -2090,7 +2090,8 @@
     gap: 2px;
 }
 
-.happy-sidebar-update__tab {
+.happy-sidebar-update__tab,
+.happy-sidebar-update__kind {
     display: flex;
     align-items: baseline;
     gap: 3px;
@@ -2108,18 +2109,19 @@
     appearance: none;
 }
 
-.happy-sidebar-update__tab:hover:not(:disabled) {
+.happy-sidebar-update__kind {
+    flex: none;
+    color: var(--text);
+    cursor: default;
+}
+
+.happy-sidebar-update__tab:hover {
     color: var(--text);
 }
 
 .happy-sidebar-update__tab[aria-selected="true"] {
     background: var(--happy-hover-fill);
     color: var(--text);
-}
-
-.happy-sidebar-update__tab:disabled {
-    cursor: default;
-    opacity: 0.45;
 }
 
 .happy-sidebar-update__tab:focus-visible {
