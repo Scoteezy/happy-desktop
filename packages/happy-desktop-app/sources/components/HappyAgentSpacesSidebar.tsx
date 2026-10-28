@@ -1,18 +1,29 @@
 import {
+    happyAgentSidebarProposalsStoreNoop,
     happyAgentSpacesIn,
     happyAgentSpacesOlder,
     sidebarDocumentEdit,
     sidebarDocumentFold,
     sidebarDocumentKey,
     sidebarDocumentMove,
+    sidebarDocumentSeparatorPin,
     sidebarDocumentSessionsHide,
     sidebarDocumentSessionsReveal,
     sidebarDocumentView,
+    sidebarProposalChangeAccept,
+    sidebarProposalChangeDecline,
+    sidebarProposalDiff,
+    type HappyAgentSidebarProposalsStore,
     type SidebarDocumentClassic,
     type SidebarDocumentItem,
+    type SidebarDocumentNode,
+    type SidebarDocumentSeparatorPin,
     type SidebarDocumentSession,
     type SidebarDocumentSessionTree,
     type SidebarDocumentView,
+    type SidebarProposalAnchor,
+    type SidebarProposalChange,
+    type SidebarProposalPlace,
     type HappyAgentBot,
     type HappyAgentSpace,
     type HappyAgentSpaceBatch,
@@ -31,19 +42,23 @@ import {
     happyIconMark,
     makeStuffIntroHeader,
     Sidebar,
+    SidebarChanges,
     type ConversationLeadingHeader,
     type IconName,
     type KeyboardShortcut,
     type MakeStuffOption,
     type MenuItem,
     type SidebarItem,
+    type SidebarItemChange,
     type TabItem,
 } from "happy-desktop-ui";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 
 /** The places a space can open, as the window addresses them. */
 export interface HappyAgentSpacesNavigation {
     onChatSelect(groupId: string, chatId: string): void;
+    /** The reader closed the work in a group: the window stops going back to it. */
+    onGroupClose?(groupId: string): void;
     onSurfaceOpen?(surfaceId: string): void;
 }
 
@@ -133,6 +148,13 @@ const MENU_RENAME = "rename";
 const MENU_SUBTASKS_SHOW = "subtasks-show";
 const MENU_SUBTASKS_HIDE = "subtasks-hide";
 const MENU_SECTION_DELETE = "section-delete";
+const MENU_PIN_TOP = "pin-top";
+const MENU_PIN_BOTTOM = "pin-bottom";
+const MENU_UNPIN = "unpin";
+/** Rows a proposal brings, drawn where they would land: their own IDs, beside the rows that stand. */
+const PROPOSED_PREFIX = "proposed:";
+/** Who proposes the sidebar's changes, as the bar names them. */
+const PROPOSER = "Prioritizing";
 /** The one list every item stands in: the sidebar has no sections of its own. */
 const LIST = "spaces";
 /** Rows the window draws under a node, which the document does not name. */
@@ -598,6 +620,11 @@ export interface HappyAgentSpacesSidebarProps {
     readonly onSidebarOpen?: (artifactId: string) => void;
     /** Opens a space's conversation beside the one on screen. */
     readonly onChatAside?: (agentId: string, label: string) => void;
+    /**
+     * Prioritizing's proposals. While one waits for an answer, the sidebar
+     * draws it on its own rows and answers it there.
+     */
+    readonly proposals?: HappyAgentSidebarProposalsStore;
 }
 
 /** The document as items, or nothing when there is none or it is not one the window will draw. */
@@ -825,6 +852,7 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
                         id: key,
                         kind: "separator",
                         label: "",
+                        ...(item.pin ? { pin: item.pin } : {}),
                         ...(editable ? {} : { reorderable: false }),
                     },
                 ];
@@ -868,6 +896,259 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
     return { items, anchorOf };
 }
 
+/** The person's sidebar with a proposal drawn on it. */
+export interface HappyAgentSpacesProposalRows {
+    readonly items: SidebarItem[];
+    /** The change each marked or proposed row answers, by the row's ID. */
+    readonly changeOf: ReadonlyMap<string, SidebarProposalChange>;
+}
+
+/**
+ * A proposal's pending changes drawn on the rows of the sidebar as it stands:
+ * a row that moves, goes or is archived wears its change where it is, and a
+ * row the proposal moves or adds is drawn again where it would land, under
+ * its own ID. A change to a whole section marks its heading and its rows as
+ * one block. The words are the window's; where everything goes is the diff's.
+ */
+export function happyAgentSpacesProposalItems(
+    input: HappyAgentSpacesItemsInput,
+    standing: {
+        readonly items: readonly SidebarItem[];
+        readonly anchorOf: ReadonlyMap<string, string | null>;
+    },
+    proposed: SidebarDocumentView,
+    /** Every change of the proposal, in the diff's order. */
+    all: readonly SidebarProposalChange[],
+    /** The changes the person declined one by one, which are drawn as nothing. */
+    declined: ReadonlySet<string>,
+): HappyAgentSpacesProposalRows {
+    const current = input.view;
+    const changes = all.filter((change) => !declined.has(change.id));
+    /** The drawn row of each node that stands now, by key; a worktree is no node. */
+    const rowOf = new Map<string, string>();
+    for (const row of standing.items) {
+        const key = standing.anchorOf.get(row.id);
+        if (key && !row.id.startsWith(WORKTREE_PREFIX)) rowOf.set(key, row.id);
+    }
+    /** A heading of either document, by key. */
+    const headingOf = (key: string) =>
+        [...current.items, ...proposed.items].find(
+            (item): item is Extract<SidebarDocumentItem, { kind: "section" | "separator" }> =>
+                (item.kind === "section" || item.kind === "separator") &&
+                sidebarDocumentKey(item) === key,
+        );
+    /** What a node goes by: a section's title, the divider, or its row's name. */
+    const nameOf = (key: string): string => {
+        const heading = headingOf(key);
+        if (heading?.kind === "section") return heading.label;
+        if (heading?.kind === "separator") return "the divider";
+        const id = rowOf.get(key);
+        return standing.items.find((row) => row.id === id)?.label ?? "another row";
+    };
+    /** A place in words: `to` is where something goes, `from` where it comes from. */
+    const placeWords = (place: SidebarProposalPlace | undefined, side: "to" | "from"): string => {
+        if (place?.kind === "nested") return `under ${nameOf(place.parent)}`;
+        if (place === undefined || place.head === null)
+            return side === "to" ? "to the top" : "from the top";
+        const block =
+            headingOf(place.head)?.kind === "separator" ? "below the divider" : nameOf(place.head);
+        return side === "to" ? `to ${block}` : `from ${block}`;
+    };
+    /** What the change says on the row it changes now, and on the row it brings. */
+    const words = (
+        change: SidebarProposalChange,
+    ): { readonly here: string; readonly there: string } => {
+        const heading = headingOf(change.key);
+        const name = nameOf(change.key);
+        const whole = change.members.length > 0;
+        switch (change.kind) {
+            case "move": {
+                if (heading) {
+                    // A heading's place is the block it follows.
+                    const after = (place: SidebarProposalPlace | undefined) =>
+                        place?.kind === "top" && place.head !== null
+                            ? `below ${nameOf(place.head)}`
+                            : undefined;
+                    const to = after(change.to);
+                    const from = after(change.from);
+                    return {
+                        here: `Moving ${name} ${to ?? "to the top"}`,
+                        there: `Moving ${name} here from ${from ?? "the top"}`,
+                    };
+                }
+                return {
+                    here: `Moving ${placeWords(change.to, "to")}`,
+                    there: `Moving here ${placeWords(change.from, "from")}`,
+                };
+            }
+            case "insert": {
+                const there =
+                    heading?.kind === "section"
+                        ? `Adding the ${name} section`
+                        : heading?.kind === "separator"
+                          ? "Adding a divider"
+                          : change.to?.kind === "nested"
+                            ? `Showing ${placeWords(change.to, "to")}`
+                            : "Adding to the sidebar";
+                return { here: there, there };
+            }
+            case "remove": {
+                const here =
+                    heading?.kind === "section"
+                        ? whole
+                            ? `Hiding ${name} from the sidebar`
+                            : `Removing the ${name} heading`
+                        : heading?.kind === "separator"
+                          ? "Removing the divider"
+                          : "Hiding from the sidebar";
+                return { here, there: here };
+            }
+            case "archive": {
+                const here = whole ? `Archiving ${name}` : "Archiving";
+                return { here, there: here };
+            }
+        }
+    };
+
+    const changeOf = new Map<string, SidebarProposalChange>();
+    // What stands now wears what happens to it.
+    const marks = new Map<string, SidebarItemChange>();
+    for (const change of changes) {
+        if (change.kind === "insert") continue;
+        const kind = change.kind;
+        const block = change.members.length > 0;
+        marks.set(change.key, {
+            kind,
+            label: words(change).here,
+            ...(block ? { block: "head" as const } : {}),
+        });
+        for (const member of change.members) marks.set(member, { kind, block: "member" });
+    }
+    const items: SidebarItem[] = standing.items.map((row) => {
+        const key = row.id.startsWith(WORKTREE_PREFIX) ? undefined : standing.anchorOf.get(row.id);
+        const mark = key ? marks.get(key) : undefined;
+        if (!key || !mark) return row;
+        const change = changes.find((entry) => entry.key === key || entry.members.includes(key));
+        if (change) changeOf.set(row.id, change);
+        return { ...row, change: mark };
+    });
+
+    // What a change brings is drawn where it would land.
+    /** Where the rows drawn after `index` stop belonging to it, and for `block` to its block. */
+    const endAfter = (index: number, end: "node" | "block"): number => {
+        const depth = items[index]?.depth ?? 0;
+        let at = index + 1;
+        while (at < items.length && (items[at]!.depth ?? 0) > depth) at += 1;
+        if (end === "block")
+            while (
+                at < items.length &&
+                !(
+                    (items[at]!.depth ?? 0) === 0 &&
+                    (items[at]!.kind === "section" || items[at]!.kind === "separator")
+                )
+            )
+                at += 1;
+        return at;
+    };
+    const lastOf = (changeId: string): number => {
+        for (let index = items.length - 1; index >= 0; index -= 1)
+            if (
+                items[index]!.id.startsWith(PROPOSED_PREFIX) &&
+                changeOf.get(items[index]!.id)?.id === changeId
+            )
+                return index;
+        return -1;
+    };
+    const slot = (anchor: SidebarProposalAnchor, parent: string | null): number | undefined => {
+        switch (anchor.kind) {
+            case "first": {
+                if (parent === null) return 0;
+                const at = items.findIndex((row) => row.id === rowOf.get(parent));
+                return at < 0 ? undefined : at + 1;
+            }
+            case "node": {
+                const at = items.findIndex((row) => row.id === rowOf.get(anchor.key));
+                return at < 0 ? undefined : endAfter(at, anchor.end);
+            }
+            case "change": {
+                const at = lastOf(anchor.change);
+                if (at >= 0) return endAfter(at, anchor.end);
+                // Declined or not drawn: it lands where that one would have.
+                const before = all.find((entry) => entry.id === anchor.change)?.ghost?.after;
+                if (before === undefined) return undefined;
+                return slot(
+                    before.kind === "first" ? before : { ...before, end: anchor.end },
+                    parent,
+                );
+            }
+        }
+    };
+    /** One node the proposal brings, as the row it would be, under `depth`. */
+    const ghostRows = (nodes: readonly SidebarDocumentNode[], depth: number): SidebarItem[] =>
+        nodes.flatMap((node): SidebarItem[] => {
+            const own: SidebarDocumentItem =
+                node.kind === "session" || node.kind === "space"
+                    ? { kind: "space", id: node.id, expanded: false, children: [] }
+                    : node;
+            const drawn =
+                node.kind === "session" && !input.snapshot.spaces.has(node.id as HappyAgentSpaceId)
+                    ? (() => {
+                          const row = input.sessionRow(node.id);
+                          return row
+                              ? [
+                                    {
+                                        ...row,
+                                        ...happyAgentSessionMark(input.snapshot, node.id),
+                                        id: sidebarDocumentKey(node),
+                                        workingIndicator: "none" as const,
+                                    },
+                                ]
+                              : [];
+                      })()
+                    : happyAgentSpacesItems({
+                          ...input,
+                          view: { ...proposed, items: [own] },
+                          editable: false,
+                      }).items;
+            return drawn.map((row) => {
+                const { collapsed: _collapsed, action: _action, ...rest } = row;
+                return { ...rest, id: `${PROPOSED_PREFIX}${row.id}`, depth, reorderable: false };
+            });
+        });
+    for (const change of changes) {
+        const ghost = change.ghost;
+        if (!ghost || (change.kind !== "move" && change.kind !== "insert")) continue;
+        const at = slot(ghost.after, ghost.parent);
+        if (at === undefined) continue;
+        const parentRow =
+            ghost.parent === null
+                ? undefined
+                : items.find((row) => row.id === rowOf.get(ghost.parent!));
+        const depth = parentRow === undefined ? 0 : (parentRow.depth ?? 0) + 1;
+        const rows = ghostRows(ghost.nodes, depth);
+        const kind = change.kind === "move" ? ("arrive" as const) : ("insert" as const);
+        const from = change.kind === "move" ? rowOf.get(change.key) : undefined;
+        const block = change.members.length > 0;
+        const marked = rows.map(
+            (row, index): SidebarItem => ({
+                ...row,
+                change:
+                    index === 0
+                        ? {
+                              kind,
+                              label: words(change).there,
+                              ...(block ? { block: "head" as const } : {}),
+                              ...(from ? { from } : {}),
+                          }
+                        : { kind, block: "member" },
+            }),
+        );
+        for (const row of marked) changeOf.set(row.id, change);
+        items.splice(at, 0, ...marked);
+    }
+    return { items, changeOf };
+}
+
 /**
  * The spaces sidebar: the person's document drawn as it stands. Search,
  * Create, sections, separators and spaces are items of one list, and any of them can be
@@ -883,7 +1164,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
     const focused = happyAgentSpaceFocused(snapshot, props.focus);
     /** Whether a nested ID names one of the person's spaces rather than a session. */
     const attached = (id: string): boolean => snapshot.spaces.has(id as HappyAgentSpaceId);
-    const { items, anchorOf } = happyAgentSpacesItems({
+    const itemsInput: HappyAgentSpacesItemsInput = {
         view,
         snapshot,
         places,
@@ -895,13 +1176,103 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         ...(props.onSectionCreate ? { sectionCreate: true } : {}),
         sessionRow: props.sessionRow,
         worktreeRows: props.worktreeRows,
-    });
+    };
+    const standing = happyAgentSpacesItems(itemsInput);
+    const anchorOf = standing.anchorOf;
     const documentEdit = (
         change: (view: SidebarDocumentView) => SidebarDocumentView | undefined,
     ) => {
         if (!editable) return;
         const html = sidebarDocumentEdit(sidebarDoc.html, change);
         if (html !== undefined) props.store.sidebarWrite(html);
+    };
+    // Prioritizing's open proposal, drawn on the sidebar it would change.
+    const proposalsStore = props.proposals ?? happyAgentSidebarProposalsStoreNoop;
+    const proposals = useSyncExternalStore(
+        proposalsStore.subscribe,
+        proposalsStore.get,
+        proposalsStore.get,
+    );
+    const asked = editable ? snapshot.proposal : null;
+    // Records what is wanted; the read starts after this render.
+    if (asked) proposalsStore.proposalsRequest([asked.artifactId]);
+    const entry = asked ? proposals.get(asked.artifactId) : undefined;
+    const proposal =
+        entry?.type === "ready" && entry.proposal.status === "open" ? entry.proposal : undefined;
+    const proposedView = useMemo(() => documentViewOf(proposal?.html), [proposal?.html]);
+    const changes =
+        documentView && proposedView ? sidebarProposalDiff(documentView, proposedView).changes : [];
+    const drawn =
+        proposal && proposedView && changes.length > 0
+            ? happyAgentSpacesProposalItems(
+                  itemsInput,
+                  standing,
+                  proposedView,
+                  changes,
+                  proposal.declined,
+              )
+            : { items: standing.items, changeOf: new Map<string, SidebarProposalChange>() };
+    const items = drawn.items;
+    const pending = changes.some((change) => !proposal?.declined.has(change.id));
+    /** Takes one change, as the person's own edit; an archive archives what it names. */
+    const changeAccept = (change: SidebarProposalChange) => {
+        if (!proposedView) return;
+        if (change.kind === "archive") {
+            const rows = change.members.length > 0 ? change.members : [change.key];
+            for (const key of rows) {
+                const subject = happyAgentSpacesRowSubject(
+                    standing.items.find((row) => anchorOf.get(row.id) === key)?.id ?? key,
+                    snapshot,
+                    places,
+                );
+                if (subject?.kind !== "space") continue;
+                const target = subject.space.target;
+                if (target.kind === "task") props.actions.taskArchive(target.id);
+                else if (target.kind === "bot") props.actions.botArchive(target.id);
+            }
+        }
+        documentEdit((current) => sidebarProposalChangeAccept(current, proposedView, change));
+    };
+    /** Takes everything still shown: what was declined is first taken out of the proposal. */
+    const proposalAccept = () => {
+        if (!proposal || !documentView) return;
+        const declined = changes.filter((change) => proposal.declined.has(change.id));
+        const html =
+            declined.length === 0
+                ? undefined
+                : sidebarDocumentEdit(proposal.html, (proposed) =>
+                      declined.reduce(
+                          (edited, change) =>
+                              sidebarProposalChangeDecline(edited, documentView, change) ?? edited,
+                          proposed,
+                      ),
+                  );
+        proposalsStore.proposalAccept(proposal.artifactId, html);
+    };
+    /** Opens Prioritizing's conversation, to answer the proposal in words. */
+    const proposerOpen = () => {
+        const prioritizing = [...snapshot.spaces.values()].find(
+            (space) => space.target.kind === "agent",
+        );
+        if (!prioritizing) return;
+        props.store.happyFocusUpdate(false);
+        happyAgentSpaceOpen(prioritizing, places, snapshot, props.navigation);
+    };
+    /** Pins a separator to an end, or unpins it, where the daemon keeps pins. */
+    const separatorPin = (id: string, pin: SidebarDocumentSeparatorPin | null) => {
+        const key = anchorOf.get(id);
+        if (key) documentEdit((current) => sidebarDocumentSeparatorPin(current, key, pin));
+    };
+    const pinning = editable && sidebarDoc.separatorPins;
+    /**
+     * The node a drop lands after: the row's own, or for a row a proposal
+     * brings, which stands in no document yet, the nearest standing row above it.
+     */
+    const standingAbove = (id: string): string | null | undefined => {
+        if (anchorOf.has(id)) return anchorOf.get(id);
+        for (let index = items.findIndex((row) => row.id === id) - 1; index >= 0; index -= 1)
+            if (anchorOf.has(items[index]!.id)) return anchorOf.get(items[index]!.id);
+        return null;
     };
     const spaceOf = (id: string) =>
         id.startsWith("space:")
@@ -1000,6 +1371,36 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             // with Enter or Space.
             keyboardNavigation
             onDragChange={props.store.sidebarDragUpdate}
+            {...(proposal && pending
+                ? {
+                      bodyFloat: (
+                          <SidebarChanges
+                              {...(proposal.answering
+                                  ? {
+                                        answering:
+                                            proposal.answering === "decline"
+                                                ? ("reject" as const)
+                                                : ("accept" as const),
+                                    }
+                                  : {})}
+                              {...(proposal.error ? { notice: proposal.error.message } : {})}
+                              onAccept={proposalAccept}
+                              onChat={proposerOpen}
+                              onReject={() => proposalsStore.proposalDecline(proposal.artifactId)}
+                              proposer={PROPOSER}
+                          />
+                      ),
+                      onItemChangeAccept: (id: string) => {
+                          const change = drawn.changeOf.get(id);
+                          if (change) changeAccept(change);
+                      },
+                      onItemChangeReject: (id: string) => {
+                          const change = drawn.changeOf.get(id);
+                          if (change)
+                              proposalsStore.proposalChangeDecline(proposal.artifactId, change.id);
+                      },
+                  }
+                : {})}
             footer={
                 <>
                     {props.footer}
@@ -1045,6 +1446,42 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 if (key) documentEdit((current) => sidebarDocumentFold(current, key));
             }}
             itemMenuItems={(item) => {
+                // A separator pins to either end, where the daemon keeps pins.
+                if (item.kind === "separator")
+                    return pinning && anchorOf.has(item.id)
+                        ? [
+                              ...(item.pin === undefined
+                                  ? []
+                                  : [
+                                        {
+                                            kind: "item" as const,
+                                            id: MENU_UNPIN,
+                                            label: "Unpin",
+                                            icon: "close" as const,
+                                        },
+                                    ]),
+                              ...(item.pin === "top"
+                                  ? []
+                                  : [
+                                        {
+                                            kind: "item" as const,
+                                            id: MENU_PIN_TOP,
+                                            label: "Pin above",
+                                            icon: "arrow-up" as const,
+                                        },
+                                    ]),
+                              ...(item.pin === "bottom"
+                                  ? []
+                                  : [
+                                        {
+                                            kind: "item" as const,
+                                            id: MENU_PIN_BOTTOM,
+                                            label: "Pin below",
+                                            icon: "arrow-down" as const,
+                                        },
+                                    ]),
+                          ]
+                        : [];
                 // A section's heading is the person's to write and to take
                 // out, through the document.
                 if (item.kind === "section")
@@ -1141,6 +1578,13 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 },
             }}
             onItemMenuSelect={(item, actionId) => {
+                if (item.kind === "separator") {
+                    if (!pinning) return;
+                    if (actionId === MENU_PIN_TOP) separatorPin(item.id, "top");
+                    else if (actionId === MENU_PIN_BOTTOM) separatorPin(item.id, "bottom");
+                    else if (actionId === MENU_UNPIN) separatorPin(item.id, null);
+                    return;
+                }
                 if (item.kind === "section") {
                     const key = anchorOf.get(item.id);
                     // The heading goes at once and its rows stay where they
@@ -1190,8 +1634,14 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                         props.actions.taskLeave(target.id);
                     else if (actionId === MENU_LEAVE && target.kind === "surface")
                         props.actions.surfaceLeave(target.id);
-                    else if (actionId === MENU_DISCARD) props.store.stemCellDiscard(space.id);
-                    else if (actionId === MENU_ARCHIVE && target.kind === "task")
+                    else if (actionId === MENU_DISCARD) {
+                        // Closing is leaving: a reader in the new work goes back
+                        // to where they were before Create, at once rather than
+                        // once the daemon has taken the row away.
+                        if (target.workspaceId !== null)
+                            props.navigation.onGroupClose?.(target.workspaceId);
+                        props.store.stemCellDiscard(space.id);
+                    } else if (actionId === MENU_ARCHIVE && target.kind === "task")
                         props.actions.taskArchive(target.id);
                     else if (actionId === MENU_ARCHIVE && target.kind === "bot")
                         props.actions.botArchive(target.id);
@@ -1211,7 +1661,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                           const key = anchorOf.get(move.id);
                           if (!key) return;
                           const afterKey =
-                              move.afterId === null ? null : (anchorOf.get(move.afterId) ?? null);
+                              move.afterId === null ? null : (standingAbove(move.afterId) ?? null);
                           documentEdit((current) => sidebarDocumentMove(current, key, afterKey));
                       },
                   }

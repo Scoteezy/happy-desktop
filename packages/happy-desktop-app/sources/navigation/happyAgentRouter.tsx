@@ -766,6 +766,9 @@ function HappyAgentWorkspaceLayout() {
                     void router.load({ action: { type: "REPLACE" } });
                 return changed;
             }}
+            onGroupClose={(happyAgentId, groupId) =>
+                happyAgentRouterGroupForget(router, happyAgentId, groupId)
+            }
             onFileClose={(happyAgentId, groupId, path) => {
                 // The route helper owns history repair; the surface owns the
                 // tab bytes and closes those immediately after this callback.
@@ -810,13 +813,14 @@ function HappyAgentWorkspaceLayout() {
 }
 
 /**
- * Local route glue. Leaving settings addresses the conversation list rather than
- * popping history, so the way out is the same wherever the window was opened
- * from — including a cold start straight onto a settings URL.
+ * Local route glue. Closing settings returns the reader to where they were
+ * before it, however many categories they looked through; a window opened
+ * straight onto settings has nowhere behind it and lands on the home address.
  */
 function HappyAgentSettingsRoute() {
     const context = useRouteContext({ strict: false }) as unknown as HappyAgentRouterContext;
     const navigate = useNavigate();
+    const router = useRouter();
     const params = useParams({ strict: false });
     return (
         <AppHappyAgentSettingsView
@@ -840,7 +844,7 @@ function HappyAgentSettingsRoute() {
             onCategorySelect={(section) =>
                 void navigate({ params: { section }, to: "/settings/$section" })
             }
-            onClose={() => void navigate({ to: "/chats" })}
+            onClose={() => happyAgentRouterSettingsClose(router)}
             happyAgents={context.happyAgents}
             platform={context.platform}
             section={params.section ?? HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY}
@@ -1021,6 +1025,17 @@ export function happyAgentRouterGroupForget(
     // notification above. One that is not — a window still starting up — has to
     // be told, the same way the router tells itself when it commits a location
     // with nothing listening.
+    if (changed && router.history.subscribers.size === 0)
+        void router.load({ action: { type: "REPLACE" } });
+}
+
+/**
+ * Closes settings: every settings page leaves this window's navigation and the
+ * reader is back where they were before opening it, or on the home address
+ * when the window has been nowhere else.
+ */
+export function happyAgentRouterSettingsClose(router: HappyAgentRouter): void {
+    const changed = router.history.settingsForget();
     if (changed && router.history.subscribers.size === 0)
         void router.load({ action: { type: "REPLACE" } });
 }

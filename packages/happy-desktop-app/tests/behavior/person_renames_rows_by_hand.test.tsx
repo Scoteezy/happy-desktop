@@ -68,6 +68,7 @@ function fixture() {
                 html,
                 agentIcons: new Map(),
                 seed: false,
+                separatorPins: false,
             },
         },
         places: { bots: [], tasks: [], chatGroupOf: () => undefined },

@@ -94,6 +94,7 @@ it("selects and opens a nested session at any depth, and the worktree it runs in
                 html,
                 agentIcons: new Map(),
                 seed: false,
+                separatorPins: false,
             },
         },
         sessionRow: (agentId) => ({

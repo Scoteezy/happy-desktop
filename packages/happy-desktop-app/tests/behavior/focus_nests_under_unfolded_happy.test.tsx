@@ -111,7 +111,14 @@ const snapshotOf = (
 ): HappyAgentSpacesSidebarProps["snapshot"] => ({
     ...happyAgentSpacesStoreNoop.get(),
     spaces: new Map([happy, ...others].map((entry) => [entry.id, entry])),
-    sidebar: { artifactId: "sidebar", version: 1, html, agentIcons: new Map(), seed: false },
+    sidebar: {
+        artifactId: "sidebar",
+        version: 1,
+        html,
+        agentIcons: new Map(),
+        seed: false,
+        separatorPins: false,
+    },
 });
 
 const nav = (happyRow: string[]) =>

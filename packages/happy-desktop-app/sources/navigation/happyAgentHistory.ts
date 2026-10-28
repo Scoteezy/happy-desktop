@@ -62,6 +62,12 @@ export interface HappyAgentRouterHistory extends RouterHistory {
      * can go without disturbing where they stand.
      */
     groupForget(happyAgentId: string, groupId: string): boolean;
+    /**
+     * Removes every remembered settings page. A reader in settings lands on the
+     * most recent place they were before it, or on the home address when
+     * settings is all this window has been.
+     */
+    settingsForget(): boolean;
 }
 
 function locationOf(route: HappyAgentRoute, state: LocationState): HistoryLocation {
@@ -758,6 +764,11 @@ export function happyAgentHistoryCreate(
         groupForget: (happyAgentId: string, groupId: string): boolean =>
             forget(
                 (route) => happyAgentRouteInGroup(route, happyAgentId, groupId),
+                HAPPY_AGENT_ROUTE_HOME,
+            ),
+        settingsForget: (): boolean =>
+            forget(
+                (route) => route.kind === "settings" || route.kind === "settingsSection",
                 HAPPY_AGENT_ROUTE_HOME,
             ),
     });

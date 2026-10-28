@@ -864,6 +864,12 @@ export interface AppHappyAgentViewProps {
         chatId: string,
         fallbackChatId?: string,
     ): boolean;
+    /**
+     * Removes every history visit inside a group the reader closed, such as new
+     * work from Create. A reader standing in it goes back to where they were
+     * before it. Absent in a host with no navigation stack.
+     */
+    onGroupClose?(happyAgentId: string, groupId: string): void;
     /** Removes every history visit to a file tab that the reader closed. */
     onFileClose(happyAgentId: string, groupId: string, path: string): void;
     /**
@@ -3775,6 +3781,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     const spacesNavigation: HappyAgentSpacesNavigation | undefined = active
         ? {
               onChatSelect: (groupId, chatId) => props.onChatSelect(active.id, groupId, chatId),
+              onGroupClose: (groupId) => props.onGroupClose?.(active.id, groupId),
               onSurfaceOpen: (surfaceId) => props.onSurfaceOpen?.(active.id, surfaceId),
           }
         : undefined;
@@ -3836,11 +3843,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         }
         const { groupId, chatId } = props;
         open(opened);
-        // Refused — one round trip after the click — the chat never existed:
-        // the window forgets it and goes back to where the click was made.
+        // Refused — one round trip after the click — the work never existed:
+        // the window forgets it, which takes a reader still in it back to
+        // where the click was made. A host with no navigation stack is sent
+        // there directly.
         void creation.created.catch(() => {
-            props.onChatClose?.(active.id, opened.workspaceId, opened.agentId);
-            props.onChatSelect(active.id, groupId, chatId, true);
+            if (props.onGroupClose) props.onGroupClose(active.id, opened.workspaceId);
+            else props.onChatSelect(active.id, groupId, chatId, true);
         });
     };
     // What can be made: the Surfaces this Happy Agent serves, and a bot. The
@@ -3996,6 +4005,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     )
                 }
                 places={spacesPlaces}
+                {...(sidebarProposalsStore ? { proposals: sidebarProposalsStore } : {})}
                 snapshot={spaces}
                 store={spacesStore}
             />

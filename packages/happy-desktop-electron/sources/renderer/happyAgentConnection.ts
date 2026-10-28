@@ -595,7 +595,7 @@ export function happyAgentConnectionOpen(input: {
                         case "groupOpenRequested":
                             input.deps.groupOpen(event.groupId);
                             return;
-                        case "addressedGroupRemoved":
+                        case "groupRemoved":
                             input.deps.groupForget(event.groupId);
                             return;
                         case "subtasksRemoved":
