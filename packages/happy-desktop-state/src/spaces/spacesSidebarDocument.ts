@@ -47,6 +47,25 @@ import {
 export type SidebarDocumentFoldRibbon = "hover" | "always";
 
 /**
+ * Which end of the sidebar a pinned separator holds still: `top`, everything
+ * above it; `bottom`, everything below it. One separator at most is pinned to
+ * each end.
+ */
+export type SidebarDocumentSeparatorPin = "top" | "bottom";
+
+/**
+ * A separator as the shared grammar reads it once it carries the person's pin
+ * (`@slopus/happy-agent-client` after 0.0.126, with health's
+ * `capabilities.sidebarSeparatorPins`). Until this window depends on that
+ * version its parser never sets `pin` and its writer leaves it out, so a pin
+ * reads as absent and is not written; once it does, this is the grammar's own
+ * separator and the intersection says nothing more.
+ */
+type SpaceSidebarSeparator = Extract<SpaceSidebarItem, { readonly type: "separator" }> & {
+    readonly pin?: SidebarDocumentSeparatorPin;
+};
+
+/**
  * A node nested under a row or session: a session shown under its parent's
  * agent, by its agent ID, or a space attached there, by its space ID.
  */
@@ -72,8 +91,12 @@ export type SidebarDocumentItem =
           /** Folds the run of items after it, up to the next section or separator. */
           readonly collapsed: boolean;
       }
-    /** A rule between rows, and nothing else. */
-    | { readonly kind: "separator"; readonly id: string }
+    /** A rule between rows, which the person may pin to an end of the sidebar. */
+    | {
+          readonly kind: "separator";
+          readonly id: string;
+          readonly pin?: SidebarDocumentSeparatorPin;
+      }
     /** Markup Prioritizing wrote, drawn as one isolated row. */
     | { readonly kind: "widget"; readonly id: string; readonly html: string }
     | {
@@ -140,8 +163,14 @@ export function sidebarDocumentViewOf(document: SpaceSidebarDocument): SidebarDo
                     label: item.label,
                     collapsed: item.collapsed,
                 };
-            case "separator":
-                return { kind: "separator", id: item.id };
+            case "separator": {
+                const separator: SpaceSidebarSeparator = item;
+                return {
+                    kind: "separator",
+                    id: separator.id,
+                    ...(separator.pin ? { pin: separator.pin } : {}),
+                };
+            }
             case "widget":
                 return { kind: "widget", id: item.id, html: item.html };
             case "space":
@@ -201,8 +230,14 @@ export function sidebarDocumentOf(view: SidebarDocumentView): SpaceSidebarDocume
                         label: item.label,
                         collapsed: item.collapsed,
                     };
-                case "separator":
-                    return { type: "separator", id: item.id };
+                case "separator": {
+                    const separator: SpaceSidebarSeparator = {
+                        type: "separator",
+                        id: item.id,
+                        ...(item.pin ? { pin: item.pin } : {}),
+                    };
+                    return separator;
+                }
                 case "widget":
                     return { type: "widget", id: item.id, html: item.html };
                 case "space":
@@ -322,6 +357,30 @@ export function sidebarDocumentMove(
     const nodes = [...rest.slice(0, at), ...moved, ...rest.slice(at)];
     if (nodes.every((node, index) => node === siblings.nodes[index])) return undefined;
     return { ...view, items: childrenReplace(view.items, siblings.parent, nodes) };
+}
+
+/**
+ * Pins the separator `key` to one end of the sidebar, or unpins it for
+ * `null`. An end holds one pin: a separator already pinned there lets go.
+ * `undefined` when `key` names no separator or it is already pinned so.
+ */
+export function sidebarDocumentSeparatorPin(
+    view: SidebarDocumentView,
+    key: string,
+    pin: SidebarDocumentSeparatorPin | null,
+): SidebarDocumentView | undefined {
+    const target = view.items.find((item) => sidebarDocumentKey(item) === key);
+    if (target?.kind !== "separator" || (target.pin ?? null) === pin) return undefined;
+    return {
+        ...view,
+        items: view.items.map((item): SidebarDocumentItem => {
+            if (item.kind !== "separator") return item;
+            if (sidebarDocumentKey(item) === key)
+                return { kind: "separator", id: item.id, ...(pin ? { pin } : {}) };
+            if (pin !== null && item.pin === pin) return { kind: "separator", id: item.id };
+            return item;
+        }),
+    };
 }
 
 /** Folds or unfolds a section's run, or a space's or session's nested rows. */

@@ -31,6 +31,12 @@ export interface HappyAgentSidebarProposal {
     readonly status: HappyAgentSidebarProposalStatus;
     /** The proposed sidebar, in the sidebar's own grammar. */
     readonly html: string;
+    /**
+     * The changes the person declined one by one from their sidebar, by
+     * `SidebarProposalChange.id`, at this version only: a new version is
+     * answered afresh. Held in memory on this window.
+     */
+    readonly declined: ReadonlySet<string>;
     /** An answer is on its way. */
     readonly answering?: "accept" | "decline";
     /** Why the person's last edit or answer was refused, until the next one. */
@@ -66,8 +72,15 @@ export interface HappyAgentSidebarProposalsStore {
     proposalsRequest(artifactIds: readonly string[]): void;
     /** The person edited an open proposal into `html`: a move, fold, or rename. */
     proposalEdit(artifactId: string, html: string): void;
-    /** Takes the proposal: the sidebar becomes it, as the person's own change. */
-    proposalAccept(artifactId: string): void;
+    /**
+     * Takes the proposal: the sidebar becomes it, as the person's own change.
+     * With `html`, the proposal is first edited into it — what the person
+     * declined taken back out — and accepting waits for that edit and does
+     * not happen when it is refused.
+     */
+    proposalAccept(artifactId: string, html?: string): void;
+    /** The person declined one change of the open proposal, from their sidebar. */
+    proposalChangeDecline(artifactId: string, changeId: string): void;
     /** Keeps the person's own sidebar. */
     proposalDecline(artifactId: string): void;
     [Symbol.dispose](): void;
@@ -102,7 +115,11 @@ interface Held {
     }[];
     readonly answering?: "accept" | "decline";
     readonly error?: UserError;
+    /** The changes declined one by one, and the version they were declined at. */
+    readonly declined?: { readonly version: number; readonly ids: ReadonlySet<string> };
 }
+
+const NOTHING_DECLINED: ReadonlySet<string> = new Set();
 
 export function happyAgentSidebarProposalsStoreCreate(
     deps: HappyAgentSidebarProposalsDeps,
@@ -157,6 +174,10 @@ export function happyAgentSidebarProposalsStoreCreate(
                 revision: entry.revision,
                 status: entry.proposal.status,
                 html: shownHtml(entry),
+                declined:
+                    entry.declined?.version === entry.proposal.version
+                        ? entry.declined.ids
+                        : NOTHING_DECLINED,
                 ...(entry.answering ? { answering: entry.answering } : {}),
                 ...(entry.error ? { error: entry.error } : {}),
             },
@@ -219,6 +240,7 @@ export function happyAgentSidebarProposalsStoreCreate(
                     revision,
                     edits: current?.edits ?? [],
                     ...(current?.answering ? { answering: current.answering } : {}),
+                    ...(current?.declined ? { declined: current.declined } : {}),
                 });
                 show(artifactId);
             })
@@ -351,6 +373,63 @@ export function happyAgentSidebarProposalsStoreCreate(
         if (following) proposalRead(artifactId, following.signal);
     };
 
+    type Edit = Held["edits"][number];
+    /**
+     * Puts the person's edit of a proposal into `html` on screen, as the
+     * operations that make it; `undefined` when it changes nothing.
+     */
+    const editStage = (artifactId: string, entry: Held, html: string): Edit | undefined => {
+        let base: SpaceSidebarDocument;
+        let proposed: SpaceSidebarDocument;
+        try {
+            base = parseSpaceSidebar(shownHtml(entry));
+            proposed = parseSpaceSidebar(html);
+        } catch {
+            return undefined;
+        }
+        const operations = diffSpaceSidebar(base, proposed);
+        if (operations.length === 0) return undefined;
+        const edit = { mutationId: idCreate(), operations, base };
+        // A new edit puts the last refusal behind it.
+        const { error: _error, ...rest } = entry;
+        held.set(artifactId, { ...rest, edits: [...entry.edits, edit] });
+        show(artifactId);
+        return edit;
+    };
+    /** Sends a staged edit; whether the daemon took it. A refusal takes it back off. */
+    const editSend = async (artifactId: string, edit: Edit): Promise<boolean> => {
+        if (disposed) return false;
+        try {
+            const answer = await attempt(() =>
+                deps.client.applySpaceSidebarProposalOperations(artifactId, {
+                    mutationId: edit.mutationId,
+                    baseVersion: held.get(artifactId)?.proposal.version ?? 1,
+                    operations: [...edit.operations],
+                }),
+            );
+            if (disposed) return false;
+            heldUpdate(artifactId, (current) => ({
+                ...current,
+                edits: current.edits.filter((candidate) => candidate !== edit),
+                ...(answer.version > current.proposal.version
+                    ? {
+                          proposal: { ...current.proposal, version: answer.version },
+                          html: answer.html,
+                      }
+                    : {}),
+            }));
+            return true;
+        } catch (error) {
+            if (disposed) return false;
+            held.set(artifactId, {
+                ...held.get(artifactId)!,
+                edits: held.get(artifactId)!.edits.filter((candidate) => candidate !== edit),
+            });
+            refused(artifactId, error);
+            return false;
+        }
+    };
+
     return {
         get: () => snapshot,
         subscribe(listener) {
@@ -378,62 +457,34 @@ export function happyAgentSidebarProposalsStoreCreate(
         proposalEdit(artifactId, html) {
             const entry = held.get(artifactId);
             if (entry === undefined || entry.proposal.status !== "open" || entry.answering) return;
-            let base: SpaceSidebarDocument;
-            let proposed: SpaceSidebarDocument;
-            try {
-                base = parseSpaceSidebar(shownHtml(entry));
-                proposed = parseSpaceSidebar(html);
-            } catch {
-                return;
-            }
-            const operations = diffSpaceSidebar(base, proposed);
-            if (operations.length === 0) return;
-            const edit = { mutationId: idCreate(), operations, base };
-            // A new edit puts the last refusal behind it.
-            const { error: _error, ...rest } = entry;
-            held.set(artifactId, { ...rest, edits: [...entry.edits, edit] });
-            show(artifactId);
+            const edit = editStage(artifactId, entry, html);
+            if (edit === undefined) return;
             enqueue(artifactId, async () => {
-                if (disposed) return;
-                try {
-                    const answer = await attempt(() =>
-                        deps.client.applySpaceSidebarProposalOperations(artifactId, {
-                            mutationId: edit.mutationId,
-                            baseVersion: held.get(artifactId)?.proposal.version ?? 1,
-                            operations: [...edit.operations],
-                        }),
-                    );
-                    if (disposed) return;
-                    heldUpdate(artifactId, (current) => ({
-                        ...current,
-                        edits: current.edits.filter((candidate) => candidate !== edit),
-                        ...(answer.version > current.proposal.version
-                            ? {
-                                  proposal: { ...current.proposal, version: answer.version },
-                                  html: answer.html,
-                              }
-                            : {}),
-                    }));
-                } catch (error) {
-                    if (disposed) return;
-                    held.set(artifactId, {
-                        ...held.get(artifactId)!,
-                        edits: held
-                            .get(artifactId)!
-                            .edits.filter((candidate) => candidate !== edit),
-                    });
-                    refused(artifactId, error);
-                }
+                await editSend(artifactId, edit);
             });
         },
-        proposalAccept(artifactId) {
+        proposalChangeDecline(artifactId, changeId) {
+            const entry = held.get(artifactId);
+            if (entry === undefined || entry.proposal.status !== "open" || entry.answering) return;
+            const version = entry.proposal.version;
+            const ids = entry.declined?.version === version ? entry.declined.ids : undefined;
+            if (ids?.has(changeId)) return;
+            heldUpdate(artifactId, (current) => ({
+                ...current,
+                declined: { version, ids: new Set([...(ids ?? []), changeId]) },
+            }));
+        },
+        proposalAccept(artifactId, html) {
             const entry = held.get(artifactId);
             if (entry === undefined || entry.proposal.status !== "open" || entry.answering) return;
             const mutationId = idCreate();
+            const edit = html === undefined ? undefined : editStage(artifactId, entry, html);
             heldUpdate(artifactId, (current) => ({ ...current, answering: "accept" }));
-            // Accepting waits for the edits before it, so it takes them too.
+            // Accepting waits for the edits before it, so it takes them too;
+            // the edit it makes itself must land, or nothing is accepted.
             enqueue(artifactId, async () => {
                 if (disposed) return;
+                if (edit !== undefined && !(await editSend(artifactId, edit))) return;
                 try {
                     const answer = await attempt(() =>
                         deps.client.acceptSpaceSidebarProposal(artifactId, { mutationId }),
@@ -487,6 +538,7 @@ export const happyAgentSidebarProposalsStoreNoop: HappyAgentSidebarProposalsStor
     proposalsRequest: () => undefined,
     proposalEdit: () => undefined,
     proposalAccept: () => undefined,
+    proposalChangeDecline: () => undefined,
     proposalDecline: () => undefined,
     [Symbol.dispose]: () => undefined,
 };

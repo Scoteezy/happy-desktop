@@ -16,7 +16,7 @@ import {
     type SpaceSection,
     type SpaceSidebarResponse,
 } from "@slopus/happy-agent-client";
-import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
+import type { HappyAgentHealth, HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import { UserError } from "../types.js";
@@ -138,17 +138,35 @@ export interface HappyAgentSpacesSidebarDocument {
     readonly agentIcons: ReadonlyMap<string, HappyAgentSpaceIcon>;
     /** The daemon's untouched mirror of the classic sidebar, before any write. */
     readonly seed: boolean;
+    /**
+     * Whether a separator may be pinned to an end of the sidebar. Without it
+     * the daemon keeps no pin, so none is offered.
+     */
+    readonly separatorPins: boolean;
 }
 
-function sidebarOf(answer: SpaceSidebarResponse): HappyAgentSpacesSidebarDocument {
+function sidebarOf(
+    answer: SpaceSidebarResponse,
+    capabilities: Pick<HappyAgentSpacesSidebarDocument, "separatorPins">,
+): HappyAgentSpacesSidebarDocument {
     return {
         artifactId: answer.artifactId,
         version: answer.version,
         html: answer.html,
         agentIcons: new Map(Object.entries(answer.agentIcons ?? {})),
         seed: answer.seed === true,
+        ...capabilities,
     };
 }
+
+/**
+ * Health's capabilities with the separator pins a newer daemon reports
+ * (`@slopus/happy-agent-client` after 0.0.126); until this window depends on
+ * that version its health type does not name them.
+ */
+type HappyAgentSpacesCapabilities = NonNullable<HappyAgentHealth["capabilities"]> & {
+    readonly sidebarSeparatorPins?: boolean;
+};
 
 /** Prioritizing's open sidebar proposal, at its latest version. */
 export interface HappyAgentSpacesProposal {
@@ -484,6 +502,13 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     /** A daemon that takes edits as operations by node ID and announces each version. */
     const sidebarOperational = (): boolean =>
         deps.sync.health()?.capabilities?.sidebarOperations === true;
+    /** What the daemon lets this window offer in the document beyond moves and folds. */
+    const sidebarCapabilities = (): Pick<HappyAgentSpacesSidebarDocument, "separatorPins"> => {
+        const capabilities = deps.sync.health()?.capabilities as
+            | HappyAgentSpacesCapabilities
+            | undefined;
+        return { separatorPins: capabilities?.sidebarSeparatorPins === true };
+    };
     /** The held document with every unconfirmed edit and new work still being made on top. */
     const sidebarShown = (): string | undefined => {
         if (sidebarHeld === undefined) return undefined;
@@ -576,7 +601,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 sidebarHeld = { version: answer.version, html: answer.html };
                 publish({
                     sidebar: {
-                        ...sidebarOf(answer),
+                        ...sidebarOf(answer, sidebarCapabilities()),
                         html: sidebarShown() ?? answer.html,
                     },
                 });
@@ -1278,7 +1303,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     sidebarHeld = { version: answer.version, html: answer.html };
                     if (disposed) return;
                     const latest = snapshot.sidebar;
-                    const written = sidebarOf(answer);
+                    const written = sidebarOf(answer, sidebarCapabilities());
                     publish({
                         sidebar: {
                             ...written,

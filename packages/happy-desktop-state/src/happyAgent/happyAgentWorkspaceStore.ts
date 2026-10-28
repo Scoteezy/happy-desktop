@@ -1391,18 +1391,18 @@ export type HappyAgentWorkspaceOutput =
     /** A group to address before it holds a conversation, such as a new worktree. */
     | { readonly type: "groupOpenRequested"; readonly groupId: HappyAgentGroupId }
     /**
-     * The addressed group is gone from the host's own catalog: the project was
-     * archived, here or from another window or another machine's Happy, and its
-     * worktrees went with it. The URL now names nothing, so the owner replaces
-     * the address with this Happy Agent's list rather than leaving a route pointing at a
-     * row that no longer exists.
+     * A group is gone from the host's own catalog: a project archived, here or
+     * from another window or another machine's Happy, with its worktrees; a bot
+     * archived; a task left or closed. Every such group is reported, addressed
+     * or not, so the owner can take each out of its navigation: an address
+     * naming it names nothing, and a window that steps back must not land on
+     * one. A reader standing in it is moved; anyone else stays where they are.
      *
-     * Project and workspace removal is emitted only after an authoritative
-     * catalog read. Folder-owned groups follow Happy Agent Connect's visible
-     * prediction; if that queued mutation is rejected, the exact address this
-     * event replaced is requested again once the folder view rolls back.
+     * Removal is emitted only after an authoritative catalog read, and only for
+     * a group a previous authoritative read listed, so a group still arriving
+     * is never reported gone.
      */
-    | { readonly type: "addressedGroupRemoved"; readonly groupId: HappyAgentGroupId }
+    | { readonly type: "groupRemoved"; readonly groupId: HappyAgentGroupId }
     /**
      * Bot subtasks the host's tree no longer lists — archived here, from another
      * window, or by the agent that made them. Archiving keeps a task's
@@ -1657,8 +1657,8 @@ export interface HappyAgentWorkspaceStore {
     /**
      * Archives a project, taking its conversations and its worktrees' checkouts
      * with it, and resolves with the verified outcome. The caller does not
-     * navigate off the result: an addressed group that the host's catalog no
-     * longer holds is reported through `addressedGroupRemoved`, which covers the
+     * navigate off the result: a group that the host's catalog no longer holds
+     * is reported through `groupRemoved`, which covers the
      * archive another window or another machine performed just the same.
      */
     projectArchive(projectId: HappyAgentProjectId): Promise<HappyAgentProjectArchiveResult>;
@@ -2407,9 +2407,10 @@ export function happyAgentWorkspaceStoreCreate(
      * is gone" a different event from "the row is not in the snapshot".
      */
     let catalogRevisionSeen = -1;
-    /** The addressed group as of the last authoritative read that still held it. */
-    let addressedGroupSeen: HappyAgentGroupId | undefined;
-    /** Every group id the last authoritative read listed: projects and their worktrees. */
+    /**
+     * Every group id the last authoritative read listed: projects and their
+     * worktrees, bots, tasks, and subtasks. A later read missing one is its removal.
+     */
     let authoritativeGroupIds: ReadonlySet<string> = new Set();
     let fileViewMode: HappyAgentFileViewMode = "unified";
     let fileViewWrap = false;
@@ -6301,29 +6302,15 @@ export function happyAgentWorkspaceStoreCreate(
     };
 
     /**
-     * Records whether the group now addressed is one the host has actually
-     * listed. Addressing something the catalog already described is what makes a
-     * later absence a removal; addressing a worktree this client has only just
-     * reserved leaves it unconfirmed until a read says otherwise, so the reader
-     * is never moved off work they are in the middle of starting.
-     */
-    const addressedGroupSeenUpdate = (): void => {
-        addressedGroupSeen =
-            addressedGroupId !== undefined && authoritativeGroupIds.has(addressedGroupId)
-                ? addressedGroupId
-                : undefined;
-    };
-
-    /**
      * What the host's own answer means for this workspace's addressing and for a
      * destructive intent the reader is holding. It runs only when the list
      * reports a newly applied authoritative read, so nothing here can be
      * triggered by an optimistic row change or by a request still in flight.
      *
-     * Two things are settled from it. A project or worktree group the catalog no
-     * longer holds is no longer addressable, however it went — archived here,
-     * from another window, or on the machine itself — so its removal is reported
-     * once for the owner to re-address. And a pending archive is checked against
+     * Two things are settled from it. A group the catalog no longer holds is no
+     * longer addressable, however it went — archived here, from another window,
+     * or on the machine itself — so its removal is reported once for the owner
+     * to take out of its navigation. And a pending archive is checked against
      * the entity it names: gone means the outcome the reader asked for already
      * holds, and a renamed project means the sentence they are being asked to
      * confirm is about to stop matching, so the confirmation is restarted on the
@@ -6392,25 +6379,18 @@ export function happyAgentWorkspaceStoreCreate(
         for (const task of listSnapshot.tasks) listedIds.add(task.workspaceId);
         for (const subtask of happyAgentBotSubtasks([...listSnapshot.bots, ...listSnapshot.tasks]))
             listedIds.add(subtask.workspaceId);
+        // Removed means it was here and is not any more. A group the host has
+        // never confirmed is a group still arriving — a worktree just reserved,
+        // a URL opened before the first read landed — and reporting one of
+        // those would eject the reader from work they are in the middle of
+        // starting. Each removal is reported once: the next read compares
+        // against this one, which no longer lists it. The address itself is
+        // left alone: replacing it is the owner's answer to this, and the
+        // surfaces below still describe where the reader was until that lands.
+        const removedGroupIds = [...authoritativeGroupIds].filter((id) => !listedIds.has(id));
         authoritativeGroupIds = listedIds;
-        if (addressedGroupId !== undefined) {
-            const listed = listedIds.has(addressedGroupId);
-            // Removed means it was here and is not any more. A group the host
-            // has never confirmed is a group still arriving — a worktree just
-            // reserved, a URL opened before the first read landed — and moving
-            // the reader off one of those would be ejecting them from work they
-            // are in the middle of starting.
-            if (listed) addressedGroupSeen = addressedGroupId;
-            else if (addressedGroupSeen === addressedGroupId) {
-                // Forgotten as it is reported, so a second read of the same
-                // absence does not ask the owner to navigate twice. The address
-                // itself is left alone: replacing it is the owner's answer to
-                // this, and the surfaces below still describe where the reader
-                // was until that lands.
-                addressedGroupSeen = undefined;
-                output({ type: "addressedGroupRemoved", groupId: addressedGroupId });
-            }
-        }
+        for (const groupId of removedGroupIds)
+            output({ type: "groupRemoved", groupId: groupId as HappyAgentGroupId });
         if (groupArchive && !groupArchive.submitting) {
             const pendingArchive = groupArchive;
             const project = projects.value.find(
@@ -6600,7 +6580,6 @@ export function happyAgentWorkspaceStoreCreate(
         // rebuilt from the reads taken after this store is on screen again,
         // which is what keeps a removal that happened while nobody was looking
         // from being announced as if the reader had just watched it.
-        addressedGroupSeen = undefined;
         authoritativeGroupIds = new Set();
         catalogRevisionSeen = -1;
         for (const tab of fileTabs) fileTabCacheStore(tab);
@@ -6978,7 +6957,6 @@ export function happyAgentWorkspaceStoreCreate(
                     sessionId: conversationId,
                 });
                 addressedGroupId = groupId;
-                addressedGroupSeenUpdate();
                 // After the address, so the folders this checkout left open
                 // are the ones its listing is read for.
                 if (fileScopeOf(groupId) === "all") workspaceFilesEnsure(groupId);
@@ -7008,7 +6986,6 @@ export function happyAgentWorkspaceStoreCreate(
             // The panel belongs to this group, so it learns the address before
             // the conversation is released rather than after.
             addressedGroupId = groupId;
-            addressedGroupSeenUpdate();
             openConversation(undefined);
             groupRestore(groupId);
             // The scope belongs to this checkout, so a group left listing every
@@ -7076,14 +7053,9 @@ export function happyAgentWorkspaceStoreCreate(
         conversationClose: () => {
             addressApply(undefined, undefined);
             releaseGroup();
-            // Addressing the Happy Agent's list addresses no group, so the identity a
-            // removal would be reported against is put down with the group
-            // itself. Without this, a project archived long after the reader
-            // left it — or archived, restored, and archived again — would still
-            // ask the owner to navigate away from a list it is already on.
+            // Addressing the Happy Agent's list addresses no group.
             fileCommentsSwitch(addressedGroupId, undefined);
             addressedGroupId = undefined;
-            addressedGroupSeen = undefined;
             displayedMainViewId = undefined;
             fileTreeExpansionLoad(undefined);
             fileSearchReset();
