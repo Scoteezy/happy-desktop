@@ -1,33 +1,41 @@
 import type {
+    ProjectsVisibilityCacheDocument,
     ProjectsVisibilityDocument,
     ProjectsVisibilityPersistence,
 } from "happy-desktop-state";
 
-const PROJECTS_VISIBILITY_KEY = "happy.projects-visibility.v1";
+const CACHE_KEY = "happy.projects-visibility.v2";
+const LEGACY_KEY = "happy.projects-visibility.v1";
 
-/**
- * Where this machine remembers whether the reader hid the Projects sections.
- * It is the window's own storage, like the experiments switch: the choice is
- * about what this app shows, so it applies to every Happy Agent the window
- * addresses — team and local alike — and survives any of them going away.
- */
+/** Confirmed per-owner settings and pending writes survive offline restarts. */
 export function desktopProjectsVisibilityPersistence(): ProjectsVisibilityPersistence {
     return {
         read() {
             try {
-                const value = localStorage.getItem(PROJECTS_VISIBILITY_KEY);
-                return value ? (JSON.parse(value) as ProjectsVisibilityDocument) : undefined;
+                const value = localStorage.getItem(CACHE_KEY);
+                return value ? (JSON.parse(value) as ProjectsVisibilityCacheDocument) : undefined;
             } catch {
                 return undefined;
             }
         },
         write(document) {
             try {
-                localStorage.setItem(PROJECTS_VISIBILITY_KEY, JSON.stringify(document));
+                localStorage.setItem(CACHE_KEY, JSON.stringify(document));
             } catch {
-                // A storage-denied renderer still honours the choice for as long
-                // as the window stays open.
+                // Memory remains usable if the renderer cannot persist its queue.
             }
         },
     };
+}
+
+/** Called once the local host identifies its user. Team owners discard this unowned choice. */
+export function desktopProjectsVisibilityLegacyConsume(): ProjectsVisibilityDocument | undefined {
+    try {
+        const value = localStorage.getItem(LEGACY_KEY);
+        if (!value) return undefined;
+        localStorage.removeItem(LEGACY_KEY);
+        return JSON.parse(value) as ProjectsVisibilityDocument;
+    } catch {
+        return undefined;
+    }
 }

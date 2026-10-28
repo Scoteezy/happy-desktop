@@ -32,7 +32,7 @@ export interface HappyAgentUserSettingsWrite {
     readonly mutationId: string;
 }
 export interface HappyAgentUserSettingsSource {
-    readonly client: Pick<HappyAgentClient, "getUserSettings" | "saveUserSetting">;
+    readonly client: Pick<HappyAgentClient, "getUserSettings" | "saveUserSetting" | "getProfile">;
     readonly sync: HappyAgentSync;
 }
 interface Projection<T> {
@@ -40,6 +40,7 @@ interface Projection<T> {
     readonly support: "unknown" | "supported" | "unsupported";
     readonly online: boolean;
     readonly saving: boolean;
+    readonly ownerConfirmed: boolean;
     readonly readError?: UserError;
     readonly saveError?: UserError;
 }
@@ -53,10 +54,15 @@ interface Options<T> {
     readonly deviceSerialize: (choices: T) => unknown;
     readonly persistence?: HappyAgentUserSettingsPersistence;
     readonly now?: () => number;
+    readonly deviceMigrate?: (connectionId: string, owner: string | null) => T | undefined;
+    readonly deviceImportUpdatedAt?: number;
+    /** Never replay another cached owner's writes before this source identifies its current user. */
+    readonly requireOwnerIdentity?: boolean;
 }
 interface ConnectionRecord<T> {
     support: "unknown" | "supported" | "unsupported";
     owner?: string | null;
+    ownerGeneration: number;
     device: T;
     settings: Map<string, StoredUserSetting>;
     writes: Map<string, HappyAgentUserSettingsWrite>;
@@ -70,6 +76,7 @@ interface Follower {
     online: boolean;
     flushing: boolean;
     readFailed: boolean;
+    ownerConfirmed: boolean;
 }
 
 function writeFailureOf(error: unknown): "unsupported" | "retry" | "refused" {
@@ -102,6 +109,7 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
     function recordEmpty(): ConnectionRecord<T> {
         return {
             support: "unknown",
+            ownerGeneration: 0,
             device: options.empty,
             settings: new Map(),
             writes: new Map(),
@@ -206,6 +214,7 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
             support: record.support,
             online: followers.get(connectionId)?.online ?? false,
             saving: record.writes.size > 0,
+            ownerConfirmed: followers.get(connectionId)?.ownerConfirmed ?? false,
             ...(record.readError ? { readError: record.readError } : {}),
             ...(record.saveError ? { saveError: record.saveError } : {}),
         };
@@ -233,6 +242,7 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
                 previous.support === next.support &&
                 previous.online === next.online &&
                 previous.saving === next.saving &&
+                previous.ownerConfirmed === next.ownerConfirmed &&
                 previous.readError === next.readError &&
                 previous.saveError === next.saveError &&
                 options.equal(previous.choices, next.choices))
@@ -256,11 +266,12 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
         record: ConnectionRecord<T>,
         key: string,
         value: UserSettingValue,
+        updatedAt = now(),
     ): void => {
         record.writes.set(key, {
             key,
             value,
-            updatedAt: now(),
+            updatedAt,
             mutationId: globalThis.crypto.randomUUID(),
         });
     };
@@ -277,7 +288,7 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
     const deviceImport = (record: ConnectionRecord<T>): void => {
         for (const [key, value] of options.encode(record.device)) {
             if (value !== null && !record.settings.has(key) && !record.writes.has(key))
-                writeQueue(record, key, value);
+                writeQueue(record, key, value, options.deviceImportUpdatedAt);
         }
         record.device = options.empty;
     };
@@ -293,20 +304,32 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
         owner: string | null | undefined,
     ): void => {
         const record = recordEnsure(connectionId);
+        if (owner !== undefined) {
+            if (record.owner !== owner) record.ownerGeneration++;
+            if (record.owner !== undefined && record.owner !== owner) {
+                record.writes.clear();
+                record.settings.clear();
+                record.device = options.empty;
+                delete record.saveError;
+            }
+            record.owner = owner;
+        }
         if (settings === undefined) {
             supportLose(record);
             commit(connectionId);
             return;
         }
-        if (owner !== undefined) {
-            if (record.owner !== undefined && record.owner !== owner) record.writes.clear();
-            record.owner = owner;
-        }
         const wasSupported = record.support === "supported";
         record.support = "supported";
         record.settings.clear();
         for (const setting of settings) settingTake(record, setting);
-        if (!wasSupported) deviceImport(record);
+        const migrated =
+            owner !== undefined ? options.deviceMigrate?.(connectionId, owner) : undefined;
+        if (migrated !== undefined && options.equal(record.device, options.empty))
+            record.device = migrated;
+        if (!wasSupported || migrated !== undefined) {
+            deviceImport(record);
+        }
         commit(connectionId);
     };
     const settingAdopt = (
@@ -323,10 +346,24 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
     };
     const flushStart = (connectionId: string): void => {
         const follower = followers.get(connectionId);
-        if (!follower || follower.flushing || !follower.online) return;
+        if (
+            !follower ||
+            follower.flushing ||
+            !follower.online ||
+            (options.requireOwnerIdentity && !follower.ownerConfirmed)
+        )
+            return;
         follower.flushing = true;
         void flush(connectionId, follower).finally(() => {
             follower.flushing = false;
+            const record = records.get(connectionId);
+            if (
+                followers.get(connectionId) === follower &&
+                !follower.signal.aborted &&
+                record?.support === "supported" &&
+                record.writes.size > 0
+            )
+                flushStart(connectionId);
         });
     };
     /** Retries retain the original timestamp and mutation id; a newer write replaces only its own key. */
@@ -335,12 +372,14 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
         while (
             !follower.signal.aborted &&
             follower.online &&
+            (!options.requireOwnerIdentity || follower.ownerConfirmed) &&
             followers.get(connectionId) === follower
         ) {
             const record = records.get(connectionId);
             if (!record || record.support !== "supported") return;
             const write = record.writes.values().next().value;
             if (!write) return;
+            const ownerGeneration = record.ownerGeneration;
             try {
                 const response = await follower.source.client.saveUserSetting(
                     write.key,
@@ -352,10 +391,12 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
                     { signal: follower.signal },
                 );
                 if (follower.signal.aborted) return;
+                if (record.ownerGeneration !== ownerGeneration) continue;
                 delay = 1_000;
                 settingAdopt(connectionId, response.setting, write.mutationId);
             } catch (error) {
                 if (follower.signal.aborted) return;
+                if (record.ownerGeneration !== ownerGeneration) continue;
                 const failure = writeFailureOf(error);
                 if (failure === "unsupported") {
                     supportLose(record);
@@ -376,40 +417,63 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
         }
     };
     const settingsRead = async (connectionId: string, follower: Follower): Promise<void> => {
+        if (options.requireOwnerIdentity) {
+            follower.ownerConfirmed = false;
+            commit(connectionId);
+        }
+        const record = recordEnsure(connectionId);
+        const ownerGeneration = record.ownerGeneration;
+        const current = (): boolean =>
+            !follower.signal.aborted &&
+            followers.get(connectionId) === follower &&
+            record.ownerGeneration === ownerGeneration;
         const response = await happyAgentSyncRead(
             follower.signal,
             async () => {
+                const owner = options.requireOwnerIdentity
+                    ? (await follower.source.client.getProfile({ signal: follower.signal })).profile
+                          .userId
+                    : undefined;
+                if (options.requireOwnerIdentity && owner === undefined)
+                    return { settings: undefined, owner };
                 try {
-                    return await follower.source.client.getUserSettings({
+                    const response = await follower.source.client.getUserSettings({
                         signal: follower.signal,
                     });
+                    return { settings: response.settings, owner };
                 } catch (error) {
                     if (error instanceof HappyAgentApiError && error.status === 404)
-                        return undefined;
+                        return { settings: undefined, owner };
                     throw error;
                 }
             },
             (error) => {
+                if (!current()) return;
                 follower.readFailed = true;
                 follower.online = false;
                 recordEnsure(connectionId).readError = happyAgentUserError(error);
                 commit(connectionId);
             },
         );
-        if (follower.signal.aborted) return;
+        if (!current()) return;
         follower.readFailed = false;
         follower.online = true;
+        if (options.requireOwnerIdentity) follower.ownerConfirmed = response.owner !== undefined;
         delete recordEnsure(connectionId).readError;
-        settingsReplace(connectionId, response?.settings, undefined);
+        if (options.requireOwnerIdentity && !follower.ownerConfirmed) commit(connectionId);
+        else settingsReplace(connectionId, response.settings, response.owner);
         flushStart(connectionId);
     };
     const follow = async (connectionId: string, follower: Follower): Promise<void> => {
         for await (const input of follower.source.sync.follow({
             signal: follower.signal,
-            events: ["user_settings.updated"],
+            events: options.requireOwnerIdentity
+                ? ["user_settings.updated", "profile.updated"]
+                : ["user_settings.updated"],
         })) {
             if (input.kind === "error") {
                 follower.online = false;
+                follower.ownerConfirmed = false;
                 follower.readFailed = true;
                 recordEnsure(connectionId).readError = happyAgentUserError(input.error);
                 commit(connectionId);
@@ -417,8 +481,13 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
             }
             if (input.kind === "bootstrap") {
                 follower.online = true;
+                follower.ownerConfirmed = input.bootstrap.profile.userId !== undefined;
                 follower.readFailed = false;
                 delete recordEnsure(connectionId).readError;
+                if (options.requireOwnerIdentity && !follower.ownerConfirmed) {
+                    commit(connectionId);
+                    continue;
+                }
                 settingsReplace(
                     connectionId,
                     input.bootstrap.userSettings,
@@ -434,15 +503,30 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
             const update = input.update;
             if (update.kind === "connected") {
                 follower.online = true;
-                if (follower.readFailed) await settingsRead(connectionId, follower);
+                if (
+                    follower.readFailed ||
+                    (options.requireOwnerIdentity && !follower.ownerConfirmed)
+                )
+                    await settingsRead(connectionId, follower);
                 else {
                     commit(connectionId);
                     flushStart(connectionId);
                 }
             } else if (update.kind === "disconnected") {
                 follower.online = false;
+                follower.ownerConfirmed = false;
                 commit(connectionId);
-            } else if (update.kind === "event" && update.event.type === "user_settings.updated")
+            } else if (
+                update.kind === "event" &&
+                update.event.type === "profile.updated" &&
+                options.requireOwnerIdentity
+            )
+                await settingsRead(connectionId, follower);
+            else if (
+                update.kind === "event" &&
+                update.event.type === "user_settings.updated" &&
+                (!options.requireOwnerIdentity || follower.ownerConfirmed)
+            )
                 settingAdopt(
                     connectionId,
                     update.event.payload.setting,
@@ -495,6 +579,7 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
                 online: false,
                 flushing: false,
                 readFailed: false,
+                ownerConfirmed: false,
             };
             followers.set(connectionId, follower);
             recordEnsure(connectionId);

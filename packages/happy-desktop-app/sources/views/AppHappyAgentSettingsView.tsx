@@ -38,6 +38,7 @@ import {
     happyAgentStemCellsSettingsStoreNoop,
     happyAgentStoriesSettingsStoreNoop,
     projectsVisibilityStoreNoop,
+    projectsVisibilityConnection,
     stemCellAnimationStoreNoop,
     gptLiveStoreNoop,
     happyAgentCloudStoreNoop,
@@ -367,7 +368,7 @@ export interface AppHappyAgentSettingsViewProps {
      */
     experiments?: ExperimentsStore;
     /**
-     * Whether this window hides every connection's Projects section. Absent in a
+     * Whether the primary connection hides its Projects section. Absent in a
      * host that remembers no such choice, which offers no control for it.
      */
     projectsVisibility?: ProjectsVisibilityStore;
@@ -1293,11 +1294,14 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     onTitleShimmerChange={(enabled) =>
                         titleShimmerStore.titleShimmerUpdate(enabled)
                     }
-                    {...(props.projectsVisibility
+                    {...(props.projectsVisibility && host
                         ? {
-                              projectsHidden: projectsVisibility.projectsHidden,
+                              projectsHidden: projectsVisibilityConnection(
+                                  projectsVisibility,
+                                  host.id,
+                              ).projectsHidden,
                               onProjectsHiddenChange: (hidden: boolean) =>
-                                  projectsVisibilityStore.projectsHiddenUpdate(hidden),
+                                  projectsVisibilityStore.projectsHiddenUpdate(host.id, hidden),
                           }
                         : {})}
                     {...(defaultMenus ? { defaultAccessMenus: defaultMenus } : {})}

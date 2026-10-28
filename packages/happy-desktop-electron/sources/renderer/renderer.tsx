@@ -31,7 +31,7 @@ import {
     type KeepAwakeStore,
     commandPaletteStoreCreate,
     experimentsStoreCreate,
-    projectsVisibilityStoreCreate,
+    projectsVisibilityStoreOwnedCreate,
     stemCellAnimationStoreCreate,
     statusBarStoreCreate,
     gptLiveStoreCreate,
@@ -143,7 +143,10 @@ import { desktopMetricsStoreCreate } from "./desktopMetricsStore";
 import { desktopDaemonStoreCreate } from "./desktopDaemonStore";
 import { desktopAgentReleaseNotesStoreCreate } from "./desktopAgentReleaseNotesStore";
 import { desktopExperimentsPersistence } from "./desktopExperiments";
-import { desktopProjectsVisibilityPersistence } from "./desktopProjectsVisibility";
+import {
+    desktopProjectsVisibilityPersistence,
+    desktopProjectsVisibilityLegacyConsume,
+} from "./desktopProjectsVisibility";
 import { desktopStemCellAnimationPersistence } from "./desktopStemCellAnimation";
 import { desktopStatusBarPersistence } from "./desktopStatusBar";
 import { desktopGptLivePersistence } from "./desktopGptLive";
@@ -1310,12 +1313,15 @@ if (mediaPreviewBridge) {
         const experiments = experimentsStoreCreate(desktopExperimentsPersistence(), (output) =>
             analytics.experimentUpdated(output),
         );
-        // Whether the sidebar leaves the Projects sections out. Like the
-        // experiments switch it is this window's own choice, so it covers every
-        // connection — team and local — and is never asked of a machine.
-        const projectsVisibility = projectsVisibilityStoreCreate(
-            desktopProjectsVisibilityPersistence(),
-        );
+        // Each authenticated daemon owns project visibility, like bot attention.
+        const { store: projectsVisibility, connectionFollow: projectsVisibilityFollow } =
+            projectsVisibilityStoreOwnedCreate({
+                persistence: desktopProjectsVisibilityPersistence(),
+                legacyLocal: {
+                    connectionId: LOCAL_HAPPY_AGENT_ID,
+                    consume: desktopProjectsVisibilityLegacyConsume,
+                },
+            });
         // Whether new work's stem cell grows into its icon: the window's own choice.
         const stemCellAnimation = stemCellAnimationStoreCreate(
             desktopStemCellAnimationPersistence(),
@@ -1369,9 +1375,11 @@ if (mediaPreviewBridge) {
             attentionFollow(id, source) {
                 preferencesFor(id);
                 const attentionStop = attentionFollow(id, source);
+                const projectsVisibilityStop = projectsVisibilityFollow(id, source);
                 const modelStop = modelPreferences.get(id)?.connectionFollow(source);
                 return () => {
                     attentionStop();
+                    projectsVisibilityStop();
                     modelStop?.();
                 };
             },

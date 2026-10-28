@@ -356,7 +356,7 @@ it("opens the task browser from the Tasks heading", () => {
     expect(actions.taskBrowseOpen).toHaveBeenCalledTimes(1);
 });
 
-it("hides the Projects section for team and local connections the moment the setting changes", () => {
+it("hides each connection's Projects section the moment its setting changes", () => {
     const projectsVisibility = projectsVisibilityStoreCreate();
     const { container } = view({
         projectsVisibility,
@@ -375,14 +375,15 @@ it("hides the Projects section for team and local connections the moment the set
     ]);
     expect(rowIds(container)).toContain("team/prj_one");
 
-    act(() => projectsVisibility.projectsHiddenUpdate(true));
-    expect(sectionLabels(container)).toEqual(["Bots", "Tasks", "Bots", "Tasks"]);
-    expect(rowIds(container).some((id) => id?.endsWith("/prj_one"))).toBe(false);
+    act(() => projectsVisibility.projectsHiddenUpdate("local", true));
+    expect(sectionLabels(container)).toEqual(["Bots", "Tasks", "Bots", "Tasks", "Projects"]);
+    expect(rowIds(container)).not.toContain("local/prj_one");
+    expect(rowIds(container)).toContain("team/prj_one");
     // Bots and tasks stay listed on both connections.
     expect(rowIds(container)).toContain("local/ws_launch");
     expect(rowIds(container)).toContain("team/ws_launch");
 
-    act(() => projectsVisibility.projectsHiddenUpdate(false));
+    act(() => projectsVisibility.projectsHiddenUpdate("local", false));
     expect(rowIds(container)).toContain("local/prj_one");
     expect(rowIds(container)).toContain("team/prj_one");
 });

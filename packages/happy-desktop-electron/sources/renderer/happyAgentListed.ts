@@ -1,6 +1,7 @@
 import {
     happyAgentBotAttention,
     happyAgentBotSubtasks,
+    projectsVisibilityConnection,
     type HappyAgentAttentionSnapshot,
     type ConversationSummary,
     type ProjectsVisibilitySnapshot,
@@ -50,7 +51,8 @@ export function happyAgentListedConversations(
     ];
     for (const root of roots) add(root.conversation);
     for (const subtask of happyAgentBotSubtasks(roots)) add(subtask.conversation);
-    if (visibility.projectsHidden) return [...listed.values()];
+    if (projectsVisibilityConnection(visibility, entry.id).projectsHidden)
+        return [...listed.values()];
     // The Projects section leaves out every worktree a subtask owns, a hidden
     // bot's included, since that subtask is where the worktree is shown.
     const subtaskWorkspaceIds = new Set(

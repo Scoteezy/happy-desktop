@@ -4,7 +4,8 @@ import {
     appearanceStoreCreate,
     happyAgentSettingsStoreCreate,
     projectsVisibilityStoreCreate,
-    type ProjectsVisibilityDocument,
+    projectsVisibilityConnection,
+    type ProjectsVisibilityCacheDocument,
 } from "happy-desktop-state";
 import { AppHappyAgentSettingsView } from "../../sources/views/AppHappyAgentSettingsView";
 import type { AppHappyAgentDirectorySnapshot } from "../../sources/AppHappyAgentView";
@@ -12,20 +13,29 @@ import type { AppHappyAgentDirectorySnapshot } from "../../sources/AppHappyAgent
 // jsdom has no canvas; the offline model-catalog spinner is unrelated here.
 vi.mock("../../../happy-desktop-ui/src/Spinner", () => ({ Spinner: () => null }));
 
-/* Hiding the Projects section is a General setting kept by the window — the
- * same place the experiments switch is kept — so it is offered and saved with
- * no machine connected at all, and never touches a machine's settings. */
+/* The General setting remains editable offline for the known host connection. */
 
-it("saves Hide projects in the window's own record without asking any Happy Agent", () => {
-    let stored: ProjectsVisibilityDocument | undefined;
+it("queues Hide projects for the host connection while it is offline", () => {
+    let stored: ProjectsVisibilityCacheDocument | undefined;
     const persistence = {
         read: () => stored,
-        write: (next: ProjectsVisibilityDocument) => {
+        write: (next: ProjectsVisibilityCacheDocument) => {
             stored = next;
         },
     };
-    const projectsVisibility = projectsVisibilityStoreCreate(persistence);
-    const directory: AppHappyAgentDirectorySnapshot = { happyAgents: [] };
+    const projectsVisibility = projectsVisibilityStoreCreate({ persistence });
+    const directory: AppHappyAgentDirectorySnapshot = {
+        happyAgents: [
+            {
+                id: "local",
+                label: "Local",
+                status: "disconnected",
+                projects: [],
+                bots: [],
+                projectsStatus: "loading",
+            },
+        ],
+    };
     const appearance = appearanceStoreCreate();
     const settings = happyAgentSettingsStoreCreate();
     const defaults = settings.get();
@@ -48,17 +58,22 @@ it("saves Hide projects in the window's own record without asking any Happy Agen
     expect(control.getAttribute("aria-checked")).toBe("false");
 
     fireEvent.click(control);
-    expect(projectsVisibility.get().projectsHidden).toBe(true);
+    expect(projectsVisibilityConnection(projectsVisibility.get(), "local").projectsHidden).toBe(
+        true,
+    );
     expect(view.getByRole("switch", { name: "Hide projects" }).getAttribute("aria-checked")).toBe(
         "true",
     );
     // A window opened later reads the same choice back.
-    expect(projectsVisibilityStoreCreate(persistence).get().projectsHidden).toBe(true);
-    // No machine's settings were touched.
+    expect(
+        projectsVisibilityConnection(projectsVisibilityStoreCreate({ persistence }).get(), "local")
+            .projectsHidden,
+    ).toBe(true);
+    // Unrelated machine settings are untouched.
     expect(settings.get()).toBe(defaults);
 
     fireEvent.click(view.getByRole("switch", { name: "Hide projects" }));
-    expect(stored).toEqual({ projectsHidden: false });
+    expect(stored?.connections["local"]?.device).toEqual({ projectsHidden: false });
     view.unmount();
     appearance[Symbol.dispose]();
 });

@@ -109,6 +109,7 @@ import type {
     HappyAgentSpace,
     SidebarDocumentClassic,
     ProjectsVisibilityStore,
+    ProjectsVisibilitySnapshot,
     StemCellAnimationStore,
     HappyAgentGroupLifecycle,
     HappyAgentChangeTier,
@@ -161,6 +162,7 @@ import {
     happyAgentStemCellsSettingsStoreNoop,
     happyAgentStoriesSettingsStoreNoop,
     projectsVisibilityStoreNoop,
+    projectsVisibilityConnection,
     stemCellAnimationStoreNoop,
     happyAgentVersionAtLeast,
     HAPPY_AGENT_TASKS_VERSION,
@@ -2349,7 +2351,7 @@ function voiceFocusInProjects(
 function happyAgentSections(
     directory: AppHappyAgentDirectorySnapshot,
     titleShimmerEnabled: boolean,
-    projectsHidden: boolean,
+    projectsVisibility: ProjectsVisibilitySnapshot,
     attention: HappyAgentAttentionSnapshot,
     folded?: ReadonlySet<string>,
     /** The machine Cmd-N makes a task on, whose Tasks heading wears the chord. */
@@ -2404,7 +2406,9 @@ function happyAgentSections(
             ...subtaskFailureError(happyAgent, happyAgent.bots),
             // With the Projects list left out, what the Happy Agent said when it
             // failed still needs a heading to stand under.
-            ...(projectsHidden && happyAgent.status === "error" && happyAgent.message !== undefined
+            ...(projectsVisibilityConnection(projectsVisibility, happyAgent.id).projectsHidden &&
+            happyAgent.status === "error" &&
+            happyAgent.message !== undefined
                 ? { error: happyAgent.message }
                 : {}),
         },
@@ -2413,9 +2417,9 @@ function happyAgentSections(
         ...(happyAgentTasksSupported(happyAgent)
             ? [happyAgentTasksSection(happyAgent, titleShimmerEnabled, shortcutHappyAgentId)]
             : []),
-        // The reader's own choice in settings, for every connection alike: the
+        // The reader's own choice in settings for this connection: the
         // section goes entirely, heading and all, rather than folding.
-        ...(projectsHidden
+        ...(projectsVisibilityConnection(projectsVisibility, happyAgent.id).projectsHidden
             ? []
             : [happyAgentProjectsSection(happyAgent, titleShimmerEnabled, folded)]),
     ]);
@@ -2894,7 +2898,7 @@ function happyAgentSearchSections(
     catalog: HappyAgentSurfaceCatalogSnapshot,
     activeTodoCounts: ReadonlyMap<HappyAgentSurfaceId, number>,
     titleShimmerEnabled: boolean,
-    projectsHidden: boolean,
+    projectsVisibility: ProjectsVisibilitySnapshot,
     attention: HappyAgentAttentionSnapshot,
 ): SidebarSection[] {
     const needle = query.trim().toLocaleLowerCase();
@@ -2968,7 +2972,8 @@ function happyAgentSearchSections(
         const tasks = (happyAgent.tasks ?? [])
             .filter((task) => matches(task.name))
             .map((task) => rowOf(taskSidebarItem(task, titleShimmerEnabled)));
-        const projects = projectsHidden
+        const projects = projectsVisibilityConnection(projectsVisibility, happyAgent.id)
+            .projectsHidden
             ? []
             : happyAgentSidebarTree(happyAgent).projects.flatMap((entry) =>
                   sidebarItems(entry, titleShimmerEnabled)
@@ -3330,15 +3335,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         experimentsStore.get,
         experimentsStore.get,
     );
-    // Whether the reader asked in settings for the Projects sections to be
-    // left out. It is the window's own choice, so it applies to every
-    // connection at once and changes the sidebar the moment it is made.
+    // Each connection follows its authenticated reader's Projects preference.
     const projectsVisibilityStore = props.projectsVisibility ?? projectsVisibilityStoreNoop;
-    const projectsHidden = useSyncExternalStore(
+    const projectsVisibility = useSyncExternalStore(
         projectsVisibilityStore.subscribe,
         projectsVisibilityStore.get,
         projectsVisibilityStore.get,
-    ).projectsHidden;
+    );
     // Whether a row or tab that sees its stem cell get an icon grows it there.
     const stemCellAnimationStore = props.stemCellAnimation ?? stemCellAnimationStoreNoop;
     const stemCellAnimation = useSyncExternalStore(
@@ -4527,7 +4530,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           surfaceCatalog,
                           activeTodoCounts,
                           titleShimmerEnabled,
-                          projectsHidden,
+                          projectsVisibility,
                           attention,
                       )
                     : [
@@ -4542,7 +4545,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               happyAgentSections(
                                   directory,
                                   titleShimmerEnabled,
-                                  projectsHidden,
+                                  projectsVisibility,
                                   attention,
                                   props.sidebarCollapse
                                       ? // A navigation into a folded-away Projects list
@@ -4630,7 +4633,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           )
                           .map((bot) => bot.id as string),
                   ),
-                  projectsHidden,
+                  projectsHidden: projectsVisibilityConnection(
+                      projectsVisibility,
+                      active?.id ?? props.happyAgentId,
+                  ).projectsHidden,
               },
     };
     // The same suggestions the empty palette offers, on the gesture the reader
