@@ -381,6 +381,8 @@ function HappyAgentBoundary(props: {
     profiler?: AppHappyAgentProfilerStore;
     connectionOnboarding?: boolean;
     bridge: HappyDesktopBridge;
+    /** Whether this desktop fills logins saved in the person's browsers. */
+    browserPasswordsAvailable: boolean;
     browserContent?: BrowserContentRenderer;
     htmlPreview?: HtmlPreviewRenderer;
     artifactPage?: HtmlPreviewRenderer;
@@ -410,6 +412,7 @@ function HappyAgentBoundary(props: {
         <RouterProvider
             context={{
                 appearance: props.appearance,
+                browserPasswordsAvailable: props.browserPasswordsAvailable,
                 browserContent: props.browserContent,
                 // A development window says which checkout it came from; the
                 // packaged product supplies nothing and shows nothing.
@@ -593,6 +596,8 @@ function desktopLocalPhase(snapshot: DesktopRuntimeSnapshot): boolean {
 }
 
 interface DesktopRendererProps {
+    /** Whether this desktop fills logins saved in the person's browsers. */
+    browserPasswordsAvailable: boolean;
     connectionUis: ReadonlyMap<string, DesktopConnectionUi>;
     appearance: AppearanceStore;
     commandPalette: CommandPaletteStore;
@@ -803,6 +808,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                             >
                                 <HappyAgentBoundary
                                     appearance={props.appearance}
+                                    browserPasswordsAvailable={props.browserPasswordsAvailable}
                                     bridge={props.bridge}
                                     browserContent={props.browserContent}
                                     commandPalette={ui.commandPalette}
@@ -1025,6 +1031,7 @@ function DesktopRuntimeContent(
     return (
         <HappyAgentBoundary
             appearance={props.appearance}
+            browserPasswordsAvailable={props.browserPasswordsAvailable}
             bridge={props.bridge}
             commandPalette={props.commandPalette}
             {...(props.daemon
@@ -1202,6 +1209,8 @@ if (mediaPreviewBridge) {
     if (configUnsubscribe) appDisposers.push(configUnsubscribe);
     const start = (initial: DesktopConfig): void => {
         const config = latestConfig ?? initial;
+        // Saved logins belong to this machine, shared by every connection UI.
+        const browserPasswordsAvailable = desktopBridge.browserPasswordPickerOpen !== undefined;
         const runtimeStore = desktopRuntimeStoreCreate(desktopBridge);
         // Whether this machine's owner has been welcomed. Acknowledging this
         // deck enters machine setup; it does not wait for machine work to finish.
@@ -1659,6 +1668,7 @@ if (mediaPreviewBridge) {
                 <DesktopCloudSignInNotice store={notices} />
                 <CodeHighlightWorkers>
                     <DesktopRenderer
+                        browserPasswordsAvailable={browserPasswordsAvailable}
                         connectionUis={connectionUis}
                         appearance={appearance}
                         commandPalette={commandPalette}

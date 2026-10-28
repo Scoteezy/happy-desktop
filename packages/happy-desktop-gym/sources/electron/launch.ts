@@ -70,6 +70,51 @@ export async function gymElectronLaunch(
     return app;
 }
 
+export interface GymElectronProcessResult {
+    readonly exitCode: number | null;
+    readonly signal: NodeJS.Signals | null;
+    /** The last few kilobytes the app printed, for a failure message. */
+    readonly output: string;
+}
+
+/**
+ * Starts the app hidden without a debugger and waits for it to exit on its own.
+ * A packaged build refuses Playwright's inspector and remote-debugging switches,
+ * so this is how a run reaches one: the app reports through files it was asked
+ * to write. Same hidden mode and owned user data as `gymElectronLaunch`.
+ */
+export async function gymElectronProcessRun(
+    options: GymElectronLaunchOptions,
+): Promise<GymElectronProcessResult> {
+    if (!options.args.some((argument) => argument.startsWith("--user-data-dir=")))
+        throw new Error("gymElectronProcessRun requires an owned --user-data-dir.");
+    const child = spawn(options.executablePath, [...options.args], {
+        env: { ...options.env, HAPPY_DESKTOP_WINDOWS_HIDDEN: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+        ...(options.cwd ? { cwd: options.cwd } : {}),
+    });
+    let output = "";
+    const keep = (chunk: Buffer) => {
+        output = (output + chunk.toString()).slice(-8_192);
+    };
+    child.stdout.on("data", keep);
+    child.stderr.on("data", keep);
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+            child.kill("SIGKILL");
+            reject(new Error(`The desktop app did not exit within its timeout:\n${output}`));
+        }, options.timeout ?? 60_000);
+        child.on("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        child.on("exit", (exitCode, signal) => {
+            clearTimeout(timer);
+            resolve({ exitCode, signal, output });
+        });
+    });
+}
+
 /** Reads the app's windows, focus, and Dock tile from its main process. */
 export async function gymElectronInvisibility(
     app: ElectronApplication,

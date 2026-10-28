@@ -418,12 +418,17 @@ export interface DesktopGuestKeyEvent {
     readonly type: "keydown" | "keyup";
 }
 
+/**
+ * `disabled` is the build's permanent refusal, with its reason in `error`: a
+ * packaged Happy never opens a debugger into a process that can reach its secrets.
+ */
 export type DesktopDebugTargetStatus =
     | "stopped"
     | "starting"
     | "running"
     | "stopping"
     | "unavailable"
+    | "disabled"
     | "error";
 
 /** One live debugger attachment point owned by the native shell. */
@@ -840,6 +845,12 @@ export interface HappyDesktopBridge {
     /** Returns the partition of a network's profile, opening it the first time. */
     browserNetworkProfileOpen?(network: DesktopBrowserNetwork): Promise<string>;
     /**
+     * Opens a native picker of the logins saved in the person's browsers.
+     * Happy stores no password, and no bridge method returns one: only a
+     * native menu choice can fill. Present on macOS and Windows only.
+     */
+    browserPasswordPickerOpen?(guestId: number): Promise<void>;
+    /**
      * Resolves with an inline guest's content height once it differs from
      * `previous`, measured in a world of its own that the page's scripts cannot
      * reach or replace.
@@ -1036,6 +1047,7 @@ export const desktopIpc = {
     appearanceSet: "happy:appearance:set",
     browserNetworkResolve: "happy:browser:network-resolve",
     browserNetworkProfileOpen: "happy:browser:network-profile-open",
+    browserPasswordPickerOpen: "happy:browser-passwords:picker-open",
     guestFitMeasure: "happy:guest:fit-measure",
     browserNetworkPopupRequested: "happy:browser:network-popup-requested",
     browserNetworkCommand: "happy:browser:network-command",

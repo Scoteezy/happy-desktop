@@ -8,7 +8,15 @@ import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
 export interface HappyAgentDebugTarget {
     readonly error?: string;
-    readonly status: "stopped" | "starting" | "running" | "stopping" | "unavailable" | "error";
+    /** `disabled` cannot be started in this build; `error` says why. */
+    readonly status:
+        | "stopped"
+        | "starting"
+        | "running"
+        | "stopping"
+        | "unavailable"
+        | "disabled"
+        | "error";
     readonly url?: string;
 }
 
@@ -42,7 +50,9 @@ export function HappyAgentDebugSettings(props: HappyAgentDebugSettingsProps) {
             </Banner>
         );
 
-    const targets = [props.main, props.renderer, props.daemon];
+    const targets = [props.main, props.renderer, props.daemon].filter(
+        (target) => target.status !== "disabled",
+    );
     const anyPending = targets.some((target) => pending(target));
     const allRunning = targets.every((target) => target.status === "running");
     const allStopped = targets.every(
@@ -162,7 +172,7 @@ function DebuggerRow(props: {
                     </Box>
                 ) : (
                     <Button
-                        disabled={props.disabled}
+                        disabled={props.disabled || props.target.status === "disabled"}
                         loading={props.target.status === "starting"}
                         onClick={props.onStart}
                         size="small"

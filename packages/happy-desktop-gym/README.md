@@ -16,6 +16,12 @@ renders, lays out, composites, takes input, and produces screenshots and video.
   (`sources/electron/launch.ts`, exported from `happy-desktop-gym/electron`). It
   sets `HAPPY_DESKTOP_WINDOWS_HIDDEN=1`, requires an owned `--user-data-dir`,
   and refuses a build that has no hidden-window mode.
+- A packaged build refuses every debugger (its Electron fuses and
+  `sources/main/main.ts` reject `--inspect*` and `--remote-debugging-*`), so
+  Playwright cannot drive it. The `smoke` command instead runs it through
+  `gymElectronProcessRun`, with the same hidden mode and owned user data, and
+  reads the report the app writes for `HAPPY_DESKTOP_SMOKE_REPORT`
+  (`happy-desktop-electron` `sources/main/desktopSmokeReport.ts`).
 - Record video with `gymElectronVideoRecord(page, { path, scale })`: it writes
   the hidden window's own compositor frames (CDP screencast) to WebM. Never
   pass Playwright `recordVideo`.

@@ -12,6 +12,8 @@ export interface BrowserController {
     browserLoad(url: string): void;
     browserReload(): void;
     browserStop(): void;
+    /** Opens Happy's native picker; a chosen login is filled by the host alone. */
+    browserPasswordPick?(): void;
 }
 
 /**
@@ -275,6 +277,17 @@ export function BrowserPanel(props: BrowserPanelProps) {
                     size="small"
                     value={view.address}
                 />
+                <Button
+                    aria-label="Choose a saved password"
+                    disabled={props.unavailable !== undefined || !controller?.browserPasswordPick}
+                    iconOnly
+                    onClick={() => controller?.browserPasswordPick?.()}
+                    size="small"
+                    title="Saved passwords"
+                    variant="ghost"
+                >
+                    <Ionicon name="key-outline" size={14} />
+                </Button>
             </div>
             {props.unavailable ? (
                 <div

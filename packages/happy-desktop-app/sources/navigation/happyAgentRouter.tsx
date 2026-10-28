@@ -74,6 +74,8 @@ import type { AppHappyAgentReleaseNotesStore, AppHappyAgentUpdateStore } from ".
  * can be constructed before any Happy Agent connects.
  */
 export interface HappyAgentRouterContext {
+    /** Whether this desktop fills logins saved in the person's browsers, whatever agent is connected. */
+    readonly browserPasswordsAvailable?: boolean;
     /** A remote daemon uses its own setup inside this connection's router. */
     readonly connectionOnboarding?: boolean;
     /** Native Chromium guest renderer, present only in packaged Electron. */
@@ -819,6 +821,7 @@ function HappyAgentSettingsRoute() {
     return (
         <AppHappyAgentSettingsView
             appearance={context.appearance}
+            browserPasswordsAvailable={context.browserPasswordsAvailable ?? false}
             update={context.update}
             onUpdateApply={context.onUpdateApply}
             {...(context.daemon ? { daemon: context.daemon } : {})}

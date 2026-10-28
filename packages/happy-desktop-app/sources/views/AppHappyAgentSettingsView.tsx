@@ -79,6 +79,7 @@ import {
     HappyAgentProviderSettings,
     HappyAgentProfilerSettings,
     HappyAgentProfileSettings,
+    HappyAgentPasswordSettings,
     HappyAgentSecretSettings,
     HappyAgentSettingsShell,
     HappyAgentTaskSettings,
@@ -117,6 +118,7 @@ export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategor
     { icon: "file-diff", id: "file-tiers", label: "File tiers" },
     { icon: "doc", id: "instructions", label: "Instructions" },
     { icon: "lock", id: "secrets", label: "Secrets" },
+    { icon: "lock", id: "passwords", label: "Passwords" },
     { icon: "globe", id: "providers", label: "Providers" },
     // Usage sits after Providers because it is the same accounts read the other
     // way round: which of them exist, then what each has spent.
@@ -142,7 +144,14 @@ export function happyAgentSettingsCategoryExists(section: string): boolean {
 
 export interface AppHappyAgentDebugTargetSnapshot {
     readonly error?: string;
-    readonly status: "stopped" | "starting" | "running" | "stopping" | "unavailable" | "error";
+    readonly status:
+        | "stopped"
+        | "starting"
+        | "running"
+        | "stopping"
+        | "unavailable"
+        | "disabled"
+        | "error";
     readonly url?: string;
 }
 
@@ -337,6 +346,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     "file-tiers": "Which changed files are listed apart",
     instructions: "Agent guidance and permission review for this machine",
     secrets: "Environment variables for agents",
+    passwords: "Saved logins from your browsers",
     providers: "Model providers and the models they offer",
     usage: "What each provider account has spent",
 };
@@ -357,6 +367,8 @@ const usageAnalyticsAbsent: UsageAnalyticsStore = {
 
 export interface AppHappyAgentSettingsViewProps {
     appearance: AppearanceStore;
+    /** Whether this desktop fills logins saved in the person's browsers (macOS and Windows). */
+    browserPasswordsAvailable?: boolean;
     /** Application update status remains visible here while the footer waits for a download. */
     update?: AppHappyAgentUpdate;
     onUpdateApply?: () => void;
@@ -1182,6 +1194,8 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     {...(providers.saveError ? { saveError: providers.saveError.message } : {})}
                     {...(unavailable === undefined ? {} : { unavailable })}
                 />
+            ) : section === "passwords" ? (
+                <HappyAgentPasswordSettings available={props.browserPasswordsAvailable ?? false} />
             ) : section === "secrets" ? (
                 <HappyAgentSecretSettings
                     loading={secrets.loading}

@@ -6,9 +6,15 @@ export default defineConfig({
     build: {
         emptyOutDir: false,
         lib: {
-            entry: resolve(import.meta.dirname, "sources/preload/preload.ts"),
+            entry: {
+                preload: resolve(import.meta.dirname, "sources/preload/preload.ts"),
+                browserPasswordGuestPreload: resolve(
+                    import.meta.dirname,
+                    "sources/preload/browserPasswordGuestPreload.ts",
+                ),
+            },
             formats: ["cjs"],
-            fileName: () => "preload.cjs",
+            fileName: (_format, entryName) => `${entryName}.cjs`,
         },
         outDir: "dist",
         rollupOptions: {
