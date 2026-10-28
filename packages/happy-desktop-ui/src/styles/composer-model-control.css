@@ -223,7 +223,8 @@
 }
 
 .happy-composer-model-control__service,
-.happy-composer-model-control__account-list {
+.happy-composer-model-control__account-list,
+.happy-composer-model-control__members {
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
@@ -327,6 +328,69 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
+}
+
+/* A pool's accounts hang from it as a child row does in the sidebar: a stem
+ * down from under the pool's name and an elbow into each. They are not
+ * choices, so they read a step quieter and shorter than an account. */
+.happy-composer-model-control__member {
+    gap: 4px;
+    height: 28px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: default;
+}
+
+.happy-composer-model-control__member-branch {
+    position: relative;
+    flex: none;
+    align-self: stretch;
+    width: 16px;
+}
+
+/* The same faint stroke as the sidebar's stem and elbow. The stem runs the
+ * whole row so it is unbroken between members, and stops at the last one's
+ * elbow; the elbow starts past the stem's pixel rather than on top of it. */
+.happy-composer-model-control__member-branch::before,
+.happy-composer-model-control__member-branch::after {
+    position: absolute;
+    pointer-events: none;
+    content: "";
+    opacity: 0.28;
+}
+
+.happy-composer-model-control__member-branch::before {
+    top: 0;
+    bottom: 0;
+    left: 4px;
+    border-left: 1px solid var(--text-secondary);
+}
+
+.happy-composer-model-control__member:last-child
+    .happy-composer-model-control__member-branch::before {
+    bottom: calc(50% - 1px);
+}
+
+.happy-composer-model-control__member-branch::after {
+    bottom: calc(50% - 1px);
+    left: 5px;
+    width: 9px;
+    height: 0;
+    border-bottom: 1px solid var(--text-secondary);
+}
+
+/* Why the account cannot be read, such as a lapsed sign-in, in place of its
+ * gauge. A long reason ends in an ellipsis; the full one is its tooltip. */
+.happy-composer-model-control__member-error {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 60%;
+    overflow: hidden;
+    color: var(--warning-critical);
+    font-size: 12px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .happy-composer-model-control__name,

@@ -67,6 +67,11 @@ export type ComposerModelUsage = {
     /** Now, in milliseconds. It moves on while the control is mounted, so ages keep counting. */
     now: number;
 };
+/** One account a pool routes through, listed under the pool for its state alone. */
+export type ComposerModelPoolMember = {
+    id: string;
+    label: string;
+};
 export type ComposerModelAccount = {
     id: string;
     label: string;
@@ -74,6 +79,13 @@ export type ComposerModelAccount = {
     default?: boolean;
     /** The models this account offers, in catalog order. */
     models: readonly ComposerModelChoice[];
+    /**
+     * A pool's accounts, in the order it routes through them. They are nested
+     * under the pool so a signed-out or spent one can be told apart, and are
+     * never picked from there: a hidden one stays reachable only through its
+     * pool, and a visible one is its own row in the list as well.
+     */
+    members?: readonly ComposerModelPoolMember[];
 };
 export type ComposerModelService = {
     id: string;
@@ -134,6 +146,8 @@ export type ComposerModelControlPreview = {
     accounts?: string;
     /** Account whose usage the account list shows. */
     accountHover?: string;
+    /** A pool's account whose usage the account list shows, in place of `accountHover`. */
+    poolMemberHover?: { pool: string; member: string };
     /** Service whose header carries the keyboard focus ring. */
     accountFocus?: string;
     /** The account notice's tooltip or popover, shown open. */
@@ -205,6 +219,10 @@ type Side = "left" | "right";
 
 function rowKey(service: string, account: string, model: string) {
     return `${service}\n${account}\n${model}`;
+}
+
+function memberKey(pool: string, member: string) {
+    return `${pool}\n${member}`;
 }
 
 /** A list opened from the keyboard takes focus on its current choice. */
@@ -484,7 +502,12 @@ export function composerModelListedAccounts(
     selection: ComposerModelSelection | undefined,
 ): readonly string[] {
     const listed = new Set(
-        services.flatMap((service) => service.accounts.map((account) => account.id)),
+        services.flatMap((service) =>
+            service.accounts.flatMap((account) => [
+                account.id,
+                ...(account.members ?? []).map((member) => member.id),
+            ]),
+        ),
     );
     if (selection) listed.add(selection.account);
     return [...listed];
@@ -783,7 +806,13 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     });
     /** The service whose account panel is open. */
     const [accounts, setAccounts] = useState<string | null>(preview?.accounts ?? null);
-    const [accountHover, setAccountHover] = useState<string | null>(preview?.accountHover ?? null);
+    // A pool's account may be listed on its own as well, so pointing at it
+    // under the pool names the pool too.
+    const [accountHover, setAccountHover] = useState<string | null>(() =>
+        preview?.poolMemberHover
+            ? memberKey(preview.poolMemberHover.pool, preview.poolMemberHover.member)
+            : (preview?.accountHover ?? null),
+    );
     const [liveUsage, setLiveUsage] = useState<ComposerModelUsage | null>(null);
     const [remembered, setRemembered] = useState<ReadonlyMap<string, string>>(() => new Map());
     const gesture = useRef({ target: "", scrolled: 0, last: 0, cooldownUntil: 0 });
@@ -1042,11 +1071,61 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         </button>
     );
 
+    /**
+     * A pool's account, under the pool on a branch from it, as a child sits in
+     * the sidebar. It is not a choice: pointing at it shows its usage below the
+     * list, and a failed read, such as a lapsed sign-in, is said in place of
+     * its gauge.
+     */
+    const renderMember = (pool: ComposerModelAccount, member: ComposerModelPoolMember) => {
+        const usage = liveUsage?.accounts.get(member.id);
+        const key = memberKey(pool.id, member.id);
+        return (
+            <div
+                aria-disabled="true"
+                className="happy-composer-model-control__option happy-composer-model-control__member"
+                data-happy-desktop-ui="composer-model-control-member"
+                data-menu-item="account"
+                data-shown={key === accountHover ? "" : undefined}
+                key={member.id}
+                onFocus={() => setAccountHover(key)}
+                onPointerEnter={() => setAccountHover(key)}
+                role="menuitem"
+                tabIndex={-1}
+            >
+                <span aria-hidden="true" className="happy-composer-model-control__member-branch" />
+                <span className="happy-composer-model-control__option-main">
+                    <span className="happy-composer-model-control__name">{member.label}</span>
+                </span>
+                {usage?.refreshError === undefined ? (
+                    <ComposerModelAccountGauge usage={usage} />
+                ) : (
+                    <span
+                        className="happy-composer-model-control__member-error"
+                        data-happy-desktop-ui="composer-model-control-member-error"
+                        title={usage.refreshError}
+                    >
+                        {usage.refreshError}
+                    </span>
+                )}
+            </div>
+        );
+    };
+
     const renderAccounts = (service: ComposerModelService) => {
+        const shownMember = service.accounts
+            .flatMap((pool) =>
+                (pool.members ?? []).map((member) => ({
+                    key: memberKey(pool.id, member.id),
+                    member,
+                })),
+            )
+            .find((entry) => entry.key === accountHover)?.member;
         const shown =
+            shownMember ??
             service.accounts.find((account) => account.id === accountHover) ??
             service.accounts.find((account) => account.id === accountOf(service));
-        const shownUsage = shown ? usageOf(shown) : undefined;
+        const shownUsage = shown ? liveUsage?.accounts.get(shown.id) : undefined;
         return (
             <div
                 aria-label={`${service.label} account`}
@@ -1061,38 +1140,56 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                     {service.accounts.map((account) => {
                         const current = account.id === accountOf(service);
                         return (
-                            <button
-                                aria-checked={current}
-                                className="happy-composer-model-control__option happy-composer-model-control__account"
-                                data-happy-desktop-ui="composer-model-control-account"
-                                data-menu-item="account"
-                                data-shown={account.id === shown?.id ? "" : undefined}
-                                key={account.id}
-                                onClick={(event) => {
-                                    accountApply(service, account);
-                                    // An account is not the last choice: the picker stays
-                                    // open on that account's models, focus on its header.
-                                    event.currentTarget
-                                        .closest("[data-popup]")
-                                        ?.parentElement?.querySelector<HTMLElement>(
-                                            "[data-popup-anchor]",
-                                        )
-                                        ?.focus();
-                                    setAccounts(null);
-                                }}
-                                onFocus={() => setAccountHover(account.id)}
-                                onPointerEnter={() => setAccountHover(account.id)}
-                                role="menuitemradio"
-                                type="button"
-                            >
-                                <span className="happy-composer-model-control__option-main">
-                                    <span className="happy-composer-model-control__name">
-                                        {accountName(account)}
+                            <Fragment key={account.id}>
+                                <button
+                                    aria-checked={current}
+                                    className="happy-composer-model-control__option happy-composer-model-control__account"
+                                    data-happy-desktop-ui="composer-model-control-account"
+                                    data-menu-item="account"
+                                    data-shown={
+                                        shownMember === undefined && account.id === shown?.id
+                                            ? ""
+                                            : undefined
+                                    }
+                                    onClick={(event) => {
+                                        accountApply(service, account);
+                                        // An account is not the last choice: the picker stays
+                                        // open on that account's models, focus on its header.
+                                        event.currentTarget
+                                            .closest("[data-popup]")
+                                            ?.parentElement?.querySelector<HTMLElement>(
+                                                "[data-popup-anchor]",
+                                            )
+                                            ?.focus();
+                                        setAccounts(null);
+                                    }}
+                                    onFocus={() => setAccountHover(account.id)}
+                                    onPointerEnter={() => setAccountHover(account.id)}
+                                    role="menuitemradio"
+                                    type="button"
+                                >
+                                    <span className="happy-composer-model-control__option-main">
+                                        <span className="happy-composer-model-control__name">
+                                            {accountName(account)}
+                                        </span>
+                                        {current ? <Check /> : null}
                                     </span>
-                                    {current ? <Check /> : null}
-                                </span>
-                                <ComposerModelAccountGauge usage={usageOf(account)} />
-                            </button>
+                                    <ComposerModelAccountGauge usage={usageOf(account)} />
+                                </button>
+                                {account.members === undefined ||
+                                account.members.length === 0 ? null : (
+                                    <div
+                                        aria-label={`${accountName(account)} accounts`}
+                                        className="happy-composer-model-control__members"
+                                        data-happy-desktop-ui="composer-model-control-members"
+                                        role="group"
+                                    >
+                                        {account.members.map((member) =>
+                                            renderMember(account, member),
+                                        )}
+                                    </div>
+                                )}
+                            </Fragment>
                         );
                     })}
                 </div>

@@ -177,6 +177,7 @@ export {
     ComposerModelControl,
     type ComposerModelAccount,
     type ComposerModelAccountUsage,
+    type ComposerModelPoolMember,
     type ComposerModelChoice,
     type ComposerModelControlPreview,
     type ComposerModelControlProps,

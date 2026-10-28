@@ -207,6 +207,56 @@ const claudeExtraSpent = usageWith("claude_extra", {
 const claudeNeverRead = usageWith("claude", { refreshing: true });
 
 /*
+ * Codex through a pool that takes turns between the Current CLI and a hidden
+ * second account. The hidden one is listed only under the pool; the Current
+ * CLI is its own account as well. The pool has no plan of its own to read.
+ */
+const POOL_SECOND = "codex_kirill_bra1ndump";
+const POOL_SERVICES: readonly ComposerModelService[] = SERVICES.map((service) =>
+    service.id === "codex"
+        ? {
+              ...service,
+              account: "codex_pool",
+              accounts: [
+                  {
+                      id: "codex_pool",
+                      label: "Pool",
+                      models: CODEX_MODELS,
+                      members: [
+                          { id: "codex", label: "Current CLI" },
+                          { id: POOL_SECOND, label: "Kirill Bra1ndump" },
+                      ],
+                  },
+                  { id: "codex", label: "Current CLI", models: CODEX_MODELS },
+              ],
+          }
+        : service,
+);
+const ON_POOL: ComposerModelSelection = { ...ASTRA, account: "codex_pool" };
+/* The Current CLI has signed out; the second account carries the pool. */
+const poolSignedOut = heldUsage(
+    new Map([
+        ...USAGE,
+        [
+            "codex",
+            {
+                ...USAGE.get("codex")!,
+                updatedAt: NOW - 52 * MINUTE,
+                refreshError: "Codex isn't signed in",
+            },
+        ],
+        [
+            POOL_SECOND,
+            {
+                week: { label: "Week", usedPercent: 46, resets: "resets Tue 11:00 AM" },
+                session: { label: "Session", usedPercent: 71, resets: "resets 5:20 PM" },
+                updatedAt: NOW - 2 * MINUTE,
+            },
+        ],
+    ]),
+);
+
+/*
  * Claude with every kind of account side by side: one with room, one running
  * low, one whose week is spent until Wednesday, one under a long address, and
  * an API key with no reading at all.
@@ -983,6 +1033,37 @@ export function ComposerModelControlPage() {
                 stage="surface"
             >
                 <Pill usageWatch={claudeBothLow} />
+            </Specimen>
+            <Specimen
+                number="35"
+                label="Pool and its accounts"
+                detail="Pool takes turns between two Codex accounts, which hang under it like children in the sidebar. They are not choices: the hidden one is reachable only through Pool, and Current CLI is also its own row. Current CLI has signed out, so the reason stands in place of its gauge, and the second account carries the pool."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "codex", accountHover: "codex_pool" }}
+                    selection={ON_POOL}
+                    services={POOL_SERVICES}
+                    usageWatch={poolSignedOut}
+                    width={1140}
+                />
+            </Specimen>
+            <Specimen
+                number="36"
+                label="Pool account pointed at"
+                detail="Pointing at a pool's account shows its own week and session below the list, and when it was last read. The pool's Current CLI is highlighted, not the Current CLI row of its own, although both are the same account."
+                stage="surface"
+            >
+                <Open
+                    preview={{
+                        accounts: "codex",
+                        poolMemberHover: { pool: "codex_pool", member: "codex" },
+                    }}
+                    selection={ON_POOL}
+                    services={POOL_SERVICES}
+                    usageWatch={poolSignedOut}
+                    width={1140}
+                />
             </Specimen>
         </ComponentPage>
     );
