@@ -583,6 +583,13 @@ small engine-specific optical correction only when measurement proves that the
 same font and CSS still rasterize differently; keep that correction explicit and
 covered by tests.
 
+Text that reads as one line shares one baseline. When a label sits beside other
+text in a row — a quiet button after a message, a tab beside a heading, a count
+after a title — align the row with `align-items: baseline`, never by centring
+boxes of different heights, and drop any optical lift meant to centre the label
+inside its own filled box (`--happy-button-label-y: 0px` for a Button). Check
+the painted baselines match at 2×, not only the DOM boxes.
+
 Measurement precision is finer than the backing-pixel grid. Record DOM and pixel-derived values to
 at least `0.001px`; use `0.05 CSS px` as the default tolerance for a calibrated baseline or
 alpha-weighted optical-center value. A visible-pixel bounding edge is necessarily quantized to the

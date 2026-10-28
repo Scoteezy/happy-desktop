@@ -2076,9 +2076,10 @@
     border-bottom: 1px solid var(--divider);
 }
 
+/* The eyebrow and the tab labels read as one line, so they share a baseline. */
 .happy-sidebar-update__notes-head {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: space-between;
     gap: 8px;
     min-height: 18px;

@@ -57,9 +57,10 @@
     min-width: 0;
 }
 
+/* The message and its quiet buttons share one baseline. */
 .happy-conversation-failure-card__line {
     display: flex;
-    align-items: flex-start;
+    align-items: baseline;
     gap: 8px;
     min-width: 0;
 }
@@ -77,14 +78,19 @@
 
 /* The message's own action and Ask Chief of Staff, as quiet text buttons a
    little apart. Their 28px boxes hang 4px over and under the message's 20px
-   line, so the line keeps the icon's height and the labels stay centred on
-   the text. */
+   line, so the line keeps the icon's height, and their labels sit on the
+   message's baseline. Button's optical lift centres a label in a filled pill;
+   beside running text it would only raise the label off that baseline. */
 .happy-conversation-failure-card__line-actions {
     display: flex;
     flex: none;
-    align-items: center;
+    align-items: baseline;
     gap: 4px;
     margin: -4px 0;
+}
+
+.happy-conversation-failure-card__line-actions .happy-button {
+    --happy-button-label-y: 0px;
 }
 
 /* A command with its copy button is one unbreakable box on the 20px line. */
