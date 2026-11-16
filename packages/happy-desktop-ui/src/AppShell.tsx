@@ -97,7 +97,7 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     /**
      * Controlled collapse: the caller owns whether the sidebar is folded away
      * and hears every request to change it — the toggle, the reveal control,
-     * and Command-S all go through `onSidebarCollapsedChange`. Omit it and
+     * and Command-B all go through `onSidebarCollapsedChange`. Omit it and
      * AppShell keeps the fold itself, seeded by `sidebarDefaultCollapsed`.
      */
     sidebarCollapsed?: boolean;
@@ -113,7 +113,7 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     sidebarCollapseLabel?: string;
     sidebarExpandLabel?: string;
     sidebarResizeLabel?: string;
-    /** Bind Command-S to toggle the sidebar unless a focused control handles it. */
+    /** Bind Command-B to toggle the sidebar unless a focused control handles it. */
     sidebarShortcut?: boolean;
     /**
      * Enables pointer/keyboard resize of the right inspector panel. When omitted the
@@ -235,7 +235,12 @@ function laneMaxWidthOf(
     if (!(room > 0)) return cap;
     return Math.max(min, Math.min(cap, room - occupied - workspaceMin));
 }
-const SIDEBAR_SHORTCUT = commandShortcut("s");
+/*
+ * Command-B, as in VS Code and Codex. Command-S stays free for Save. A rich
+ * text editor that makes Command-B bold handles it first and marks it
+ * handled, so the sidebar only folds where nothing nearer the focus wants it.
+ */
+const SIDEBAR_SHORTCUT = commandShortcut("b");
 /**
  * The chord this shell folds its sidebar on. Exported so a surface that offers
  * the same fold elsewhere — the command palette's row — shows the cap the shell
